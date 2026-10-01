@@ -1,0 +1,8 @@
+/models/*
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=604800
+/vendor/*
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=604800
+/assets/*
+  Access-Control-Allow-Origin: *

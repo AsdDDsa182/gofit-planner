@@ -1,0 +1,10 @@
+# DRAX original 3D files: local references for dev/blender only, never published (the app uses models/basic)
+/models/*.glb
+# development tools, Blender scripts and work notes: not part of the app
+/dev/
+/작업_이어하기.md
+/.claude/
+/.mcp.json
+# OS clutter
+Thumbs.db
+desktop.ini

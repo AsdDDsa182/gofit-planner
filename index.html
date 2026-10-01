@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>고핏 플래너</title>
+<meta name="description" content="GOFIT KOREA 헬스장 공간 컨설팅 · 기구 배치 도면 · 견적 플래너">
+<meta name="theme-color" content="#1B2024">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<div id="app" class="app">
+  <header class="topbar">
+    <button class="icon-btn ghost" id="menuBtn" title="메뉴 (프로젝트·설정)" aria-label="메뉴"></button>
+    <div class="brand"><span class="mark">GOFIT</span><span class="mark-sub">플래너</span></div>
+    <button class="proj-btn" id="projBtn" title="프로젝트 이름·고객사 바꾸기"><b id="projName">새 프로젝트</b><small id="projClient"></small></button>
+    <div class="variants" id="variants"></div>
+    <div class="seg viewseg" id="viewSeg"><button data-v="2d" class="on">2D 도면</button><button data-v="3d">3D 보기</button></div>
+    <div class="seg viewseg" id="styleSeg" title="색상 없이 선으로만 보기 (캐드 도면처럼)"><button data-s="color">컬러</button><button data-s="line">선만</button></div>
+    <div class="tb-right">
+      <button class="icon-btn" id="undoBtn" title="되돌리기 (Ctrl+Z)" aria-label="되돌리기"></button>
+      <button class="icon-btn" id="redoBtn" title="다시 실행 (Ctrl+Y)" aria-label="다시 실행"></button>
+      <button class="btn" id="quoteBtn" title="견적서 보기·가격 입력"><span class="ic" data-ic="doc"></span><span class="lbl">견적서</span></button>
+      <button class="btn primary" id="shareBtn" title="고객에게 링크·PDF·이미지로 보내기"><span class="ic" data-ic="share"></span><span class="lbl">보내기</span></button>
+    </div>
+  </header>
+
+  <aside class="side" id="side">
+    <nav class="tabs3" id="steps" aria-label="작업 단계">
+      <button data-step="space"><i>1</i>공간</button>
+      <button data-step="place"><i>2</i>기구</button>
+      <button data-step="floor"><i>3</i>바닥</button>
+    </nav>
+    <div class="panel" id="panel-space" hidden></div>
+    <div class="panel" id="panel-place"></div>
+    <div class="panel" id="panel-floor" hidden></div>
+  </aside>
+
+  <main class="stage" id="stage">
+    <canvas id="c" aria-label="도면 화면"></canvas>
+    <canvas id="c3" aria-label="3D 화면" hidden></canvas>
+    <div id="overlay"><div id="ovBase"></div><div id="ovHandles"></div><div id="ovMarquee" hidden></div></div>
+    <div class="tools float" id="tools"></div>
+    <div class="topmid"><div class="hint float" id="hint" hidden></div><div class="hint float viewer-hint" id="viewerHint" hidden></div></div>
+    <div class="insp float" id="insp" hidden></div>
+    <div class="summary float" id="summary" hidden></div>
+    <div class="bottombar"><div class="hud float" id="hud"></div><div class="layers float" id="layersBox"></div><div class="layers float v3bar" id="v3bar"></div><div class="scalebar float" id="scalebar"><div class="sb-bar"></div><span>1 m</span></div></div>
+    <div class="zoom float" id="zoomBox"></div>
+    <div class="tip" id="tip" hidden></div>
+    <div class="pf-chip" id="pfChip" hidden></div>
+    <div class="v3ov" id="v3ov" hidden><div class="v3ov-card"><div class="spinner"></div><b id="v3ovTxt">3D 모델 불러오는 중…</b><div class="bar"><i id="v3ovBar"></i></div><small>처음 한 번만 오래 걸려요. 다음부터는 바로 떠요.</small></div></div>
+    <div class="quote-sheet" id="quoteSheet" hidden></div>
+    <div class="busy" id="busy" hidden><div class="busy-card"><div class="spinner"></div><b id="busyText">만드는 중…</b><div class="bar"><i id="busyBar"></i></div></div></div>
+    <div class="toast" id="toast" hidden></div>
+  </main>
+</div>
+<div class="pop" id="pop" hidden></div>
+<div class="modal" id="modal" hidden><div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal-h"><h2 id="modalTitle"></h2><button class="icon-btn ghost sm" data-close aria-label="닫기"></button></div><div class="modal-b" id="modalBody"></div><div class="modal-f" id="modalFoot"></div></div></div>
+<div class="guide" id="guide" hidden></div>
+<input type="file" id="fileOpen" accept=".gofit,.json" hidden>
+
+<script src="js/core.js"></script>
+<script src="js/catalog.js"></script>
+<script src="js/media.js"></script>
+<script src="vendor/three.min.js"></script>
+<script src="vendor/OrbitControls.js"></script>
+<script src="js/m3-parts.js"></script>
+<script src="js/m3-models-a.js"></script>
+<script src="js/m3-models-b.js"></script>
+<script src="js/render3d.js"></script>
+<script src="js/symbols.js"></script>
+<script src="js/plan.js"></script>
+<script src="js/checks.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/overlay.js"></script>
+<script src="js/tools.js"></script>
+<script src="js/panels.js"></script>
+<script src="js/export.js"></script>
+<script src="js/viewer3d.js"></script>
+<script src="js/view3d.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
