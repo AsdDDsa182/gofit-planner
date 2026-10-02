@@ -57,7 +57,7 @@ OV.syncHandles = () => {
     if (room) for (let i = 0; i < n; i++) { const a = G.interior(P, i); if ([90, 180, 270].some(v => Math.abs(a - v) < .3)) continue; const q = angPos(P, i); if (q) hspecs.push({ cls: 'ov ang', html: (Math.round(a * 10) / 10) + '°', pos: q }); }
     const segs = t.open ? n - 1 : n;
     for (let i = 0; i < segs; i++) { const a = P[i], b = P[(i + 1) % n]; hspecs.push({ cls: 'ov hd mid', html: '+', pos: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], h: 'm', i, title: '끌어서 꺾기' }); }
-    for (let i = 0; i < n; i++) hspecs.push({ cls: 'ov hd' + (GP.tools.selV === i ? ' sel' : ''), html: room ? i + 1 : '', pos: P[i], h: 'v', i, title: '끌어서 이동 · 더블클릭 삭제' });
+    for (let i = 0; i < n; i++) hspecs.push({ cls: 'ov hd' + (GP.tools.selV === i || GP.tools.selVs.has(i) ? ' sel' : ''), html: room ? i + 1 : '', pos: P[i], h: 'v', i, title: '끌어서 이동 · Shift+클릭 여러 개 선택 · 더블클릭 삭제' });
   }
   const its = u.selItems();
   if (its.length === 1 && u.sel.length === 1 && u.tool === 'select') {

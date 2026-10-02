@@ -1,5 +1,5 @@
 /* GoFit Planner — offline cache. Bump CACHE when app files change. 3D models are cached separately on first view. */
-const CACHE = 'gofit-planner-v3.3.0';
+const CACHE = 'gofit-planner-v3.3.1';
 const MODELS = 'gofit-models-v2';   // v1 held the DRAX files (about 130 MB): dropped on activate
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',

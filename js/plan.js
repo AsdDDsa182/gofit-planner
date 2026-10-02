@@ -270,7 +270,7 @@ function drawWalls(x, L, px, sel, hov, scr) {
     const e = G.edge(P, i); const ops = L.openings.filter(o => o.host === 'room' && o.seg === i);
     const inner = t => [a[0] + e.dx * t, a[1] + e.dz * t];
     const outer = t => t <= 1e-6 ? O[i] : t >= Ls - 1e-6 ? O[j] : [a[0] + e.dx * t - e.nx * WALL_T, a[1] + e.dz * t - e.nz * WALL_T];
-    const hi = scr && ((GP.OV && GP.OV.hiWall && GP.OV.hiWall.has(i)) || sel.has('wall:' + i));
+    const hi = scr && ((GP.OV && GP.OV.hiWall && GP.OV.hiWall.has(i)) || sel.has('wall:' + i) || (GP.tools && GP.tools.wallSel && GP.tools.wallSel(i)));
     const pieces = wallPieces(Ls, ops);
     for (const [s0, s1] of pieces) { const q = [inner(s0), inner(s1), outer(s1), outer(s0)]; x.beginPath(); q.forEach((p, k) => k ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); if (S._line && !hi) { x.fillStyle = '#FFFFFF'; x.fill(); hatchPoly(x, q, px); x.beginPath(); q.forEach((p, k) => k ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); x.strokeStyle = '#1B1F23'; x.lineWidth = 1.3 * px; x.stroke(); } else { x.fillStyle = hi ? '#2450E0' : '#2B3036'; x.fill(); x.strokeStyle = hi ? '#2450E0' : '#2B3036'; x.lineWidth = .6 * px; x.stroke(); } }
     if (marks[i] === 'mirror') for (const [s0, s1] of pieces) {

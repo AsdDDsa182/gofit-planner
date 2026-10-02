@@ -150,6 +150,7 @@ let drag = null, press = null, draw = null, lastHover = 0, hover = null;
 const pointers = new Map(); let pinch = null;
 tools.cancel = () => {
   if (ui.placing) { ui.placing = null; GP.S.clearGhost(); GP.emit('placing'); }
+  if (tools.selVs) tools.selVs.clear();
   draw = null; drag = null; press = null; hover = null; tools.preview = null; if (GP.S.canvas) GP.S.canvas.style.cursor = ''; $('#ovMarquee').hidden = true; GP.emit('overlay'); ui.setHint(); GP.S.invalidate();
 };
 tools.getDraw = () => draw; tools.getHover = () => hover;
@@ -262,6 +263,7 @@ function onUp(e) {
   if (press && press.placing) { press = null; if (e.type !== 'pointercancel') placeGhost(e.shiftKey); return; }
   if (press && press.marquee) {
     $('#ovMarquee').hidden = true; const r = S.canvas.getBoundingClientRect(); const x0 = Math.min(press.x, e.clientX) - r.left, x1 = Math.max(press.x, e.clientX) - r.left, y0 = Math.min(press.y, e.clientY) - r.top, y1 = Math.max(press.y, e.clientY) - r.top;
+    if (press.verts) { const tg = tools.polyTarget(); press = null; if (tg) { tg.pts.forEach((p, k) => { const [sx, sy] = S.toScreen(p[0], 0, p[1]); if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) tools.selVs.add(k); }); tools.selV = tools.selVs.size ? [...tools.selVs][tools.selVs.size - 1] : -1; GP.emit('overlay'); S.invalidate(); } return; }
     const hits = GP.L().items.filter(it => { const [sx, sy] = S.toScreen(it.x, 0, it.z); return sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1; }).map(it => ({ k: 'item', id: it.uid }));
     press = null; if (hits.length) ui.select(hits, true); return;
   }
@@ -310,6 +312,22 @@ function dragMove(e) {
 /* ---------------- tool-specific handlers ---------------- */
 function toolDown(t, e, fp) {
   const S = GP.S, L = GP.L();
+  if (t === 'vertex') {
+    const P = L.room.pts, n = P.length, tol = S.mpp() * 9; let best = -1, bd = Infinity;
+    for (let i = 0; i < n; i++) { const c = G.closest(fp.x, fp.z, P[i], P[(i + 1) % n]); if (c.d < bd) { bd = c.d; best = i; } }
+    const target = tools.polyTarget();
+    if (best >= 0 && bd < tol) {
+      const a = best, b = (best + 1) % n, Sv = tools.selVs;
+      if (e.shiftKey) { if (Sv.has(a) && Sv.has(b)) { Sv.delete(a); Sv.delete(b); tools.selV = Sv.size ? [...Sv][Sv.size - 1] : -1; GP.emit('overlay'); S.invalidate(); return true; } Sv.add(a); Sv.add(b); }
+      else if (!(Sv.has(a) && Sv.has(b))) { Sv.clear(); Sv.add(a); Sv.add(b); }
+      tools.selV = b; const ed = G.edge(P, a);
+      startMulti(target, a, fp, Sv.size === 2 ? { nx: ed.nx, nz: ed.nz } : null); try { canvas().setPointerCapture(e.pointerId); } catch (_) { }
+      GP.emit('overlay'); S.invalidate(); return true;
+    }
+    if (e.shiftKey) { press = { marquee: true, verts: true, x: e.clientX, y: e.clientY }; return true; }
+    if (tools.selVs.size) { selOnly(-1); GP.emit('overlay'); S.invalidate(); }
+    press = { pan: true, x: e.clientX, y: e.clientY, moved: true }; return true;
+  }
   if (t === 'part') {
     const p = snapPoint(fp.x, fp.z, { alt: e.altKey, prev: draw && draw.pts[draw.pts.length - 1], shift: e.shiftKey });
     if (!draw) draw = { tool: 'part', pts: [p], cur: p, num: '' };
@@ -377,6 +395,9 @@ tools.key = (e) => {
   }
   if (draw && draw.tool === 'matPoly') { if (k === 'Enter') { finishDraw(); return true; } if (k === 'Backspace') { if (draw.pts.length > 1) draw.pts.pop(); else draw = null; GP.emit('overlay'); e.preventDefault(); return true; } }
   if (k === 'Escape' && (draw || ui.placing)) { tools.cancel(); if (ui.tool !== 'select' && !draw) ui.setTool('select'); return true; }
+  if (k === 'Escape' && tools.selVs.size > 1) { selOnly(-1); GP.emit('overlay'); GP.S.invalidate(); return true; }
+  const nv = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[k], tg = nv && tools.polyTarget();
+  if (nv && tg && tools.selVs.size && (ui.tool === 'vertex' || tools.selVs.size > 1)) { const st = e.shiftKey ? .5 : .05; tools.selVs.forEach(q => { const p = tg.pts[q]; if (p) tg.pts[q] = [U.r3(p[0] + nv[0] * st), U.r3(p[1] + nv[1] * st)]; }); e.preventDefault(); GP.changed(tg.kind === 'room' ? 'room' : tg.kind); return true; }
   if (ui.placing && (k === 'r' || k === 'R')) { tools.rotateGhost(e.shiftKey ? -90 : 90); return true; }
   if (ui.placing && (k === 'q' || k === 'e')) { tools.rotateGhost(k === 'e' ? 15 : -15); return true; }
   return false;
@@ -385,11 +406,27 @@ tools.key = (e) => {
 /* ---------------- overlay handle interactions (vertices, resize, rotate, opening width) ---------------- */
 let hd = null;
 const cap = (el, e) => { try { el.setPointerCapture(e.pointerId); } catch (_) { } };
+/* several vertices can be selected (Shift + click, Shift + drag a box, or a wall = its two ends) and move together */
+tools.selVs = new Set();
+const selOnly = (i) => { tools.selVs.clear(); if (i >= 0) tools.selVs.add(i); tools.selV = i; };
+GP.on('selection', () => { if (ui.tool !== 'vertex') { tools.selVs.clear(); tools.selV = -1; } });   // another mat / zone / partition: its own vertices
+/* a wall is highlighted when both of its ends are selected (wall-shape tool) */
+tools.wallSel = (i) => { if (ui.tool !== 'vertex' || tools.selVs.size < 2) return false; const n = GP.L().room.pts.length; return tools.selVs.has(i) && tools.selVs.has((i + 1) % n); };
+function startMulti(target, i, fp, wall, fromHandle) {
+  const idx = [...tools.selVs]; hd = { type: 'vs', target, i, idx, start: idx.map(k => target.pts[k].slice()), fx: fp.x, fz: fp.z, moved: false, wall, fromHandle };
+}
 tools.handleDown = (e, el) => {
   e.preventDefault(); e.stopPropagation(); const h = el.dataset.h;
   const target = tools.polyTarget();
-  if (h === 'v' && target) { const i = +el.dataset.i; hd = { type: 'v', target, i, moved: false }; tools.selV = i; cap(el, e); GP.emit('overlay'); return; }
-  if (h === 'm' && target) { const i = +el.dataset.i, pts = target.pts, n = pts.length, a = pts[i], b = pts[(i + 1) % n]; pts.splice(i + 1, 0, [U.r3((a[0] + b[0]) / 2), U.r3((a[1] + b[1]) / 2)]); tools.selV = i + 1; GP.S.dataChanged(); hd = { type: 'v', target, i: i + 1, moved: true }; GP.emit('overlay'); return; }
+  if (h === 'v' && target) {
+    const i = +el.dataset.i, S = tools.selVs;
+    if (e.shiftKey) { if (S.has(i)) { S.delete(i); tools.selV = S.size ? [...S][S.size - 1] : -1; GP.emit('overlay'); GP.S.invalidate(); return; } S.add(i); }
+    else if (!S.has(i)) selOnly(i);
+    tools.selV = i; cap(el, e);
+    if (S.size > 1) startMulti(target, i, GP.S.floorAt(e.clientX, e.clientY), null, true); else hd = { type: 'v', target, i, moved: false };
+    GP.emit('overlay'); GP.S.invalidate(); return;
+  }
+  if (h === 'm' && target) { const i = +el.dataset.i, pts = target.pts, n = pts.length, a = pts[i], b = pts[(i + 1) % n]; pts.splice(i + 1, 0, [U.r3((a[0] + b[0]) / 2), U.r3((a[1] + b[1]) / 2)]); selOnly(i + 1); GP.S.dataChanged(); hd = { type: 'v', target, i: i + 1, moved: true }; GP.emit('overlay'); return; }
   const it = ui.selItems()[0];
   if (h === 'rs' && it) { const [cx, cz] = [+el.dataset.cx, +el.dataset.cz]; const d = GP.dims(it); const opp = G.l2w(it.x, it.z, it.rot, -cx * d.w / 2, -cz * d.d / 2); hd = { type: 'rs', it, cx, cz, opp }; cap(el, e); return; }
   if (h === 'rot' && it) { hd = { type: 'rot', it }; cap(el, e); return; }
@@ -401,6 +438,14 @@ tools.handleMove = (e) => {
     const P = hd.target.pts, n = P.length; let x = fp.x, z = fp.z;
     if (!e.altKey) { const nb = hd.target.open ? [hd.i - 1, hd.i + 1].filter(j => j >= 0 && j < n) : [(hd.i - 1 + n) % n, (hd.i + 1) % n]; const sp = snapPoint(x, z, { prev: nb.length ? P[nb[0]] : null }); x = sp[0]; z = sp[1]; const tol = S.mpp() * 10; for (const j of nb) { if (Math.abs(x - P[j][0]) < tol) x = P[j][0]; if (Math.abs(z - P[j][1]) < tol) z = P[j][1]; } }
     P[hd.i] = [U.r3(x), U.r3(z)]; hd.moved = true; S.dataChanged(); GP.emit('overlay'); return;
+  }
+  if (hd.type === 'vs') {
+    let dx = fp.x - hd.fx, dz = fp.z - hd.fz;
+    if (hd.wall) { const w = hd.wall, d = dx * w.nx + dz * w.nz; dx = w.nx * d; dz = w.nz * d; if (!e.altKey) { const ds = U.snap(d, .05); dx = w.nx * ds; dz = w.nz * ds; } }
+    else if (!e.altKey) { dx = U.snap(dx, .05); dz = U.snap(dz, .05); }
+    hd.idx.forEach((k, q) => { hd.target.pts[k] = [U.r3(hd.start[q][0] + dx), U.r3(hd.start[q][1] + dz)]; });
+    hd.moved = true; S.dataChanged(); GP.emit('overlay');
+    GP.ui.setHint(`${hd.wall ? '벽' : `꼭짓점 ${hd.idx.length}개`} 이동 <b>${hd.wall ? U.cm(Math.abs(dx * hd.wall.nx + dz * hd.wall.nz)) + 'cm' : `${U.cm(Math.hypot(dx, dz))}cm`}</b> · <kbd>Alt</kbd> 자유롭게`); return;
   }
   if (hd.type === 'rs') {
     const it = hd.it; const [lx, lz] = G.w2l(hd.opp[0], hd.opp[1], it.rot, fp.x, fp.z); let w = Math.abs(lx), d = Math.abs(lz); if (!e.altKey) { w = U.snap(w, .05); d = U.snap(d, .05); } w = Math.max(.1, w); d = Math.max(.03, d);
@@ -416,7 +461,7 @@ tools.handleMove = (e) => {
 };
 tools.handleUp = () => {
   if (!hd) return; const h = hd; hd = null;
-  if (h.moved) { if (h.type === 'v') { const k = h.target.kind; if (k === 'mat') tools.snapMat(h.target.obj); GP.changed(k === 'room' ? 'room' : k); } else if (h.type === 'oe') { GP.changed('openings'); ui.setHint(); } else GP.changed('items'); }
+  if (h.moved) { if (h.type === 'v' || h.type === 'vs') { const k = h.target.kind; if (k === 'mat') tools.snapMat(h.target.obj); GP.changed(k === 'room' ? 'room' : k); if (h.type === 'vs') ui.setHint(); } else if (h.type === 'oe') { GP.changed('openings'); ui.setHint(); } else GP.changed('items'); }
   ui.renderInspector(); GP.emit('overlay');
 };
 tools.polyTarget = () => {
@@ -428,7 +473,12 @@ tools.polyTarget = () => {
   if (so.k === 'part') return { kind: 'part', obj: so.obj, pts: so.obj.pts, open: true };
   return null;
 };
-tools.deleteVertex = (i) => { const t = tools.polyTarget(); if (!t) return; const min = t.open ? 2 : 3; if (t.pts.length <= min) { GP.toast(`꼭짓점은 최소 ${min}개가 필요해요`, { bad: true }); return; } t.pts.splice(i, 1); tools.selV = -1; GP.changed(t.kind === 'room' ? 'room' : t.kind); };
+tools.deleteVertex = (i) => {
+  const t = tools.polyTarget(); if (!t) return; const min = t.open ? 2 : 3;
+  const del = (tools.selVs.size > 1 && tools.selVs.has(i) ? [...tools.selVs] : [i]).sort((a, b) => b - a);
+  if (t.pts.length - del.length < min) { GP.toast(`꼭짓점은 최소 ${min}개가 필요해요`, { bad: true }); return; }
+  del.forEach(k => t.pts.splice(k, 1)); selOnly(-1); GP.changed(t.kind === 'room' ? 'room' : t.kind);
+};
 tools.setWallLength = (i, Lnew) => {
   const P = GP.L().room.pts, e = G.edge(P, i), delta = Lnew - e.L, pb = e.b[0] * e.dx + e.b[1] * e.dz;
   P.forEach((p, k) => { if (k !== i && (p[0] * e.dx + p[1] * e.dz) >= pb - 1e-3) { p[0] = U.r3(p[0] + e.dx * delta); p[1] = U.r3(p[1] + e.dz * delta); } });
