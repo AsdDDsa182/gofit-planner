@@ -76,9 +76,9 @@ calc.matSummary = () => {
 calc.partLength = () => { const out = {}; for (const p of GP.L().partitions) { let l = 0; for (let i = 0; i < p.pts.length - 1; i++) l += G.len(p.pts[i], p.pts[i + 1]); out[p.kind || 'wall'] = (out[p.kind || 'wall'] || 0) + l; } return out; };
 
 /* ---------- raster helpers ---------- */
-function makeGrid(cellHint) {
+function makeGrid(cellHint, pad) {
   const L = GP.L(), P = L.room.pts, b = G.bounds(P); const area = b.sx * b.sz; const cell = Math.max(cellHint || .05, Math.sqrt(area / 160000));
-  const W = Math.ceil(b.sx / cell) + 2, H = Math.ceil(b.sz / cell) + 2, x0 = b.minX - cell, z0 = b.minZ - cell;
+  const m = Math.max(1, Math.ceil((pad || 0) / cell)), W = Math.ceil(b.sx / cell) + 2 * m, H = Math.ceil(b.sz / cell) + 2 * m, x0 = b.minX - m * cell, z0 = b.minZ - m * cell;
   const inside = new Uint8Array(W * H);
   for (let j = 0; j < H; j++) { const z = z0 + (j + .5) * cell; const xs = []; for (let i = 0, k = P.length - 1; i < P.length; k = i++) { const zi = P[i][1], zk = P[k][1]; if ((zi > z) !== (zk > z)) xs.push(P[i][0] + (z - zi) * (P[k][0] - P[i][0]) / (zk - zi)); } xs.sort((a, c) => a - c); for (let q = 0; q + 1 < xs.length; q += 2) { const a = Math.max(0, Math.ceil((xs[q] - x0) / cell - .5)), c = Math.min(W - 1, Math.floor((xs[q + 1] - x0) / cell - .5)); for (let i = a; i <= c; i++) inside[j * W + i] = 1; } }
   return { W, H, x0, z0, cell, inside };
@@ -180,10 +180,99 @@ checks.full = () => {
     const dw = Math.max(...doors.map(o => o.w)), dh = Math.max(...doors.map(o => o.h ?? 2.1));
     for (const f of F) { if (f.d.flat || f.d.wall || f.d.fit === 'actual' && ['column', 'platform', 'turf', 'stretchzone'].includes(f.it.type) || f.it.type === 'column') continue; if (!GP.EQUIP_CATS.has(f.d.cat)) continue; const d = GP.dims(f.it); const s = [d.w, d.d, d.h].sort((a, b) => a - b); if (s[0] > dw - .02 || s[1] > dh - .02) push('info', 'door', `${U.jo(nameOf(f.it), '은', '는')} 출입문(${Math.round(dw * 100)}×${Math.round(dh * 100)}cm)보다 커서 분해해서 들여와야 해요`, [f.it.uid], [f.it.x, f.it.z]); }
   }
+  // ceiling height: the machine itself, and the room needed above it while in use (runner on a treadmill, top step of a stepmill)
+  const CH = st.wallH || 2.8, byType = new Map();
+  for (const f of F) {
+    if (f.mount !== 'floor' || f.d.flat || f.d.hFromWall) continue; const d = GP.dims(f.it), top = f.v[1], m3 = (GP.M3CAT && GP.M3CAT[f.it.type]) || {};   // columns etc. reach the ceiling by design
+    const need = m3.uh ? m3.uh + (d.h - (f.d.h || d.h)) + (top - d.h) : 0;
+    const sev = top > CH - .01 ? 'err' : need > CH + .005 ? 'warn' : ''; if (!sev) continue;
+    const k = f.it.type + '|' + sev, g = byType.get(k) || { f, sev, top, need, uids: [] }; g.uids.push(f.it.uid); g.top = Math.max(g.top, top); g.need = Math.max(g.need, need); byType.set(k, g);
+  }
+  for (const g of byType.values()) {
+    const n = g.uids.length, nm = nameOf(g.f.it) + (n > 1 ? ` ${n}대` : '');
+    if (g.sev === 'err') push('err', 'ceil', `${U.jo(nm, '이', '가')} 천장보다 높아요 (기구 ${U.cm(g.top)}cm · 천장 ${U.cm(CH)}cm)`, g.uids, [g.f.it.x, g.f.it.z]);
+    else push('warn', 'ceil', `${U.jo(nm, '은', '는')} 쓸 때 천장이 ${U.r2(g.need)}m 이상 필요해요 (지금 ${CH}m)`, g.uids, [g.f.it.x, g.f.it.z]);
+  }
+  // power: machines that need a socket reach the nearest outlet with their cord; total load and circuits
+  const pow = L.items.map(it => ({ it, pw: (GP.getDef(it.type) || {}).pw || 0 })).filter(q => q.pw > 0);
+  checks.power = null;
+  if (pow.length) {
+    const outlets = L.items.filter(it => it.type === 'outlet'), cord = lib.defaults.cordLen || 3;
+    const mach = pow.filter(q => q.pw >= 300 && GP.mountOf(q.it) === 'floor');
+    if (mach.length && !outlets.length) push('info', 'power', `전원이 필요한 기구가 ${mach.length}대 있어요. 시설·설비의 콘센트를 벽에 놓으면 전원선(${cord}m)이 닿는지 점검해요`, mach.map(q => q.it.uid));
+    else for (const q of mach) {
+      const C = GP.footprint(q.it); let best = Infinity;
+      for (const o of outlets) for (let i = 0; i < C.length; i++) best = Math.min(best, G.closest(o.x, o.z, C[i], C[(i + 1) % C.length]).d);
+      if (best > cord) push('warn', 'power', `${nameOf(q.it)}에서 가장 가까운 콘센트까지 ${U.r2(best)}m · 전원선(${cord}m)이 닿지 않아요`, [q.it.uid], [q.it.x, q.it.z]);
+    }
+    const kw = pow.reduce((s, q) => s + q.pw, 0) / 1000, ded = pow.filter(q => q.pw >= 2000).length, rest = pow.filter(q => q.pw < 2000).reduce((s, q) => s + q.pw, 0);
+    checks.power = { kw, ded, circuits: ded + Math.ceil(rest / 3000) };
+    if (mach.length) push('info', 'powerSum', `전기: 기구·설비 합계 약 ${U.r2(kw)}kW · 권장 회로 ${checks.power.circuits}개 (큰 기구 ${ded}대는 전용 회로). 정확한 용량은 전기 기사와 확인하세요`, []);
+  }
+  // emergency exit: every machine reachable from a door through a passage of the minimum width; the longest way out
+  const E = checks.egress = calc.egress(lib.defaults.aisleMin || .9);
+  if (E) {
+    if (!E.doors) push('warn', 'exit', '출입문이 없어요. 문·창문 도구로 출입문을 넣으면 비상 동선을 점검해요');
+    else {
+      if (E.blocked.length) push('err', 'exit', `출입문 앞을 막고 있어요: ${E.blocked.map(nameOf).join(', ')}`, E.blocked.map(it => it.uid), [E.blocked[0].x, E.blocked[0].z]);
+      if (E.open && E.cut.length) push('warn', 'exit', `${E.cut.length}대는 출입문까지 ${Math.round((lib.defaults.aisleMin || .9) * 100)}cm 이상 통로가 이어지지 않아요: ${E.cut.slice(0, 4).map(nameOf).join(', ')}${E.cut.length > 4 ? ' 등' : ''}`, E.cut.map(it => it.uid), [E.cut[0].x, E.cut[0].z]);
+      if (E.far > 30) push('warn', 'exit', `가장 먼 곳에서 출입문까지 약 ${Math.round(E.far)}m예요 (30m 이내 권장)`, [], E.farAt);
+    }
+  }
   // narrow aisles
   const A = checks.aisle = calc.aisle(lib.defaults.aisleMin || .9);
   if (A && A.comps.length) push('warn', 'aisle', `좁은 통로 ${A.comps.length}곳 (기준 ${Math.round((lib.defaults.aisleMin || .9) * 100)}cm)`, [], [A.comps[0].x, A.comps[0].z]);
   checks.list = list; GP.emit('checks', list); return list;
+};
+
+/* ---------- emergency exit: passages at least minW wide from the doors (room doors are exits; doors in partitions let people through).
+   Each exit gets a 1.2 m "porch" outside it, so the door frame narrows the way out exactly as much as it does in reality. ---------- */
+calc.egress = (minW) => {
+  const L = GP.L(), P = L.room.pts; if (P.length < 3) return null;
+  const exits = L.openings.filter(o => o.kind !== 'window' && o.host === 'room');
+  const gr = makeGrid(.1, 1.5), free = new Uint8Array(gr.inside), items = [], W = gr.W, c = gr.cell;
+  for (const it of L.items) { const def = GP.getDef(it.type); if (!def || def.flat || def.wall || GP.mountOf(it) !== 'floor') continue; stampPoly(gr, free, GP.footprint(it), 0); items.push(it); }
+  for (const p of L.partitions) for (let i = 0; i < p.pts.length - 1; i++) {
+    const a = p.pts[i], b = p.pts[i + 1], s = G.segInfo(a, b);
+    const gaps = L.openings.filter(o => o.host === p.id && o.seg === i && o.kind !== 'window').map(o => GP.openingSpan(o)).filter(Boolean).sort((u, v) => u.s0 - v.s0);
+    const seg = (u, v) => { if (v - u > .01) stampSeg(gr, free, [a[0] + s.dx * u, a[1] + s.dz * u], [a[0] + s.dx * v, a[1] + s.dz * v], (p.thick || .1) / 2, 0); };
+    let t0 = 0; for (const g of gaps) { seg(t0, g.s0); t0 = g.s1; } seg(t0, s.L);
+  }
+  const porch = exits.map(o => { const hs = GP.hostSeg(o); if (!hs) return null; const sp = GP.openingSpan(o, hs), at = (u, d) => [hs.a[0] + hs.dx * u + hs.nx * d, hs.a[1] + hs.dz * u + hs.nz * d]; return { o, hs, sp, at, poly: [at(sp.s0, .02), at(sp.s1, .02), at(sp.s1, -1.2), at(sp.s0, -1.2)] }; }).filter(Boolean);
+  for (const q of porch) stampPoly(gr, free, q.poly, 1);
+  const d1 = distField(gr, free), core = new Uint8Array(W * gr.H);
+  for (let k = 0; k < core.length; k++) core[k] = free[k] && d1[k] >= minW / 2 - 1e-6 ? 1 : 0;
+  const cellOf = (x, z) => { const i = Math.floor((x - gr.x0) / c), j = Math.floor((z - gr.z0) / c); return i < 0 || j < 0 || i >= W || j >= gr.H ? -1 : j * W + i; };
+  const nb = [[1, 0, c], [-1, 0, c], [0, 1, c], [0, -1, c], [1, 1, c * Math.SQRT2], [1, -1, c * Math.SQRT2], [-1, 1, c * Math.SQRT2], [-1, -1, c * Math.SQRT2]];
+  // shortest walking distance over 8 neighbours from the given start cells (a few thousand cells: a relaxing queue is enough)
+  const flood = (seeds, limit) => {
+    const dist = new Float32Array(W * gr.H).fill(Infinity), q = []; for (const k of seeds) { dist[k] = 0; q.push(k); }
+    for (let h = 0; h < q.length; h++) { const k = q[h], i = k % W, j = (k / W) | 0; for (const [di, dj, w] of nb) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= W || jj >= gr.H) continue; const kk = jj * W + ii, nd = dist[k] + w; if (!core[kk] || nd > limit || nd >= dist[kk] - 1e-6) continue; dist[kk] = nd; q.push(kk); } }
+    return dist;
+  };
+  // start cells: the porch outside each door; a door is blocked when its flood cannot get 0.8 m into the room
+  const seedsOf = q => { const out = []; for (let u = q.sp.s0; u <= q.sp.s1 + 1e-6; u += c / 2) for (let d = -1.15; d <= -.6; d += c / 2) { const [x, z] = q.at(u, d), k = cellOf(x, z); if (k >= 0 && core[k]) out.push(k); } return [...new Set(out)]; };
+  const blocked = new Set(), seeds = []; let open = 0;
+  for (const q of porch) {
+    const sd = seedsOf(q), dl = sd.length ? flood(sd, 3) : null; let ok = false;
+    if (dl) for (let u = q.sp.s0; u <= q.sp.s1 + 1e-6 && !ok; u += c / 2) for (let d = .8; d <= 1.6; d += c / 2) { const [x, z] = q.at(u, d), k = cellOf(x, z); if (k >= 0 && dl[k] < Infinity) { ok = true; break; } }
+    if (ok) { open++; seeds.push(...sd); continue; }
+    const [x, z] = q.at(q.sp.c, .6); for (const it of items) { const C = GP.footprint(it); let dm = G.pip(x, z, C) ? 0 : Infinity; for (let i = 0; i < C.length; i++) dm = Math.min(dm, G.closest(x, z, C[i], C[(i + 1) % C.length]).d); if (dm < .9) blocked.add(it); }
+  }
+  const dist = flood(seeds, Infinity);
+  // each machine needs a reached passage cell around it (within its use space, at least 0.9 m)
+  const cut = [];
+  if (open) for (const it of items) {
+    if (blocked.has(it)) continue; const d = GP.dims(it), cl = (GP.getDef(it.type) || {}).cl || {}; let ok = false;
+    const ex = Math.max(.9, cl.f || 0, cl.b || 0, cl.l || 0, cl.r || 0) + .1, R = G.rectPts(it.x, it.z, it.rot, -d.w / 2 - ex, d.w / 2 + ex, -d.d / 2 - ex, d.d / 2 + ex), b = G.bounds(R);
+    for (let z = b.minZ; z <= b.maxZ && !ok; z += c) for (let x = b.minX; x <= b.maxX; x += c) { const k = cellOf(x, z); if (k >= 0 && dist[k] < Infinity && G.pip(x, z, R)) { ok = true; break; } }
+    if (!ok) cut.push(it);
+  }
+  // the longest way out (inside the room), and its route: walk downhill to a door
+  let far = 0, farK = -1; for (let k = 0; k < dist.length; k++) if (dist[k] < Infinity && dist[k] > far && gr.inside[k]) { far = dist[k]; farK = k; }
+  const route = []; let k = farK;
+  while (k >= 0 && route.length < 4000) { const i = k % W, j = (k / W) | 0; route.push([gr.x0 + (i + .5) * c, gr.z0 + (j + .5) * c]); if (dist[k] === 0) break; let bk = -1, bd = dist[k]; for (const [di, dj] of nb) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= W || jj >= gr.H) continue; const kk = jj * W + ii; if (dist[kk] < bd - 1e-6) { bd = dist[kk]; bk = kk; } } k = bk; }
+  return { doors: exits.length, open, blocked: [...blocked], cut, far: Math.max(0, far - 1), farAt: farK >= 0 ? route[0] : null, route };
 };
 
 /* ---------- narrow aisle map ---------- */

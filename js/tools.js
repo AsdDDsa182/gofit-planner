@@ -158,13 +158,13 @@ const canvas = () => GP.S.canvas;
 
 /* ---------------- placing (catalog / sets / paste) ---------------- */
 tools.startPlacing = (list, o) => {
-  if (GP.V3 && GP.V3.on) GP.V3.show(false);
   tools.cancel(); if (ui.step !== 'place') ui.setStep('place'); if (ui.tool !== 'select') ui.setTool('select'); ui.clearSel();
   ui.placing = { list: list.map(q => Object.assign({ rel: [0, 0, 0] }, q)), rot: 0, relK: 0, x: null, z: null, keep: !!(o && o.keep), label: o && o.label };
   GP.S.setGhost(ui.placing.list.map(q => q.it)); canvas().style.cursor = 'crosshair'; ui.setHint(); GP.emit('placing');
 };
-function ghostUpdate(cx, cy, alt) {
-  const pl = ui.placing, S = GP.S; if (!pl || !S.ghost) return; const fp = S.floorAt(cx, cy);
+function ghostUpdate(cx, cy, alt) { if (ui.placing && GP.S.ghost) ghostAt(GP.S.floorAt(cx, cy), alt); }
+function ghostAt(fp, alt) {
+  const pl = ui.placing, S = GP.S; if (!pl || !S.ghost) return;
   const single = pl.list.length === 1; let ax = fp.x, az = fp.z, rot = pl.rot;
   if (single) { const it = pl.list[0].it; const d = GP.dims(it); const r = placeSnap(fp.x, fp.z, pl.rot, d.w, d.d, alt, pl.relK, GP.mountOf(it)); ax = r.x; az = r.z; rot = r.rot; }
   else if (!alt) { ax = U.snap(ax, .05); az = U.snap(az, .05); }
@@ -181,7 +181,8 @@ function placeGhost(keep) {
   if (!keep && !pl.keep) { tools.cancel(); ui.select(added.map(it => ({ k: 'item', id: it.uid }))); }
   GP.panels && GP.panels.pushRecent(added[0].type);
 }
-tools.rotateGhost = (delta) => { const pl = ui.placing; if (!pl) return; pl.rot = U.normRot(pl.rot + delta); if (Math.abs(delta) % 90 === 0) pl.relK = ((pl.relK - Math.round(delta / 90)) % 4 + 4) % 4; if (tools.lastMove) ghostUpdate(tools.lastMove[0], tools.lastMove[1], false); };
+tools.rotateGhost = (delta) => { const pl = ui.placing; if (!pl) return; pl.rot = U.normRot(pl.rot + delta); if (Math.abs(delta) % 90 === 0) pl.relK = ((pl.relK - Math.round(delta / 90)) % 4 + 4) % 4; if (GP.V3 && GP.V3.on) GP.V3.ghostRefresh(); else if (tools.lastMove) ghostUpdate(tools.lastMove[0], tools.lastMove[1], false); };
+tools.ghostAt = ghostAt; tools.placeGhost = placeGhost;
 
 /* ---------------- hover: highlight + price tooltip ---------------- */
 tools.hoverAt = (e) => {
@@ -284,17 +285,19 @@ function onDbl(e) {
   if (GP.viewOnly || ui.placing || ui.tool !== 'select') return;
   const fp = GP.S.floorAt(e.clientX, e.clientY); const uid = GP.S.itemAt(fp.x, fp.z); if (uid) { const it = GP.findItem(uid); GP.M3.open(it); }
 }
+/* move the dragged selection to floor point fp: one item snaps (walls, 5 cm grid), several move together on the grid */
+function moveItems(d, fp, alt) {
+  const anchor = GP.findItem(d.anchor); if (!anchor) return;
+  if (d.start.length === 1) { const dm = GP.dims(anchor); const r = placeSnap(fp.x + d.ox, fp.z + d.oz, anchor.rot, dm.w, dm.d, alt, d.relK, GP.mountOf(anchor)); anchor.x = r.x; anchor.z = r.z; anchor.rot = r.rot; }
+  else { let dx = fp.x - d.fx, dz = fp.z - d.fz; if (!alt) { const a0 = d.start.find(s => s.uid === d.anchor); dx = U.snap(a0.x + dx, .05) - a0.x; dz = U.snap(a0.z + dz, .05) - a0.z; } d.start.forEach(s => { const it = GP.findItem(s.uid); if (it) { it.x = U.r3(s.x + dx); it.z = U.r3(s.z + dz); } }); }
+  GP.checks.quick(); ui.updateDistances(); GP.S.invalidate(); GP.emit('overlay'); GP.emit('dragging');
+}
+tools.moveItems = moveItems; tools.relK = it => detectRelK(it);
 function dragMove(e) {
   const S = GP.S; const d = drag;
   if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
   d.moved = true; const fp = S.floorAt(e.clientX, e.clientY);
-  if (d.kind === 'items') {
-    const anchor = GP.findItem(d.anchor); if (!anchor) return;
-    if (d.start.length === 1) { const dm = GP.dims(anchor); const r = placeSnap(fp.x + d.ox, fp.z + d.oz, anchor.rot, dm.w, dm.d, e.altKey, d.relK, GP.mountOf(anchor)); anchor.x = r.x; anchor.z = r.z; anchor.rot = r.rot; }
-    else { let dx = fp.x - d.fx, dz = fp.z - d.fz; if (!e.altKey) { const a0 = d.start.find(s => s.uid === d.anchor); dx = U.snap(a0.x + dx, .05) - a0.x; dz = U.snap(a0.z + dz, .05) - a0.z; } d.start.forEach(s => { const it = GP.findItem(s.uid); if (it) { it.x = U.r3(s.x + dx); it.z = U.r3(s.z + dz); } }); }
-    GP.checks.quick(); ui.updateDistances(); S.invalidate(); GP.emit('overlay'); GP.emit('dragging');
-    return;
-  }
+  if (d.kind === 'items') { moveItems(d, fp, e.altKey); return; }
   let dx = fp.x - d.fx, dz = fp.z - d.fz; if (!e.altKey) { dx = U.snap(dx, .05); dz = U.snap(dz, .05); }
   const orig = JSON.parse(d.snap), o = d.obj;
   if (d.kind === 'opening') { const hs = GP.hostSeg(o); if (!hs) return; const c = G.closest(fp.x, fp.z, hs.a, hs.b); o.t = U.r3(U.clamp(e.altKey ? c.t : U.snap(c.t, .05), o.w / 2, hs.L - o.w / 2)); S.invalidate(); GP.emit('overlay'); return; }

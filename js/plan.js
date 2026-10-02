@@ -37,7 +37,7 @@ GP.hostSeg = (o) => {
 };
 GP.openingSpan = (o, hs) => { hs = hs || GP.hostSeg(o); if (!hs) return null; const w = Math.min(o.w, hs.L - .02), c = U.clamp(o.t, w / 2, hs.L - w / 2); return { w, c, s0: c - w / 2, s1: c + w / 2 }; };
 
-const S = GP.S = { view: '2d', style: (() => { try { return localStorage.getItem('gofit:style') || 'color'; } catch (e) { return 'color'; } })(), layers: { items: true, labels: true, clear: true, mats: true, dims: true, notes: true, zones: true, aisle: false, parts: true }, cam: { x: 6, z: 4, s: 40 }, W: 1, H: 1, dpr: 1 };
+const S = GP.S = { view: '2d', style: (() => { try { return localStorage.getItem('gofit:style') || 'color'; } catch (e) { return 'color'; } })(), layers: { items: true, labels: true, clear: true, mats: true, dims: true, notes: true, zones: true, aisle: false, egress: false, parts: true }, cam: { x: 6, z: 4, s: 40 }, W: 1, H: 1, dpr: 1 };
 S.is2D = () => true;
 const FONT = '"Pretendard","Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif', MONO = 'Consolas,"SFMono-Regular",ui-monospace,monospace';
 S.FONT = FONT; S.MONO = MONO;
@@ -52,7 +52,7 @@ S.fit = (pad) => {
   // keep the plan clear of the floating panels (tools left, summary / inspector right, hint top, layer bar bottom)
   const narrow = S.W < 700, side = id => { const el = document.getElementById(id); return el && !el.hidden ? el.offsetWidth + 16 : 0; };
   const iL = narrow ? 8 : (GP.viewOnly ? 16 : 86), iR = narrow ? 8 : Math.max(16, side('summary'), side('insp')), iT = narrow ? 50 : 56, iB = narrow ? 56 : 64;
-  const aw = Math.max(80, S.W - iL - iR), ah = Math.max(80, S.H - iT - iB);
+  const aw = Math.max(80, S.W - iL - iR), ah = Math.max(80, S.H - iT - iB); S.fitW = S.W;
   S.cam.s = Math.max(4, Math.min(aw / (b.sx + m * 2), ah / (b.sz + m * 2)));
   S.cam.x = b.cx - (iL + aw / 2 - S.W / 2) / S.cam.s; S.cam.z = b.cz - (iT + ah / 2 - S.H / 2) / S.cam.s; S.invalidate(); GP.emit('overlay');
 };
@@ -160,6 +160,21 @@ S.drawPlan = (x, V, o) => {
   for (const it of items) drawItem(x, it, px, conf.has(it.uid) ? 'bad' : sel.has('item:' + it.uid) ? 'sel' : hov && hov.k === 'item' && hov.id === it.uid ? 'hover' : 'normal');
   // walls, partitions, openings
   drawWalls(x, L, px, sel, hov, scr);
+  // emergency exit: the way out from the farthest point (green arrow), machines without a passage to a door (red rings)
+  if (lay.egress && GP.checks && GP.checks.egress) {
+    const E = GP.checks.egress, R = E.route || [];
+    if (R.length > 1) {
+      const pts = R.filter((p, i) => i === 0 || i === R.length - 1 || i % 3 === 0);
+      x.lineJoin = 'round'; x.lineCap = 'round'; path(pts, false); x.strokeStyle = 'rgba(255,255,255,.9)'; x.lineWidth = 7 * px; x.stroke();
+      path(pts, false); x.strokeStyle = '#1E8A5A'; x.lineWidth = 3.5 * px; x.setLineDash([10 * px, 6 * px]); x.stroke(); x.setLineDash([]);
+      const a = pts[pts.length - 1], b = pts[Math.max(0, pts.length - 4)], ang = Math.atan2(a[1] - b[1], a[0] - b[0]), hl = 16 * px;
+      x.beginPath(); x.moveTo(a[0], a[1]); x.lineTo(a[0] - Math.cos(ang - .45) * hl, a[1] - Math.sin(ang - .45) * hl); x.lineTo(a[0] - Math.cos(ang + .45) * hl, a[1] - Math.sin(ang + .45) * hl); x.closePath(); x.fillStyle = '#1E8A5A'; x.fill();
+      x.beginPath(); x.arc(R[0][0], R[0][1], 6 * px, 0, 7); x.fillStyle = '#1E8A5A'; x.fill(); x.lineWidth = 2 * px; x.strokeStyle = '#fff'; x.stroke();
+      SCR(); const [sx, sy] = toS(R[0][0], R[0][1]); x.font = `600 12px ${FONT}`; const tx = `출입문까지 약 ${Math.round(E.far)}m`, tw = x.measureText(tx).width;
+      x.fillStyle = 'rgba(255,255,255,.92)'; x.fillRect(sx + 9, sy - 21, tw + 12, 20); x.fillStyle = '#1E8A5A'; x.fillText(tx, sx + 15, sy - 6); W2S();
+    }
+    for (const it of (E.cut || []).concat(E.blocked || [])) { const d = GP.dims(it); x.beginPath(); x.arc(it.x, it.z, Math.max(d.w, d.d) / 2 + .15, 0, 7); x.strokeStyle = '#D6362B'; x.lineWidth = 2.5 * px; x.setLineDash([6 * px, 4 * px]); x.stroke(); x.setLineDash([]); }
+  }
   // distance lines for the selected item
   if (scr && S.distLines) S.distLines.forEach(l => { x.beginPath(); x.moveTo(l.a[0], l.a[1]); x.lineTo(l.b[0], l.b[1]); x.strokeStyle = l.warn ? '#D6362B' : '#2450E0'; x.lineWidth = 1.2 * px; x.setLineDash([5 * px, 3 * px]); x.stroke(); x.setLineDash([]); });
   // ghost

@@ -108,6 +108,15 @@ function quotePages(R) {
   y += mm(4); const tot = [['소계', U.won(R.sub) + '원']].concat(R.disc ? [['할인', '-' + U.won(R.disc) + '원']] : []).concat([['공급가 (부가세 별도)', U.won(R.supply) + '원'], ['부가세 (10%)', U.won(R.vat) + '원'], ['합계 (부가세 포함)', U.won(R.total) + '원']]);
   tot.forEach(([k, v], i) => { const last = i === tot.length - 1; if (last) { x.strokeStyle = '#1B2024'; x.lineWidth = mm(.4); x.beginPath(); x.moveTo(mm(110), y + mm(1)); x.lineTo(W - mm(12), y + mm(1)); x.stroke(); } x.textAlign = 'left'; x.fillStyle = '#1B2024'; x.font = `${last ? 800 : 500} ${mm(last ? 3.8 : 3.2)}px ${FONT}`; x.fillText(k, mm(112), y + mm(6)); x.textAlign = 'right'; x.font = `${last ? 800 : 600} ${mm(last ? 3.8 : 3.2)}px ${MONO}`; x.fillText(v, W - mm(14), y + mm(6)); y += mm(last ? 9 : 7); });
   if (q.note) { y += mm(4); x.textAlign = 'left'; x.fillStyle = '#48515a'; x.font = `500 ${mm(3)}px ${FONT}`; String(q.note).split('\n').forEach(line => { x.fillText(line, mm(14), y + mm(4)); y += mm(5); }); }
+  // installment / lease estimate (only when the salesperson ticked 「견적서에 넣기」)
+  if (GP.quote.fin(q).show && R.total > 0) {
+    const F = GP.quote.finance(R); if (y > mm(250)) newPage(); y += mm(4);
+    x.fillStyle = '#f7f9f8'; x.strokeStyle = '#d9dedb'; x.lineWidth = mm(.25); x.fillRect(mm(12), y, W - mm(24), mm(19)); x.strokeRect(mm(12), y, W - mm(24), mm(19));
+    x.textAlign = 'left'; x.fillStyle = '#1B2024'; x.font = `700 ${mm(3.1)}px ${FONT}`; x.fillText(`${F.f.kind === 'lease' ? '리스' : '할부'} 예상 월 납입금`, mm(15), y + mm(5.5));
+    x.font = `700 ${mm(3.6)}px ${FONT}`; x.fillText(`월 약 ${U.won(F.mLo)}${F.mHi !== F.mLo ? ` ~ ${U.won(F.mHi)}` : ''}원`, mm(15), y + mm(11));
+    x.font = `500 ${mm(2.8)}px ${FONT}`; x.fillStyle = '#48515a'; x.fillText(fit(x, `${F.n}개월 · 연 ${F.lo}${F.hi !== F.lo ? `~${F.hi}` : ''}% 기준${F.down ? ` · 선수금 ${U.won(F.down)}원` : ''}${F.rv ? ` · 만기 잔존가치 ${U.won(F.rv)}원` : ''}`, W - mm(92)), mm(80), y + mm(11));
+    x.fillStyle = '#6b747c'; x.font = `500 ${mm(2.6)}px ${FONT}`; x.fillText('※ 예상 금액이며, 실제 금리와 조건은 신용도 및 금융사 심사에 따라 달라집니다.', mm(15), y + mm(16.2)); y += mm(21);
+  }
   footer(pg, pages.length + 1, 0); pages.push(pg);
   return pages;
 }
@@ -126,6 +135,21 @@ exp.proposalPdf = async (withPrice) => {
     let pg = page(297, 210, 150); header(pg, '공간 배치 제안서', `${P.client || ''} ${P.variants.length > 1 ? '· ' + P.variants[P.cur].name : ''}`);
     const pw = pg.W - pg.mm(24), ph = pg.H - pg.mm(40); const img = exp.planImage(Math.round(pw), Math.round(ph), {}); pg.x.drawImage(img, pg.mm(12), pg.mm(28)); pg.x.strokeStyle = '#dde1de'; pg.x.strokeRect(pg.mm(12), pg.mm(28), pw, ph); titleBlock(pg.x, pg.W - pg.mm(12), pg.H - pg.mm(12), pg.H / 1000, { sub: '평면도' }); pages.push(pg); GP.busy(true, '3D 장면 그리는 중…', .35);
     if (GP.R3.ok) { try { pg = page(297, 210, 150); header(pg, '3D 공간 이미지', '실제 기구 모델'); const gw = (pg.W - pg.mm(30)) / 2, gh = pg.H - pg.mm(44); const shots = [['persp', '전체 모습'], ['persp2', '반대편에서']]; for (let i = 0; i < shots.length; i++) { const c = await GP.V3.snapshot(Math.round(gw), Math.round(gh), shots[i][0]); if (!c) continue; const gx = pg.mm(12) + i * (gw + pg.mm(6)), gy = pg.mm(30); pg.x.drawImage(c, gx, gy); pg.x.fillStyle = 'rgba(27,32,36,.75)'; pg.x.font = `700 ${pg.mm(3.4)}px ${FONT}`; const t = shots[i][1]; const tw = pg.x.measureText(t).width + pg.mm(5); rr(pg.x, gx + pg.mm(3), gy + pg.mm(3), tw, pg.mm(7), pg.mm(1.5)); pg.x.fill(); pg.x.fillStyle = '#fff'; pg.x.textAlign = 'left'; pg.x.fillText(t, gx + pg.mm(5.5), gy + pg.mm(8)); } pages.push(pg); } catch (e) { console.warn('3D page', e); } }
+    if (GP.R3.ok) { try {
+      const views = GP.V3.eyeViews().slice(0, 3);
+      if (views.length) {
+        GP.busy(true, '공간 둘러보기 이미지 만드는 중…', .45); pg = page(297, 210, 150); header(pg, '공간 둘러보기', '사람 눈높이에서 본 모습');
+        const gap = pg.mm(6), x0 = pg.mm(12), y0 = pg.mm(30), Wt = pg.W - pg.mm(24), Ht = pg.H - pg.mm(44);
+        const boxes = views.length === 1 ? [[x0, y0, Wt, Ht]] : views.length === 2 ? [[x0, y0, (Wt - gap) / 2, Ht], [x0 + (Wt + gap) / 2, y0, (Wt - gap) / 2, Ht]]
+          : [[x0, y0, Wt * .62, Ht], [x0 + Wt * .62 + gap, y0, Wt * .38 - gap, (Ht - gap) / 2], [x0 + Wt * .62 + gap, y0 + (Ht + gap) / 2, Wt * .38 - gap, (Ht - gap) / 2]];
+        for (let i = 0; i < views.length; i++) {
+          const [bx, by, bw, bh] = boxes[i], c = await GP.V3.snapshot(Math.round(bw), Math.round(bh), views[i]); if (!c) continue;
+          pg.x.drawImage(c, bx, by); pg.x.strokeStyle = '#dde1de'; pg.x.strokeRect(bx, by, bw, bh);
+          pg.x.fillStyle = 'rgba(27,32,36,.75)'; pg.x.font = `700 ${pg.mm(3.4)}px ${FONT}`; const t = views[i].label, tw = pg.x.measureText(t).width + pg.mm(5); rr(pg.x, bx + pg.mm(3), by + pg.mm(3), tw, pg.mm(7), pg.mm(1.5)); pg.x.fill(); pg.x.fillStyle = '#fff'; pg.x.textAlign = 'left'; pg.x.fillText(t, bx + pg.mm(5.5), by + pg.mm(8));
+        }
+        pages.push(pg);
+      }
+    } catch (e) { console.warn('eye-level page', e); } }
     GP.busy(true, '목록 정리하는 중…', .6);
     // 3. summary: equipment list, areas, floor
     pg = page(297, 210, 150); header(pg, '기구 목록 · 면적 요약', U.today()); const { x, mm } = pg; let y = mm(34);
@@ -200,12 +224,15 @@ exp.menu = () => {
   <button class="mi" data-act="quote">${IC.pdf}<div><b>견적서 PDF</b><small>부가세 별도 · 부가세 포함</small></div></button>
   <button class="mi" data-act="png">${IC.image}<div><b>도면 이미지 (PNG)</b><small>카톡으로 바로 보내기 좋아요</small></div></button>
   <button class="mi" data-act="png3d">${IC.cube}<div><b>3D 이미지 (PNG)</b><small>3D 보기의 지금 각도 그대로</small></div></button>
+  <hr><div class="ph">다른 담당자에게 (편집 가능)</div>
+  <button class="mi" data-act="gofit">${IC.save}<div><b>프로젝트 파일 (.gofit)</b><small>받은 사람이 고핏 플래너에서 열면 그대로 고칠 수 있어요</small></div></button>
   <hr><div class="ph">기타</div>
   <button class="mi" data-act="print">${IC.pdf}<div><b>인쇄용 도면 PDF</b><small>A3 · A4 · 흑백</small></div></button>
   <button class="mi" data-act="html">${IC.html}<div><b>HTML 파일</b><small>링크 대신 파일로 보낼 때 (예비용)</small></div></button>
   <button class="mi" data-act="dxf">${IC.cad}<div><b>캐드 파일 (DXF)</b><small>오토캐드에서 열기 · mm 단위</small></div></button>`;
   GP.popover($('#shareBtn'), html, (a) => {
     if (a === 'png') exp.imageDialog(); else if (a === 'png3d') exp.image3dDialog(); else if (a === 'proposal') exp.proposalPdf(true); else if (a === 'proposalNP') exp.proposalPdf(false); else if (a === 'quote') exp.quotePdf(); else if (a === 'dxf') exp.dxfExport();
+    else if (a === 'gofit') GP.backup.sendProject();
     else if (a === 'print') exp.printDialog(); else if (a === 'link' || a === 'html') exp.shareDialog(a);
   });
 };
@@ -286,7 +313,7 @@ exp.parseDxf = (txt) => {
 /* ---------------- project file (.gofit) ---------------- */
 exp.saveProjectFile = () => { const p = GP.projectPayload(); U.download(new Blob([JSON.stringify(p)], { type: 'application/json' }), U.fileSafe(p.name) + '.gofit'); GP.toast('프로젝트 파일을 저장했어요. 다른 PC에서 메뉴 → 프로젝트 파일 열기로 불러와요'); };
 exp.openProjectFile = async (f) => {
-  try { const o = JSON.parse(await U.readFile(f, 'text')); const p = GP.validateProject(o); if (!p) throw 0; const ex = await GP.DB.get('projects', p.id); if (ex) { p.id = U.uid('p'); } await GP.app.loadProject(p); await GP.saveProject(); GP.toast(`'${p.name}' 프로젝트를 열었어요`); }
+  try { const o = JSON.parse(await U.readFile(f, 'text')); const p = GP.validateProject(o); if (!p) throw 0; const ex = await GP.DB.get('projects', p.id); if (ex) { p.id = U.uid('p'); p.name += ' (사본)'; } if (GP.P && !GP.viewOnly) await GP.app.saveNow(); await GP.app.loadProject(p); await GP.saveProject(); GP.toast(ex ? `같은 프로젝트가 이미 있어서 '${p.name}'(으)로 열었어요` : `'${p.name}' 프로젝트를 열었어요`); }
   catch (e) { GP.toast('프로젝트 파일을 읽지 못했어요', { bad: true }); }
 };
 $('#shareBtn').addEventListener('click', () => exp.menu());

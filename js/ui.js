@@ -146,7 +146,28 @@ ui.setStep = (step) => {
   $('#side').classList.toggle('scrolled', $('#panel-' + step).scrollTop > 2);
   GP.tools && GP.tools.cancel(); ui.setTool('select');
   ui.renderTools(); GP.emit('step', step); GP.emit('overlay'); GP.S.invalidate();
+  ui.renderGuideBits();
 };
+/* beginner aids: a "next step" button under each step panel, and a card on an empty plan saying what to do first */
+const NEXT = { space: ['place', '다음: 기구 놓기'], place: ['floor', '다음: 바닥 깔기'], floor: ['quote', '다음: 견적서 보기'] };
+ui.renderGuideBits = () => {
+  if (!GP.P) return; const L = GP.L(), st = ui.step, nx = $('#stepNext'), eh = $('#emptyHint');
+  if (nx) {
+    nx.hidden = GP.viewOnly; const n = NEXT[st] || NEXT.place;
+    const info = st === 'space' ? `${U.r2(G.area(L.room.pts) / U.PY)}평 공간` : st === 'place' ? `기구 ${L.items.filter(it => !GP.info.NO_QUOTE.has(it.type)).length}대 놓음` : `고무블럭 ${L.mats.length}구역`;
+    nx.innerHTML = `<small>${info}</small><button class="btn primary" data-next="${n[0]}">${n[1]} →</button>`;
+  }
+  if (eh) {
+    let html = '';
+    if (!GP.viewOnly && !ui.placing && $('#quoteSheet').hidden) {
+      if (st === 'place' && !L.items.length) html = `<b>기구를 놓아 볼까요?</b><span>왼쪽 목록에서 기구를 누른 뒤 도면을 클릭하면 놓여요. 목록에서 도면으로 끌어다 놓아도 돼요.</span>`;
+      else if (st === 'floor' && !L.mats.length) html = `<b>고무블럭을 깔아 볼까요?</b><span>왼쪽 ‘구역 그리기’에서 <b>방 전체</b>를 누르거나, <b>사각형</b>을 고른 뒤 깔 구역을 드래그해요.</span>`;
+    }
+    eh.innerHTML = html; eh.hidden = !html;
+  }
+};
+$('#stepNext') && $('#stepNext').addEventListener('click', e => { const b = e.target.closest('[data-next]'); if (!b) return; const n = b.dataset.next; if (n === 'quote') ui.openQuote(); else ui.setStep(n); $('#side .panel:not([hidden])') && ($('#side .panel:not([hidden])').scrollTop = 0); });
+GP.on('changed', () => ui.renderGuideBits()); GP.on('placing', () => ui.renderGuideBits()); GP.on('project', () => ui.renderGuideBits());
 ui.renderTools = () => {
   const t = $('#tools'); const list = STEP_TOOLS[ui.step] || [];
   t.hidden = !list.length || GP.viewOnly;
@@ -183,9 +204,15 @@ const HINTS = {
   zoneRect: '<b>드래그</b>해서 존(유산소 존 등) 영역을 그려요',
   fillwall: '기구를 줄 세울 <b>벽을 클릭</b>하세요',
   placing: '<b>클릭</b>해서 놓기 · <kbd>R</kbd> 회전 · <kbd>Shift</kbd>+클릭 연속 배치 · <kbd>Alt</kbd> 자석 끄기',
+  select3d: '기구를 <b>눌러 선택</b>한 뒤 <b>끌면</b> 이동 · <kbd>R</kbd> 회전 · <kbd>Del</kbd> 삭제 · 빈 곳을 끌면 화면 회전',
+  other3d: '3D에서는 기구를 배치·이동할 수 있어요 · 벽·문·바닥은 <b>2D 도면</b>에서 고쳐요',
+  placing3d: '원하는 곳을 <b>눌러서</b> 놓기 · <kbd>R</kbd> 회전 · <kbd>Shift</kbd>+클릭 연속 배치',
 };
 ui.setHint = (custom) => {
   const h = $('#hint'); let s = custom;
+  const v3 = GP.V3 && GP.V3.on;
+  if (v3 && GP.V3.walking && !custom) { h.innerHTML = ''; h.hidden = true; return; }     // the walk mode shows its own help
+  if (!s && v3 && !GP.viewOnly) s = ui.placing ? HINTS.placing3d : ui.step === 'place' ? HINTS.select3d : HINTS.other3d;
   if (!s) { if (GP.viewOnly) s = ''; else if (ui.placing) s = HINTS.placing; else if (ui.tool === 'select') s = ui.step === 'space' ? HINTS.selectSpace : ui.step === 'floor' ? HINTS.selectFloor : HINTS.select; else s = HINTS[ui.tool] || ''; }
   if (ui.tool === 'opening' && !custom) s += `<span class="opts">${Object.entries(GP.OPENINGS).map(([k, v]) => `<button class="btn xs ${ui.openingKind === k ? 'on' : ''}" data-ok="${k}">${v}</button>`).join('')}</span>`;
   if ((ui.placing || ['part', 'matPoly', 'measure', 'fillwall', 'opening'].includes(ui.tool)) && !custom) s += ` <button class="btn xs" data-cancel>취소 Esc</button>`;
@@ -199,7 +226,7 @@ ui.renderHUD = () => {
   const L = GP.L(), A = Math.abs(G.area(L.room.pts)); const eq = L.items.filter(it => GP.EQUIP_CATS.has((GP.getDef(it.type) || {}).cat) && !(GP.getDef(it.type) || {}).flat).length;
   $('#hud').innerHTML = `<div class="hud-area"><b>${(A / U.PY).toFixed(1)}</b><span>평</span><em>${A.toFixed(1)}㎡</em></div><div class="hud-meta">운동기구 ${eq}대</div>`;
 };
-const LAYERS = [['labels', '이름'], ['clear', '사용 공간'], ['mats', '바닥'], ['zones', '존'], ['dims', '치수'], ['notes', '메모'], ['aisle', '좁은 통로'], ['magnet', '벽 자석']];
+const LAYERS = [['labels', '이름'], ['clear', '사용 공간'], ['mats', '바닥'], ['zones', '존'], ['dims', '치수'], ['notes', '메모'], ['aisle', '좁은 통로'], ['egress', '비상 동선'], ['magnet', '벽 자석']];
 ui.magnet = true;
 ui.renderLayers = () => {
   const S = GP.S; let lays = LAYERS; if (GP.viewOnly) lays = LAYERS.filter(l => ['labels', 'clear', 'mats', 'zones', 'dims', 'notes'].includes(l[0]));
@@ -208,7 +235,7 @@ ui.renderLayers = () => {
 $('#layersBox').addEventListener('click', e => {
   const b = e.target.closest('[data-layer]'); if (!b) return; const k = b.dataset.layer, S = GP.S;
   if (k === 'magnet') { ui.magnet = !ui.magnet; GP.toast(ui.magnet ? '벽 자석을 켰어요' : '벽 자석을 껐어요 (5cm 격자로만 맞춰져요)'); }
-  else { S.layers[k] = !S.layers[k]; if (k === 'aisle' && S.layers.aisle) GP.checks.full(); if (k === 'labels') S.layers.labels = S.layers.labels; S.invalidate(); }
+  else { S.layers[k] = !S.layers[k]; if ((k === 'aisle' || k === 'egress') && S.layers[k]) GP.checks.full(); if (k === 'labels') S.layers.labels = S.layers.labels; S.invalidate(); }
   ui.renderLayers(); GP.emit('overlay');
 });
 ui.renderZoom = () => { $('#zoomBox').innerHTML = `<button data-z="in" title="확대">${IC.plus}</button><button data-z="out" title="축소">${IC.minus}</button><button data-z="fit" title="도면 전체 보기">${IC.fit}</button>`; };
@@ -217,15 +244,16 @@ $('#zoomBox').addEventListener('click', e => { const b = e.target.closest('[data
 /* ---------------- variants (A안 / B안) ---------------- */
 ui.renderVariants = () => {
   const P = GP.P; const v = $('#variants'); v.hidden = GP.viewOnly && P.variants.length < 2;
-  v.innerHTML = P.variants.map((q, i) => `<button class="${i === P.cur ? 'on' : ''}" data-var="${i}" title="더블클릭해서 이름 바꾸기">${U.esc(q.name)}</button>`).join('') + (GP.viewOnly ? '' : `<button class="add" data-var="add" title="지금 안을 복사해서 새 안 만들기">＋</button>`);
+  v.innerHTML = P.variants.map((q, i) => `<button class="${i === P.cur ? 'on' : ''}" data-var="${i}" title="더블클릭해서 이름 바꾸기">${U.esc(q.name)}</button>`).join('') + (GP.viewOnly ? '' : `<button class="add" data-var="add" title="지금 안을 복사해서 새 안 만들기">＋</button>`) + (!GP.viewOnly && P.variants.length > 1 ? `<button class="add cmp" data-var="cmp" title="안끼리 기구 수·면적·견적을 나란히 비교">비교</button>` : '');
 };
 $('#variants').addEventListener('click', e => {
   const b = e.target.closest('[data-var]'); if (!b) return; const v = b.dataset.var, P = GP.P;
+  if (v === 'cmp') { GP.panels.compare(); return; }
   if (v === 'add') { const src = P.variants[P.cur]; const n = { id: U.uid('v'), name: String.fromCharCode(65 + P.variants.length) + '안', layout: U.clone(src.layout) }; P.variants.push(n); P.cur = P.variants.length - 1; ui.sel = []; GP.changed('all'); ui.renderVariants(); GP.emit('project'); GP.toast(`${n.name}을 만들었어요. 지금 안을 복사했어요`); return; }
   const i = +v; if (i === P.cur) return; P.cur = i; ui.sel = []; GP.tools && GP.tools.cancel(); GP.changed('all', { commit: false }); if (!GP.viewOnly) GP.H.commit(); ui.renderVariants(); GP.emit('project');
 });
 $('#variants').addEventListener('dblclick', async e => {
-  const b = e.target.closest('[data-var]'); if (!b || b.dataset.var === 'add' || GP.viewOnly) return; const i = +b.dataset.var, P = GP.P;
+  const b = e.target.closest('[data-var]'); if (!b || b.dataset.var === 'add' || b.dataset.var === 'cmp' || GP.viewOnly) return; const i = +b.dataset.var, P = GP.P;
   GP.modal('안 이름', `<label class="fld"><span>이름</span><input id="vName" value="${U.esc(P.variants[i].name)}" autofocus></label>`, `${P.variants.length > 1 ? '<button class="btn danger" id="vDel">이 안 삭제</button>' : ''}<button class="btn" data-close>닫기</button><button class="btn primary" id="vOk">저장</button>`, { size: 'narrow' });
   $('#vOk').onclick = () => { P.variants[i].name = $('#vName').value.trim() || P.variants[i].name; GP.closeModal(); ui.renderVariants(); GP.H.commit(); };
   const del = $('#vDel'); if (del) del.onclick = async () => { GP.closeModal(); if (!(await GP.confirm(`${P.variants[i].name}을 삭제할까요? 되돌리기로 복구할 수 있어요.`, '삭제', true))) return; P.variants.splice(i, 1); P.cur = Math.min(P.cur, P.variants.length - 1); ui.sel = []; GP.changed('all'); ui.renderVariants(); };
@@ -246,8 +274,8 @@ ui.renderSummary = () => {
 GP.on('changed', () => ui.renderSummary());
 GP.on('media', () => { ui.renderInspector(); GP.emit('library'); });
 GP.on('checks', () => { ui.renderSummary(); if (!pop.hidden && pop.dataset.anchor === 'checkBtn') openChecks(true); });
-ui.openQuote = () => { GP.tools && GP.tools.cancel(); $('#quoteSheet').hidden = false; GP.panels.renderQuote(); ui.renderInspector(); ui.renderSummary(); };
-ui.closeQuote = () => { $('#quoteSheet').hidden = true; ui.renderSummary(); };
+ui.openQuote = () => { GP.tools && GP.tools.cancel(); $('#quoteSheet').hidden = false; GP.panels.renderQuote(); ui.renderInspector(); ui.renderSummary(); ui.renderGuideBits(); };
+ui.closeQuote = () => { $('#quoteSheet').hidden = true; ui.renderSummary(); ui.renderGuideBits(); };
 $('#quoteBtn').addEventListener('click', () => { if ($('#quoteSheet').hidden) ui.openQuote(); else ui.closeQuote(); });
 
 /* ---------------- inspector ---------------- */
@@ -278,6 +306,7 @@ function inspItem(it) {
     + `<div class="sec"><span class="lbl">방향</span><div class="rot-row"><button class="icon-btn" data-act="rotL" title="반시계 90° (Shift+R)">${IC.rotL}</button>${num('iRot', Math.round(it.rot * 10) / 10, 1, '°')}<button class="icon-btn" data-act="rotR" title="시계 90° (R)">${IC.rotR}</button></div></div>`
     + (mount !== 'floor' ? `<div class="sec"><span class="lbl">${mount === 'wall' ? '벽에 거는 높이 (바닥에서)' : '천장에서 내려오는 거리'}</span>${num('iElev', U.cm(mount === 'wall' ? GP.itemY(it) : (it.elev || 0)), 5, 'cm', 'min="0"')}</div>` : '')
     + (mount === 'floor' && c && (c.f || c.b || c.l) ? `<p class="insp-note">권장 사용 공간 앞 ${c.f}m · 뒤 ${c.b}m · 양옆 ${c.l}m</p>` : '')
+    + (GP.WEIGHTS && GP.WEIGHTS[it.type] ? `<p class="insp-note">무게 약 ${GP.WEIGHTS[it.type]}kg <small>(일반적인 업소용 기준${['plate', 'rack', 'storage'].includes(def.cat) ? ' · 원판·덤벨 제외' : ''})</small></p>` : '')
     + `<details class="sec more"><summary>줄 세우기 · 위치</summary><div class="row3"><label class="fld"><span>개수</span>${num('iRowN', 4, 1, '대', 'min="2" max="30"')}</label><label class="fld"><span>간격</span>${num('iRowG', Math.round(Math.max(10, ((c.l || 0) + (c.r || 0)) / 2 * 100)), 5, 'cm', 'min="0"')}</label><button class="btn sm" data-act="row">한 줄로</button></div><div class="row2"><label class="fld"><span>X</span>${num('iX', it.x.toFixed(2), .05, 'm')}</label><label class="fld"><span>Y</span>${num('iZ', it.z.toFixed(2), .05, 'm')}</label></div><div class="mount"><button class="${mount === 'floor' ? 'on' : ''}" data-act="mount" data-m="floor">바닥</button><button class="${mount === 'wall' ? 'on' : ''}" data-act="mount" data-m="wall">벽에 걸기</button><button class="${mount === 'ceil' ? 'on' : ''}" data-act="mount" data-m="ceil">천장</button></div></details>`
     + `<div class="acts"><button class="btn sm" data-act="wall" title="가장 가까운 벽에 붙이기 (W)">벽에 붙이기</button><button class="btn sm" data-act="dup" title="옆으로 복제 (Ctrl+D)">복제</button><button class="btn sm" data-act="fav">${GP.lib.favorites.includes(it.type) ? '★' : '☆'} 즐겨찾기</button><button class="btn sm danger" data-act="del" title="삭제 (Delete)">삭제</button></div>`;
 }

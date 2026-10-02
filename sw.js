@@ -1,9 +1,9 @@
 /* GoFit Planner — offline cache. Bump CACHE when app files change. 3D models are cached separately on first view. */
-const CACHE = 'gofit-planner-v3.2.0';
+const CACHE = 'gofit-planner-v3.3.0';
 const MODELS = 'gofit-models-v2';   // v1 held the DRAX files (about 130 MB): dropped on activate
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/core.js', 'js/catalog.js', 'js/media.js', 'vendor/three.min.js', 'vendor/OrbitControls.js', 'js/m3-parts.js', 'js/m3-models-a.js', 'js/m3-models-b.js', 'js/render3d.js', 'js/symbols.js', 'js/plan.js', 'js/checks.js', 'js/ui.js', 'js/overlay.js', 'js/tools.js', 'js/panels.js', 'js/export.js', 'js/viewer3d.js', 'js/view3d.js', 'js/app.js',
+  'js/core.js', 'js/catalog.js', 'js/media.js', 'vendor/three.min.js', 'vendor/OrbitControls.js', 'js/m3-parts.js', 'js/m3-models-a.js', 'js/m3-models-b.js', 'js/render3d.js', 'js/symbols.js', 'js/plan.js', 'js/checks.js', 'js/ui.js', 'js/overlay.js', 'js/tools.js', 'js/panels.js', 'js/export.js', 'js/viewer3d.js', 'js/view3d.js', 'js/backup.js', 'js/app.js',
   'assets/plan/manifest.json', 'models/basic/index.json',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ];

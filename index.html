@@ -17,6 +17,8 @@
     <button class="icon-btn ghost" id="menuBtn" title="메뉴 (프로젝트·설정)" aria-label="메뉴"></button>
     <div class="brand"><span class="mark">GOFIT</span><span class="mark-sub">플래너</span></div>
     <button class="proj-btn" id="projBtn" title="프로젝트 이름·고객사 바꾸기"><b id="projName">새 프로젝트</b><small id="projClient"></small></button>
+    <span class="savest" id="saveSt" title="작업 내용은 이 기기에 자동으로 저장돼요"></span>
+    <button class="btn xs bkchip" id="bkChip" hidden title="브라우저를 다시 열면 백업 폴더 사용을 한 번 허락해야 해요">백업 폴더 연결</button>
     <div class="variants" id="variants"></div>
     <div class="seg viewseg" id="viewSeg"><button data-v="2d" class="on">2D 도면</button><button data-v="3d">3D 보기</button></div>
     <div class="seg viewseg" id="styleSeg" title="색상 없이 선으로만 보기 (캐드 도면처럼)"><button data-s="color">컬러</button><button data-s="line">선만</button></div>
@@ -37,6 +39,7 @@
     <div class="panel" id="panel-space" hidden></div>
     <div class="panel" id="panel-place"></div>
     <div class="panel" id="panel-floor" hidden></div>
+    <div class="stepnext" id="stepNext"></div>
   </aside>
 
   <main class="stage" id="stage">
@@ -45,6 +48,7 @@
     <div id="overlay"><div id="ovBase"></div><div id="ovHandles"></div><div id="ovMarquee" hidden></div></div>
     <div class="tools float" id="tools"></div>
     <div class="topmid"><div class="hint float" id="hint" hidden></div><div class="hint float viewer-hint" id="viewerHint" hidden></div></div>
+    <div class="empty-hint" id="emptyHint" hidden></div>
     <div class="insp float" id="insp" hidden></div>
     <div class="summary float" id="summary" hidden></div>
     <div class="bottombar"><div class="hud float" id="hud"></div><div class="layers float" id="layersBox"></div><div class="layers float v3bar" id="v3bar"></div><div class="scalebar float" id="scalebar"><div class="sb-bar"></div><span>1 m</span></div></div>
@@ -81,6 +85,7 @@
 <script src="js/export.js"></script>
 <script src="js/viewer3d.js"></script>
 <script src="js/view3d.js"></script>
+<script src="js/backup.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

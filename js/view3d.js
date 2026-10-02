@@ -27,15 +27,19 @@ V3.init = () => {
   const T = V3.tex = {};
   T.concrete = canvasTex(256, (x, s) => { const Rn = rng(11); x.fillStyle = '#b9bbb8'; x.fillRect(0, 0, s, s); for (let i = 0; i < 700; i++) { const v = Rn() < .5 ? 255 : 40; x.fillStyle = `rgba(${v},${v},${v},.04)`; x.beginPath(); x.arc(Rn() * s, Rn() * s, 3 + Rn() * 16, 0, 7); x.fill(); } }, 1 / 3);
   new ResizeObserver(() => V3.resize()).observe($('#stage'));
-  cv.addEventListener('pointermove', onMove); cv.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; }); cv.addEventListener('pointerup', onUp); cv.addEventListener('dblclick', e => { const uid = pick(e), it = uid && GP.findItem(uid); if (it) GP.M3.open(it); }); cv.addEventListener('pointerleave', () => { setHover(null); GP.tip.hide(); });
+  cv.addEventListener('pointerdown', lookDown, true); cv.addEventListener('pointermove', lookMove, true); cv.addEventListener('pointerup', lookUp, true); cv.addEventListener('pointerdown', grab, true); cv.addEventListener('pointermove', onMove); cv.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; }); cv.addEventListener('pointerup', onUp); cv.addEventListener('pointercancel', e => { if (mv) endDrag(e); }); cv.addEventListener('dblclick', e => { const uid = pick(e), it = uid && GP.findItem(uid); if (it) GP.M3.open(it); }); cv.addEventListener('pointerleave', () => { setHover(null); GP.tip.hide(); });
   GP.on('changed', () => { if (V3.on) V3.rebuild(); });
   GP.on('selection', () => { if (V3.on) markSel(); });
+  GP.on('placing', () => { ghostBuild(); if (R) R.domElement.style.cursor = GP.ui.placing ? 'crosshair' : ''; });
   return true;
 };
-V3.resize = () => { if (!R) return; const r = $('#stage').getBoundingClientRect(); R.setSize(Math.max(1, r.width), Math.max(1, r.height), false); cam.aspect = r.width / Math.max(1, r.height); cam.updateProjectionMatrix(); dirty = true; };
+V3.resize = () => {
+  if (!R) return; const r = $('#stage').getBoundingClientRect(); R.setSize(Math.max(1, r.width), Math.max(1, r.height), false); cam.aspect = Math.max(1, r.width) / Math.max(1, r.height); cam.updateProjectionMatrix(); dirty = true;
+  if (V3.on && !V3.sized && r.width > 50 && r.height > 50) { V3.sized = true; if (!V3.walking) V3.view('persp'); }   // first real size (opened hidden): frame the room again
+};
 V3.invalidate = () => { dirty = true; };
 V3.camera = () => cam;
-function loop() { raf = requestAnimationFrame(loop); if (ctl.update()) dirty = true; if (!dirty) return; dirty = false; wallFade(); R.render(sc, cam); }
+function loop() { raf = requestAnimationFrame(loop); if (V3.walking) walkStep(); else if (ctl.update()) dirty = true; if (!dirty) return; dirty = false; wallFade(); R.render(sc, cam); }
 
 /* ---------------- show / hide ---------------- */
 V3.show = (on) => {
@@ -43,24 +47,26 @@ V3.show = (on) => {
   V3.on = on; $('#app').classList.toggle('v3', on); $('#c3').hidden = !on; GP.tip.hide();
   document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === (on ? '3d' : '2d')));
   if (on) { V3.resize(); V3.rebuild(); if (!V3.fitted) { V3.view('persp'); V3.fitted = true; } cancelAnimationFrame(raf); loop(); renderBar(); overlayMaybe(); }
-  else { overlay(false); cancelAnimationFrame(raf); GP.S.invalidate(); GP.emit('overlay'); }
+  else { if (V3.walking) V3.walk(false); overlay(false); cancelAnimationFrame(raf); GP.S.invalidate(); GP.emit('overlay'); }
+  ghostBuild(); GP.ui.setHint();
   return true;
 };
 function renderBar() {
   const b = $('#v3bar'); if (!b) return;
-  b.innerHTML = `<button class="tg${V3.cut ? ' on' : ''}" data-v3="cut"><i></i>벽 낮추기</button><span class="v3sep"></span><button class="btn xs" data-v3="persp">비스듬히</button><button class="btn xs" data-v3="top">위에서</button><button class="btn xs" data-v3="front">정면</button>${GP.viewOnly ? '' : `<button class="btn xs" data-v3="shot">${GP.IC.image} 이미지 저장</button>`}<span class="v3load" id="v3load"></span>`;
+  b.innerHTML = `<button class="tg${V3.cut ? ' on' : ''}" data-v3="cut"><i></i>벽 낮추기</button><span class="v3sep"></span><button class="btn xs" data-v3="persp">비스듬히</button><button class="btn xs" data-v3="top">위에서</button><button class="btn xs" data-v3="front">정면</button><button class="btn xs${V3.walking ? ' primary' : ''}" data-v3="walk">${V3.walking ? '걷기 끝' : '걸어보기'}</button>${GP.viewOnly ? '' : `<button class="btn xs" data-v3="shot">${GP.IC.image} 이미지 저장</button>`}<span class="v3load" id="v3load"></span>`;
 }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-v3]'); if (!b) return; const a = b.dataset.v3;
   if (a === 'cut') { V3.cut = !V3.cut; V3.rebuild(); renderBar(); }
+  else if (a === 'walk') V3.walk(!V3.walking);
   else if (a === 'shot') GP.exp.image3dDialog();
-  else V3.view(a);
+  else { if (V3.walking) V3.walk(false); V3.view(a); }
 });
 $('#viewSeg') && $('#viewSeg').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; V3.show(b.dataset.v === '3d'); });
 
 /* ---------------- camera ---------------- */
 V3.presets = () => {
-  const b = G.bounds(GP.L().room.pts), size = Math.max(b.sx, b.sz, 4), a = cam ? cam.aspect : 1.6;
+  const b = G.bounds(GP.L().room.pts), size = Math.max(b.sx, b.sz, 4), a = cam && isFinite(cam.aspect) && cam.aspect > .2 ? cam.aspect : 1.6;   // a hidden page has no size yet
   const half = Math.max(Math.hypot(b.sx, b.sz), 4) / 2, vf = 40 * DEG / 2, hf = Math.atan(Math.tan(vf) * a), dist = half / Math.tan(Math.min(vf, hf)) * .88;
   const off = (x, y, z) => { const v = new THREE.Vector3(x, y, z).normalize().multiplyScalar(dist); return [b.cx + v.x, v.y, b.cz + v.z]; };
   return { persp: { pos: off(-.42, .8, .9), target: [b.cx, 0, b.cz] }, persp2: { pos: off(.55, .7, -.8), target: [b.cx, .3, b.cz] }, top: { pos: [b.cx, size * 1.35 / Math.max(.8, Math.min(a, 1.6)) + 2, b.cz + .01], target: [b.cx, 0, b.cz] }, front: { pos: off(0, .35, 1), target: [b.cx, .6, b.cz] } };
@@ -234,7 +240,8 @@ function markSel() {
   V3.selBox = grp; sc.add(grp); dirty = true;
 }
 function wallFade() {
-  if (!GP.P || !wallMeshes.length) return; const b = G.bounds(GP.L().room.pts); let vx = cam.position.x - b.cx, vz = cam.position.z - b.cz; const l = Math.hypot(vx, vz) || 1; vx /= l; vz /= l;
+  if (!GP.P || !wallMeshes.length) return;
+  if (V3.walking || solid) { for (const w of wallMeshes) if (w.mat.opacity !== 1) { w.mat.opacity = 1; w.mat.depthWrite = true; } return; } const b = G.bounds(GP.L().room.pts); let vx = cam.position.x - b.cx, vz = cam.position.z - b.cz; const l = Math.hypot(vx, vz) || 1; vx /= l; vz /= l;
   const high = cam.position.y > Math.max(b.sx, b.sz) * 1.6;
   for (const w of wallMeshes) { const o = (!high && (w.nx * vx + w.nz * vz) > .2) ? .12 : 1; if (w.mat.opacity !== o) { w.mat.opacity = o; w.mat.depthWrite = o === 1; } }
 }
@@ -248,21 +255,178 @@ function pick(e) {
   return best;
 }
 function setHover(uid) { if (hov === uid) return; hov = uid; R.domElement.style.cursor = uid ? 'pointer' : ''; }
-function onMove(e) { if (e.buttons) return; const now = performance.now(); if (now - lastPick < 50) return; lastPick = now; const uid = pick(e); setHover(uid); const it = uid && GP.findItem(uid); if (it) GP.tip.show(e.clientX, e.clientY, GP.info.item(it)); else GP.tip.hide(); }
+function onMove(e) {
+  last3d = e; if (mv) { dragTo(e); return; }
+  if (GP.ui.placing && !GP.viewOnly) { if (!e.buttons) ghostMove(e); return; }
+  if (e.buttons) return; const now = performance.now(); if (now - lastPick < 50) return; lastPick = now; const uid = pick(e); setHover(uid); const it = uid && GP.findItem(uid); if (it) GP.tip.show(e.clientX, e.clientY, GP.info.item(it)); else GP.tip.hide(); }
 function onUp(e) {
+  if (mv && endDrag(e)) { down = null; return; }
   if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 5) { down = null; return; } down = null;
+  if (GP.ui.placing && !GP.viewOnly) { ghostMove(e); GP.tools.placeGhost(e.shiftKey); return; }
   const uid = pick(e), it = uid && GP.findItem(uid);
   if (GP.viewOnly) { if (it && (GP.R3.hasModel(it.type) || GP.media.photos(it.type).length)) GP.M3.open(it); else if (it) GP.tip.show(e.clientX, e.clientY, GP.info.item(it)); return; }
   if (it) GP.ui.select([{ k: 'item', id: uid }], e.shiftKey); else GP.ui.clearSel();
 }
 
+/* ---------------- editing in 3D: drag selected equipment along the floor, place from the catalog ---------------- */
+const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+let mv = null, last3d = null, ghost = null;
+function floorAt(e) {
+  const rc = new THREE.Raycaster(), r = R.domElement.getBoundingClientRect(); rc.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), cam);
+  const p = new THREE.Vector3(); return rc.ray.intersectPlane(floorPlane, p) ? { x: p.x, z: p.z } : null;
+}
+/* pressing an already selected item drags it (the first press selects; dragging anywhere else turns the view) */
+function grab(e) {
+  if (V3.walking || GP.viewOnly || e.button !== 0 || GP.ui.placing || !e.isPrimary) return;
+  const uid = pick(e); if (!uid || !GP.ui.selSet().has('item:' + uid)) return;
+  const fp = floorAt(e), it = GP.findItem(uid); if (!fp || !it) return;
+  const its = GP.ui.selItems();
+  mv = { anchor: uid, sx: e.clientX, sy: e.clientY, moved: false, fx: fp.x, fz: fp.z, start: its.map(q => ({ uid: q.uid, x: q.x, z: q.z })), relK: its.length === 1 ? GP.tools.relK(it) : null, ox: it.x - fp.x, oz: it.z - fp.z, id: e.pointerId };
+  ctl.enabled = false; R.domElement.style.cursor = 'grabbing'; try { R.domElement.setPointerCapture(e.pointerId); } catch (_) { }
+}
+function dragTo(e) {
+  const d = mv; if (e.pointerId !== d.id) return;
+  if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
+  const fp = floorAt(e); if (!fp) return; d.moved = true; GP.tip.hide();
+  GP.tools.moveItems(d, fp, e.altKey);
+  for (const s of d.start) { const it = GP.findItem(s.uid), r = roots.get(s.uid); if (it && r) { r.position.x = it.x; r.position.z = it.z; r.rotation.y = -it.rot * DEG; } }
+  markSel(); dirty = true;
+}
+/* returns true when the press was a drag (the click handling is skipped) */
+function endDrag(e) {
+  const d = mv; mv = null; ctl.enabled = true; R.domElement.style.cursor = hov ? 'pointer' : '';
+  if (!d.moved) return false;
+  GP.changed('items'); GP.ui.renderInspector(); return true;
+}
+/* placing ghost: the procedural model, see-through, over a blue (fits) / red (overlaps, outside the room) footprint */
+function ghostBuild() {
+  if (!R) return; if (ghost) { sc.remove(ghost.g); ghost.g.traverse(n => { if (n.userData.own) { n.geometry.dispose(); [].concat(n.material).forEach(m => m.dispose()); } }); ghost = null; }
+  const pl = GP.ui.placing; if (!pl || !V3.on) { dirty = true; return; }
+  const g = new THREE.Group(), parts = pl.list.map(q => {
+    const r = new THREE.Group(), m = GP.R3.procModel(q.it);
+    m.traverse(n => { if (n.isMesh) { n.material = Array.isArray(n.material) ? n.material.map(x => see(x.clone())) : see(n.material.clone()); n.castShadow = false; n.userData.own = true; n.geometry = n.geometry.clone(); } });
+    const dm = GP.dims(q.it), fp = new THREE.Mesh(new THREE.PlaneGeometry(dm.w, dm.d), new THREE.MeshBasicMaterial({ color: '#2450E0', transparent: true, opacity: .3, depthWrite: false }));
+    fp.rotation.x = -Math.PI / 2; fp.position.y = .03; fp.userData.own = true; r.add(m, fp); r.userData.fp = fp; r.visible = false; g.add(r); return r;
+  });
+  sc.add(g); ghost = { g, parts }; dirty = true;
+  if (last3d) ghostMove(last3d);
+}
+function see(m) { m.transparent = true; m.opacity = .55; m.depthWrite = false; return m; }
+function ghostMove(e) {
+  const pl = GP.ui.placing; if (!pl || !ghost) return; const fp = floorAt(e); if (!fp) return;
+  GP.tools.ghostAt(fp, e.altKey); const bad = (GP.S.ghost && GP.S.ghost.bad) || [];
+  (pl.placed || []).forEach((p, i) => { const r = ghost.parts[i]; if (!r) return; r.visible = true; r.position.set(p.x, GP.itemY(p), p.z); r.rotation.y = -p.rot * DEG; r.userData.fp.material.color.set(bad[i] ? '#e5484d' : '#2450E0'); });
+  dirty = true;
+}
+V3.ghostRefresh = () => { if (last3d) ghostMove(last3d); };
+
+/* ---------------- walk mode: eye height 1.6 m inside the room; keys / drag to look, a joystick on touch screens ---------------- */
+const EYE = 1.6, SPEED = 1.4, keys = new Set(); let wk = null, walkHud = null, joy = null, lastT = 0, solid = false;
+function walkStart() {
+  const L = GP.L(), P = L.room.pts, b = G.bounds(P), door = L.openings.find(o => o.host === 'room' && o.kind !== 'window');
+  let x = b.cx, z = b.cz, yaw = 0;
+  if (door) { const hs = GP.hostSeg(door), sp = GP.openingSpan(door, hs); x = hs.a[0] + hs.dx * sp.c + hs.nx * 1.0; z = hs.a[1] + hs.dz * sp.c + hs.nz * 1.0; yaw = Math.atan2(-hs.nx, -hs.nz); }
+  if (!free(x, z)) { x = b.cx; z = b.cz; for (let r = .5; r < 6 && !free(x, z); r += .5) for (let a = 0; a < 6.28; a += .5) if (free(b.cx + Math.cos(a) * r, b.cz + Math.sin(a) * r)) { x = b.cx + Math.cos(a) * r; z = b.cz + Math.sin(a) * r; break; } }
+  return { x, z, yaw, pitch: -.05 };
+}
+/* a point a person can stand on: inside the room, 25 cm from walls, out of every machine's footprint */
+function free(x, z) {
+  const L = GP.L(), P = L.room.pts; if (!G.pip(x, z, P)) return false;
+  for (let i = 0; i < P.length; i++) if (G.closest(x, z, P[i], P[(i + 1) % P.length]).d < .25) return false;
+  for (const p of L.partitions) for (let i = 0; i < p.pts.length - 1; i++) if (G.closest(x, z, p.pts[i], p.pts[i + 1]).d < .2 + (p.thick || .1) / 2 && !L.openings.some(o => o.host === p.id && o.seg === i && o.kind !== 'window' && Math.abs(G.closest(x, z, p.pts[i], p.pts[i + 1]).t - o.t) < o.w / 2)) return false;
+  for (const it of L.items) { const d = GP.getDef(it.type) || {}; if (d.flat || d.wall || GP.mountOf(it) !== 'floor') continue; const C = GP.footprint(it); if (G.pip(x, z, C)) return false; for (let i = 0; i < C.length; i++) if (G.closest(x, z, C[i], C[(i + 1) % C.length]).d < .18) return false; }
+  return true;
+}
+function walkStep() {
+  const t = performance.now(), dt = Math.min(.05, (t - (lastT || t)) / 1000); lastT = t;
+  let f = 0, s = 0; if (keys.has('w') || keys.has('arrowup')) f++; if (keys.has('s') || keys.has('arrowdown')) f--; if (keys.has('a')) s--; if (keys.has('d')) s++;
+  if (keys.has('arrowleft')) { wk.yaw += 1.8 * dt; dirty = true; } if (keys.has('arrowright')) { wk.yaw -= 1.8 * dt; dirty = true; }
+  if (joy && joy.on) { f += -joy.y; s += joy.x; }
+  const len = Math.hypot(f, s); if (len > 0) {
+    const sp = SPEED * (keys.has('shift') ? 1.8 : 1) * dt / Math.max(1, len), fx = -Math.sin(wk.yaw), fz = -Math.cos(wk.yaw), rx = Math.cos(wk.yaw), rz = -Math.sin(wk.yaw);
+    const dx = (fx * f + rx * s) * sp, dz = (fz * f + rz * s) * sp;
+    if (free(wk.x + dx, wk.z + dz)) { wk.x += dx; wk.z += dz; } else if (free(wk.x + dx, wk.z)) wk.x += dx; else if (free(wk.x, wk.z + dz)) wk.z += dz;   // slide along walls and machines
+    dirty = true;
+  }
+  if (dirty) { cam.position.set(wk.x, EYE, wk.z); cam.rotation.set(wk.pitch, wk.yaw, 0, 'YXZ'); }
+}
+V3.walk = (on) => {
+  if (!R) return; V3.walking = !!on; keys.clear();
+  if (on) {
+    wk = walkStart(); ctl.enabled = false; V3.keepCam = { pos: cam.position.clone(), target: ctl.target.clone(), fov: cam.fov }; cam.fov = 70; cam.updateProjectionMatrix();
+    cam.position.set(wk.x, EYE, wk.z); cam.rotation.set(wk.pitch, wk.yaw, 0, 'YXZ'); GP.ui.clearSel && !GP.viewOnly && GP.ui.clearSel();
+    const touch = matchMedia('(pointer:coarse)').matches;
+    walkHud = document.createElement('div'); walkHud.className = 'walk-hud';
+    walkHud.innerHTML = `<span>${touch ? '왼쪽 아래 동그라미를 밀어서 걷고, 화면을 끌어서 둘러봐요' : '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 또는 방향키로 걷기 · 화면을 끌어서 둘러보기 · <kbd>Shift</kbd> 빨리 · <kbd>Esc</kbd> 끝'}</span>`
+      + (touch ? '<div class="walk-joy" id="walkJoy"><i></i></div>' : '');
+    $('#stage').appendChild(walkHud); bindJoy();
+  } else {
+    if (walkHud) { walkHud.remove(); walkHud = null; } joy = null; ctl.enabled = true;
+    if (V3.keepCam) { cam.fov = V3.keepCam.fov; cam.updateProjectionMatrix(); cam.position.copy(V3.keepCam.pos); ctl.target.copy(V3.keepCam.target); cam.lookAt(ctl.target); ctl.update(); }
+  }
+  lastT = 0; dirty = true; renderBar(); GP.ui.setHint();
+};
+function bindJoy() {
+  const el = $('#walkJoy'); if (!el) return; const knob = el.querySelector('i'); joy = { on: false, x: 0, y: 0 };
+  const mv = e => { const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, R0 = r.width / 2; let dx = (e.clientX - cx) / R0, dy = (e.clientY - cy) / R0; const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; } joy.x = dx; joy.y = dy; knob.style.transform = `translate(${dx * R0 * .6}px,${dy * R0 * .6}px)`; };
+  el.addEventListener('pointerdown', e => { e.stopPropagation(); e.preventDefault(); joy.on = true; try { el.setPointerCapture(e.pointerId); } catch (_) { } mv(e); });
+  el.addEventListener('pointermove', e => { if (joy.on) { e.stopPropagation(); mv(e); } });
+  const end = e => { joy.on = false; joy.x = joy.y = 0; knob.style.transform = ''; e.stopPropagation(); };
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+}
+/* eye-level views for the proposal ("공간 둘러보기"): from the entrance, from the far end back towards it, and towards the biggest
+   group of machines. Each camera stands on free floor (moved towards the middle until it does). */
+V3.eyeViews = () => {
+  const L = GP.L(), P = L.room.pts, b = G.bounds(P), C = [b.cx, b.cz], out = [];
+  // nothing tall within 2.8 m in front of the lens (an info desk or a column right before the camera fills the picture)
+  const tall = L.items.filter(it => { const d = GP.getDef(it.type) || {}; return !d.flat && !d.wall && GP.mountOf(it) === 'floor' && GP.dims(it).h > .9; }).map(it => GP.footprint(it));
+  const clear = (x, z, tg) => {     // straight ahead up to 2.8 m, and 20 degrees to each side up to 2.2 m
+    const dl = Math.hypot(tg[0] - x, tg[1] - z) || 1, a0 = Math.atan2(tg[1] - z, tg[0] - x);
+    for (const [da, reach] of [[0, 2.8], [-.3, 2.2], [.3, 2.2], [-.6, 1.8], [.6, 1.8]]) { const ux = Math.cos(a0 + da), uz = Math.sin(a0 + da); for (let d = .4; d <= Math.min(reach, dl); d += .3) { const qx = x + ux * d, qz = z + uz * d; if (tall.some(F => G.pip(qx, qz, F))) return false; } }
+    return true;
+  };
+  const stand = (x, z, tg) => { let first = null; for (let k = 0; k <= 24; k++) { const t = k / 24, px = x + (C[0] - x) * t, pz = z + (C[1] - z) * t; if (!free(px, pz)) continue; if (!first) first = [px, pz]; if (!tg || clear(px, pz, tg)) return [px, pz]; } return first; };
+  const view = (p, tg, label, ty) => { if (!p) return; out.push({ pos: [p[0], EYE, p[1]], target: [tg[0], ty || 1.1, tg[1]], fov: 62, label }); };
+  const door = L.openings.find(o => o.host === 'room' && o.kind !== 'window'); let D = null;
+  if (door) { const hs = GP.hostSeg(door), sp = GP.openingSpan(door, hs); D = [hs.a[0] + hs.dx * sp.c, hs.a[1] + hs.dz * sp.c]; view(stand(D[0] + hs.nx * .9, D[1] + hs.nz * .9, C), C, '입구에서 본 모습'); }
+  // the far end: the corner farthest from the entrance (or from the middle), 1 m inside
+  const ref = D || C; let far = P[0]; for (const q of P) if (Math.hypot(q[0] - ref[0], q[1] - ref[1]) > Math.hypot(far[0] - ref[0], far[1] - ref[1])) far = q;
+  const fl = Math.hypot(C[0] - far[0], C[1] - far[1]) || 1; view(stand(far[0] + (C[0] - far[0]) / fl * 1.2, far[1] + (C[1] - far[1]) / fl * 1.2, D || C), D || C, '안쪽에서 바라본 모습');
+  // the biggest group of machines by category
+  const cats = {}; for (const it of L.items) { const d = GP.getDef(it.type) || {}; if (!GP.EQUIP_CATS || !GP.EQUIP_CATS.has(d.cat) || d.flat) continue; (cats[d.cat] = cats[d.cat] || []).push(it); }
+  const best = Object.entries(cats).sort((u, v) => v[1].length - u[1].length)[0];
+  if (best && best[1].length >= 2) {
+    const g = best[1], gx = g.reduce((s, it) => s + it.x, 0) / g.length, gz = g.reduce((s, it) => s + it.z, 0) / g.length, dl = Math.hypot(C[0] - gx, C[1] - gz) || 1;
+    const nm = (GP.lib.catNames && GP.lib.catNames[best[0]]) || (GP.CATS.find(c => c.id === best[0]) || {}).name || '';
+    // a spot on a ring around the group, as close as possible to the side facing the middle of the room
+    const a0 = Math.atan2(C[1] - gz, C[0] - gx); let pick = null;
+    for (const r of [3.5, 4.5, 2.8]) { for (let k = 0; k < 12 && !pick; k++) { const a = a0 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * Math.PI / 6, px = gx + Math.cos(a) * r, pz = gz + Math.sin(a) * r; if (free(px, pz) && clear(px, pz, [gx, gz])) pick = [px, pz]; } if (pick) break; }
+    view(pick || stand(gx + (C[0] - gx) / dl * 3.5, gz + (C[1] - gz) / dl * 3.5, [gx, gz]), [gx, gz], `${nm} 쪽`, .9);
+  }
+  return out;
+};
+V3._walkTest = { step: () => { lastT = performance.now() - 40; walkStep(); }, state: () => wk, free };   // lets a test drive the walk without animation frames (hidden page)
+/* looking around: drag on the 3D view */
+let look = null;
+function lookDown(e) { if (!V3.walking || e.target.closest('.walk-joy')) return; look = { x: e.clientX, y: e.clientY, id: e.pointerId }; try { R.domElement.setPointerCapture(e.pointerId); } catch (_) { } e.stopImmediatePropagation(); }
+function lookMove(e) { if (!V3.walking || !look || e.pointerId !== look.id) return; wk.yaw += (e.clientX - look.x) * .005; wk.pitch = U.clamp(wk.pitch + (e.clientY - look.y) * .004, -1.1, 1.1); look.x = e.clientX; look.y = e.clientY; dirty = true; e.stopImmediatePropagation(); }
+function lookUp(e) { if (look && e.pointerId === look.id) { look = null; if (V3.walking) e.stopImmediatePropagation(); } }
+window.addEventListener('keydown', e => {
+  if (!V3.walking) return; const tag = (e.target.tagName || '').toLowerCase(); if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  const k = e.key.toLowerCase(); if (k === 'escape') { V3.walk(false); e.preventDefault(); e.stopImmediatePropagation(); return; }
+  if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) { keys.add(k); e.preventDefault(); e.stopImmediatePropagation(); }
+}, true);
+window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+window.addEventListener('blur', () => keys.clear());
+
 /* ---------------- snapshots for images / PDF ---------------- */
 V3.snapshot = async (w, h, preset) => {
   if (!V3.init()) return null; const wasOn = V3.on; if (!wasOn) { V3.rebuild(); }
   await V3.whenLoaded(); const c0 = cam.clone(); const selKeep = V3.selBox; if (selKeep) sc.remove(selKeep);
-  const shot = new THREE.PerspectiveCamera(40, w / h, .05, 600);
-  if (preset) { const p = V3.presets()[preset]; shot.position.set(...p.pos); shot.lookAt(new THREE.Vector3(...p.target)); } else { shot.position.copy(cam.position); shot.quaternion.copy(cam.quaternion); }
-  const pr = R.getPixelRatio(); R.setPixelRatio(1); R.setSize(w, h, false); const keep = cam.position.clone(); cam.position.copy(shot.position); wallFade(); cam.position.copy(keep); R.render(sc, shot);
+  const view = typeof preset === 'object' && preset ? preset : null, shot = new THREE.PerspectiveCamera(view && view.fov || 40, w / h, .05, 600);
+  if (view) { shot.position.set(...view.pos); shot.lookAt(new THREE.Vector3(...view.target)); }
+  else if (preset) { const p = V3.presets()[preset]; shot.position.set(...p.pos); shot.lookAt(new THREE.Vector3(...p.target)); } else { shot.position.copy(cam.position); shot.quaternion.copy(cam.quaternion); }
+  const pr = R.getPixelRatio(); R.setPixelRatio(1); R.setSize(w, h, false); const keep = cam.position.clone(); cam.position.copy(shot.position); solid = !!view; wallFade(); solid = false; cam.position.copy(keep); R.render(sc, shot);
   const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(R.domElement, 0, 0);
   R.setPixelRatio(pr); V3.resize(); if (selKeep) sc.add(selKeep); dirty = true; void c0; return c;
 };

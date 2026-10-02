@@ -29,6 +29,7 @@ panels.renderSpace = () => {
     <div class="seg full" id="spMode"><button data-m="py" class="${sp.mode === 'py' ? 'on' : ''}">평수로</button><button data-m="shape" class="${sp.mode === 'shape' ? 'on' : ''}">모양 템플릿</button><button data-m="walk" class="${sp.mode === 'walk' ? 'on' : ''}">실측 입력</button></div>
     <div id="spBody" class="blk" style="border:0;padding:0"></div></section>
   <section class="blk"><h3>지금 모양 그대로 평수 맞추기</h3><div class="row2"><label class="fld"><span>목표 평수 (지금 ${(A / U.PY).toFixed(1)}평)</span>${numI('fitPy', (A / U.PY).toFixed(1), .5, '평', 'min="3"')}</label><button class="btn" id="fitApply">비율 유지하고 맞추기</button></div></section>
+  <section class="blk"><h3>천장 높이</h3><div class="row2"><label class="fld"><span>바닥에서 천장까지</span>${numI('ceilH', st.wallH, .05, 'm', 'min="2" max="8"')}</label><p class="note" style="margin:0;align-self:end">기구마다 쓸 때 필요한 높이(트레드밀 위 사람 키, 스텝밀 맨 위 계단 등)를 이 높이로 점검해요. 3D 벽 높이로도 쓰여요.</p></div></section>
   <section class="blk"><h3>고객 로고</h3><p class="note">로고 이미지를 올리면 벽에 붙는 로고가 생겨요.</p><label class="btn wide file" style="position:relative;overflow:hidden">로고 이미지 올리기<input type="file" id="logoFile" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label></section>
   <details class="blk" ${sp.vt ? 'open' : ''} id="vtBlk"><summary>꼭짓점 좌표 (m)</summary><table class="tbl" id="vtable"></table></details>
   <section class="blk"><h3>고객 도면 대고 그리기</h3><p class="note">받은 평면도 사진이나 캐드 파일(DXF)을 바닥에 깔고 <b>벽 편집</b> 도구로 꼭짓점을 맞추면 실제 모양 그대로 만들 수 있어요.</p>
@@ -93,6 +94,7 @@ spEl.addEventListener('input', e => {
 spEl.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.c != null && t.dataset.i != null && t.closest('#vtable')) { const P = GP.L().room.pts, i = +t.dataset.i, v = +t.value; if (isFinite(v) && P[i]) { P[i][+t.dataset.c] = U.r3(v); GP.changed('room'); } return; }
+  if (t.id === 'ceilH') { const v = U.clamp(+t.value || 2.8, 2, 8); GP.P.settings.wallH = U.r2(v); t.value = GP.P.settings.wallH; GP.changed('all'); GP.toast(`천장 높이 ${GP.P.settings.wallH}m 기준으로 다시 점검했어요`); return; }
   if (t.id === 'logoFile') { const f = t.files[0]; t.value = ''; if (f) panels.addLogo(f); return; }
   if (t.id === 'ulImg') { const f = t.files[0]; t.value = ''; if (f) panels.loadUnderlayImage(f); return; }
   if (t.id === 'ulDxf') { const f = t.files[0]; t.value = ''; if (f) panels.loadUnderlayDxf(f); return; }
@@ -160,14 +162,15 @@ plEl.addEventListener('click', e => {
   const sd = t.closest('[data-setdel]'); if (sd) { e.stopPropagation(); GP.lib.sets = GP.lib.sets.filter(s => s.id !== sd.dataset.setdel); GP.saveLib(); renderGrid(); return; }
   const s = t.closest('[data-set]'); if (s) { const set = GP.SETS.concat(GP.lib.sets).find(q => q.id === s.dataset.set); if (set) GP.tools.startPlacing(set.items.filter(q => GP.getDef(q[0])).map(([type, x, z, r, extra]) => ({ it: Object.assign({ type }, extra || {}), rel: [x, z, r] })), { label: set.name }); return; }
   if (t.closest('[data-build]')) { panels.builder(); return; }
-  const cd = t.closest('.card[data-type]'); if (cd) { if (cardDrag && cardDrag.dragged) return; const k = cd.dataset.type; if (ui.placing && ui.placing.list.length === 1 && ui.placing.list[0].it.type === k) { GP.tools.cancel(); renderGrid(); return; } GP.tools.startPlacing([{ it: { type: k } }]); renderGrid(); if (U.isNarrow()) GP.toast('도면을 탭해서 놓으세요'); return; }
+  const cd = t.closest('.card[data-type]'); if (cd) { if (cardDrag && cardDrag.dragged) return; const k = cd.dataset.type; if (ui.placing && ui.placing.list.length === 1 && ui.placing.list[0].it.type === k) { GP.tools.cancel(); renderGrid(); return; } GP.tools.startPlacing([{ it: { type: k } }]); renderGrid(); if (U.isNarrow()) GP.toast(GP.V3 && GP.V3.on ? '놓을 곳을 탭하세요' : '도면을 탭해서 놓으세요'); return; }
 });
 plEl.addEventListener('pointerdown', e => {
   const cd = e.target.closest('.card[data-type]'); if (!cd || e.pointerType !== 'mouse' || e.button !== 0 || e.target.closest('[data-fav]')) return; e.preventDefault();
   cardDrag = { type: cd.dataset.type, x: e.clientX, y: e.clientY, dragged: false };
-  const inside = ev => { const r = GP.S.canvas.getBoundingClientRect(); return ev.clientX > r.left && ev.clientX < r.right && ev.clientY > r.top && ev.clientY < r.bottom; };
-  const mv = ev => { if (!cardDrag.dragged) { if (Math.hypot(ev.clientX - cardDrag.x, ev.clientY - cardDrag.y) < 6) return; cardDrag.dragged = true; GP.tools.startPlacing([{ it: { type: cardDrag.type } }]); document.body.classList.add('grabbing'); } if (inside(ev)) GP.S.canvas.dispatchEvent(new PointerEvent('pointermove', { clientX: ev.clientX, clientY: ev.clientY, pointerType: 'mouse' })); else if (GP.S.ghost) { GP.S.ghost.visible = false; GP.S.invalidate(); } };
-  const up = ev => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); document.body.classList.remove('grabbing'); const cdr = cardDrag; setTimeout(() => { cardDrag = null; }, 0); if (!cdr || !cdr.dragged) return; if (inside(ev) && GP.S.ghost && GP.S.ghost.visible) { GP.S.canvas.dispatchEvent(new PointerEvent('pointerdown', { clientX: ev.clientX, clientY: ev.clientY, button: 0, pointerType: 'mouse', pointerId: 91 })); GP.S.canvas.dispatchEvent(new PointerEvent('pointerup', { clientX: ev.clientX, clientY: ev.clientY, button: 0, pointerType: 'mouse', pointerId: 91 })); } else GP.tools.cancel(); renderGrid(); };
+  const tgt = () => GP.V3 && GP.V3.on ? $('#c3') : GP.S.canvas;      // dropping into the 3D view places there too
+  const inside = ev => { const r = tgt().getBoundingClientRect(); return ev.clientX > r.left && ev.clientX < r.right && ev.clientY > r.top && ev.clientY < r.bottom; };
+  const mv = ev => { if (!cardDrag.dragged) { if (Math.hypot(ev.clientX - cardDrag.x, ev.clientY - cardDrag.y) < 6) return; cardDrag.dragged = true; GP.tools.startPlacing([{ it: { type: cardDrag.type } }]); document.body.classList.add('grabbing'); } if (inside(ev)) tgt().dispatchEvent(new PointerEvent('pointermove', { clientX: ev.clientX, clientY: ev.clientY, pointerType: 'mouse' })); else if (GP.S.ghost) { GP.S.ghost.visible = false; GP.S.invalidate(); } };
+  const up = ev => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); document.body.classList.remove('grabbing'); const cdr = cardDrag; setTimeout(() => { cardDrag = null; }, 0); if (!cdr || !cdr.dragged) return; if (inside(ev) && GP.S.ghost && GP.S.ghost.visible) { tgt().dispatchEvent(new PointerEvent('pointerdown', { clientX: ev.clientX, clientY: ev.clientY, button: 0, pointerType: 'mouse', pointerId: 91 })); tgt().dispatchEvent(new PointerEvent('pointerup', { clientX: ev.clientX, clientY: ev.clientY, button: 0, pointerType: 'mouse', pointerId: 91 })); } else GP.tools.cancel(); renderGrid(); };
   window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
 });
 GP.on('placing', () => { if (ui.step === 'place') { $$('#plGrid .card[data-type]').forEach(c => c.classList.toggle('on', !!(ui.placing && ui.placing.list.length === 1 && ui.placing.list[0].it.type === c.dataset.type))); } });
@@ -220,27 +223,58 @@ Q.compute = () => {
   if (ptRows.length) groups.push({ name: '가벽', rows: ptRows });
   const q = L.quote; const ex = (q.extras || []).map((x, i) => ({ name: x.name || '항목', spec: x.spec || '', qty: +x.qty || 0, unit: x.unit || '식', price: +x.price || 0, extra: i }));
   const ship = q.shipping ?? lib.defaults.shipping ?? 0, inst = q.install ?? lib.defaults.install ?? 0;
-  if (ship > 0) ex.push({ name: '운송비', spec: '', qty: 1, unit: '식', price: ship, fixed: 'shipping' }); if (inst > 0) ex.push({ name: '설치비', spec: '', qty: 1, unit: '식', price: inst, fixed: 'install' });
-  if (ex.length) groups.push({ name: '기타', rows: ex });
+  if (ex.length) groups.push({ name: '소도구·기타 품목', rows: ex });
+  const si = []; if (ship > 0) si.push({ name: '운송비', spec: '', qty: 1, unit: '식', price: ship, fixed: 'shipping' }); if (inst > 0) si.push({ name: '설치비', spec: '', qty: 1, unit: '식', price: inst, fixed: 'install' });
+  if (si.length) groups.push({ name: '운송·설치', rows: si });
   let sub = 0; groups.forEach(g => g.rows.forEach(r => { r.amount = Math.round(r.qty * r.price); sub += r.amount; }));
   const disc = Math.round(sub * (+q.discountPct || 0) / 100) + (+q.discountAmt || 0);
   const supply = Math.max(0, sub - disc), vat = Math.round(supply * .1);
   const missing = groups.reduce((n, g) => n + g.rows.filter(r => !r.price && r.pk).length, 0);
   return { groups, sub, disc, supply, vat, total: supply + vat, missing };
 };
+/* installment / lease estimate: monthly payment at the low and high end of the rate range the salesperson enters
+   (the real rate depends on the buyer's credit). Lease: the residual value is left at the end (balloon). */
+Q.fin = (q) => Object.assign({}, GP.lib.defaults.finance, q.finance || {});
+Q.monthly = (amount, f, ratePct) => {
+  const P = Math.max(0, amount * (1 - (+f.downPct || 0) / 100)), RV = f.kind === 'lease' ? amount * (+f.rvPct || 0) / 100 : 0, n = Math.max(1, +f.months || 36), r = (+ratePct || 0) / 1200;
+  if (r <= 0) return Math.max(0, (P - RV) / n);
+  return Math.max(0, (P - RV / Math.pow(1 + r, n)) * r / (1 - Math.pow(1 + r, -n)));
+};
+Q.finance = (R) => {
+  const f = Q.fin(GP.L().quote), amt = R.total, lo = Math.min(+f.rateLo || 0, +f.rateHi || 0), hi = Math.max(+f.rateLo || 0, +f.rateHi || 0);
+  const mLo = Math.round(Q.monthly(amt, f, lo) / 100) * 100, mHi = Math.round(Q.monthly(amt, f, hi) / 100) * 100;
+  const down = Math.round(amt * (+f.downPct || 0) / 100), rv = f.kind === 'lease' ? Math.round(amt * (+f.rvPct || 0) / 100) : 0;
+  return { f, amt, lo, hi, mLo, mHi, down, rv, n: +f.months || 36, totLo: down + mLo * (+f.months || 36) + rv, totHi: down + mHi * (+f.months || 36) + rv };
+};
 Q.setPrice = (pk, v) => { const lib = GP.lib; const [kind, key] = [pk.slice(0, pk.indexOf(':')), pk.slice(pk.indexOf(':') + 1)]; if (kind === 'type') lib.prices[key] = v; else if (kind === 'mat') lib.matPrices[key] = v; else if (kind === 'trim') lib.trimPrices[key] = v; else if (kind === 'part') lib.partPrices[key] = v; GP.saveLib(); };
 Q.no = () => { const q = GP.L().quote; if (!q.no) { const d = new Date(); q.no = `GF-${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(Math.floor(Math.random() * 900) + 100)}`; } return q.no; };
+/* quote-only items: common small equipment, then names used before */
+const EXTRA_PRESETS = [['덤벨 세트', '2~30kg', '세트'], ['바벨·원판 세트', '', '세트'], ['케틀벨 세트', '', '세트'], ['덤벨 거치대', '', '개'], ['요가·스트레칭 매트', '', '개'], ['폼롤러', '', '개'], ['밴드·튜빙 세트', '', '세트'], ['메디신볼 세트', '', '세트'], ['짐볼', '', '개'], ['플라이오 박스', '', '개']];
+function extraChips() { const seen = new Set(EXTRA_PRESETS.map(p => p[0])); return (GP.lib.extraRecent || []).filter(n => n && !seen.has(n)).map(n => [n, '', '식']).concat(EXTRA_PRESETS); }
 panels.renderQuote = () => {
   const qs = $('#quoteSheet'); if (qs.hidden) return; const R = Q.compute(), q = GP.L().quote, lib = GP.lib;
   qs.innerHTML = `<div class="qtool"><button class="btn" data-q="close">← 도면으로</button><b class="qt-title">견적서</b><div class="acts" style="flex:0"><button class="btn" data-q="prices">${IC.gear} 단가 한 번에</button><button class="btn primary" data-q="pdf">${IC.pdf} 견적서 PDF</button></div></div>
   <div class="qwrap"><aside class="qside">
     <section class="blk"><div class="kv"><span>부가세 별도</span><b>${U.won(R.supply)}원</b><span>부가세 10%</span><b>${U.won(R.vat)}원</b><span class="big"><b>부가세 포함</b></span><b class="big">${U.won(R.total)}원</b></div>${R.missing ? `<p class="note" style="color:var(--amber)">가격 미입력 ${R.missing}개 — 노란 칸에 단가를 넣으면 다음부터 기억해요.</p>` : ''}</section>
     <section class="blk"><h3>추가 비용 · 할인</h3><div class="row2"><label class="fld"><span>운송비</span>${numI('qShip', q.shipping ?? lib.defaults.shipping ?? 0, 10000, '원')}</label><label class="fld"><span>설치비</span>${numI('qInst', q.install ?? lib.defaults.install ?? 0, 10000, '원')}</label></div><div class="row2"><label class="fld"><span>할인율</span>${numI('qDp', q.discountPct || 0, 1, '%', 'min="0" max="100"')}</label><label class="fld"><span>할인 금액</span>${numI('qDa', q.discountAmt || 0, 10000, '원', 'min="0"')}</label></div></section>
-    <section class="blk"><div class="blk-h"><h3>도면에 없는 품목</h3><button class="btn xs" id="qAdd">＋ 추가</button></div><table class="tbl"><tbody>${(q.extras || []).map((x, i) => `<tr><td><input data-x="${i}" data-f="name" value="${U.esc(x.name || '')}" placeholder="예: 덤벨 세트"></td><td style="width:52px"><input data-x="${i}" data-f="qty" type="number" value="${x.qty ?? 1}"></td><td style="width:96px"><input data-x="${i}" data-f="price" type="number" step="1000" value="${x.price || 0}"></td><td><button class="x" data-xdel="${i}">×</button></td></tr>`).join('') || '<tr><td class="note">덤벨·원판 세트, 소도구처럼 도면에 없는 품목을 넣어요.</td></tr>'}</tbody></table></section>
+    <section class="blk"><div class="blk-h"><h3>견적에만 넣는 품목</h3><button class="btn xs" id="qAdd">＋ 직접 입력</button></div><p class="note">덤벨·원판처럼 도면에 놓기 애매한 소도구는 여기서 넣어요. 눌러서 바로 추가:</p>
+      <div class="xchips">${extraChips().map(([n, sp, un]) => `<button class="chip" data-xadd="${U.esc(n)}" data-sp="${U.esc(sp)}" data-un="${U.esc(un)}">＋ ${U.esc(n)}${lib.extraPrices[n] ? ` <small>${U.won(lib.extraPrices[n])}원</small>` : ''}</button>`).join('')}</div>
+      ${(q.extras || []).length ? `<div class="xrows">${q.extras.map((x, i) => `<div class="xrow"><input class="xn" data-x="${i}" data-f="name" value="${U.esc(x.name || '')}" placeholder="품목 이름"><input class="xs" data-x="${i}" data-f="spec" value="${U.esc(x.spec || '')}" placeholder="규격 (선택)"><div class="xq"><input data-x="${i}" data-f="qty" type="number" min="0" value="${x.qty ?? 1}" aria-label="수량"><select data-x="${i}" data-f="unit" aria-label="단위">${['개', '세트', '식', 'm', '박스'].map(u => `<option${(x.unit || '식') === u ? ' selected' : ''}>${u}</option>`).join('')}</select></div><div class="unit xp"><input data-x="${i}" data-f="price" type="number" step="1000" min="0" value="${x.price || ''}" placeholder="단가"><em>원</em></div><button class="x" data-xdel="${i}" aria-label="삭제">×</button></div>`).join('')}</div>` : ''}</section>
+    ${finBlock(R, q)}
     <section class="blk"><h3>견적 정보</h3><div class="row2"><label class="fld"><span>견적 번호</span><input id="qNo" value="${U.esc(Q.no())}"></label><label class="fld"><span>유효기간</span>${numI('qValid', q.validDays ?? lib.defaults.validDays ?? 30, 1, '일')}</label></div><label class="fld"><span>비고 (견적서 아래에 들어가요)</span><textarea id="qNote" rows="3" placeholder="예: 설치 일정 협의, 배송 조건 등">${U.esc(q.note || '')}</textarea></label></section>
   </aside><div class="qmain">${sheetHtml(R)}</div></div>`;
   GP.fillIcons(qs);
 };
+function finBlock(R, q) {
+  const F = Q.finance(R), f = F.f, lease = f.kind === 'lease';
+  return `<section class="blk"><div class="blk-h"><h3>할부·리스 월 납입 <small class="note">(예상)</small></h3><label class="tg-s"><input type="checkbox" id="fOn" ${f.show ? 'checked' : ''}> 견적서에 넣기</label></div>
+    <div class="seg sm fin-kind"><button data-fk="install" class="${lease ? '' : 'on'}">할부</button><button data-fk="lease" class="${lease ? 'on' : ''}">리스</button></div>
+    <div class="row2"><label class="fld"><span>기간</span><select id="fMonths">${[12, 24, 36, 48, 60].map(m => `<option value="${m}"${F.n === m ? ' selected' : ''}>${m}개월</option>`).join('')}</select></label><label class="fld"><span>선수금</span>${numI('fDown', f.downPct || 0, 5, '%', 'min="0" max="90"')}</label></div>
+    <div class="row2"><label class="fld"><span>연 금리 (낮을 때)</span>${numI('fLo', f.rateLo, .5, '%', 'min="0" max="40"')}</label><label class="fld"><span>연 금리 (높을 때)</span>${numI('fHi', f.rateHi, .5, '%', 'min="0" max="40"')}</label></div>
+    ${lease ? `<label class="fld"><span>만기 잔존가치</span>${numI('fRv', f.rvPct || 0, 5, '%', 'min="0" max="60"')}</label>` : ''}
+    <div class="fin-out">${R.total > 0 ? `<span>월 약</span><b>${U.won(F.mLo)}${F.mHi !== F.mLo ? ` ~ ${U.won(F.mHi)}` : ''}원</b><small>${F.n}개월 · 연 ${F.lo}${F.hi !== F.lo ? `~${F.hi}` : ''}% 기준${F.down ? ` · 선수금 ${U.won(F.down)}원` : ''}${F.rv ? ` · 만기 잔존가치 ${U.won(F.rv)}원` : ''}</small><small>총 납입 약 ${U.won(F.totLo)}${F.totHi !== F.totLo ? ` ~ ${U.won(F.totHi)}` : ''}원</small>` : '<small>단가를 넣으면 월 납입금이 계산돼요.</small>'}</div>
+    <p class="note">금리는 구매자 신용도와 금융사 심사에 따라 달라져요. 예상 범위로 안내하고, 확정 조건은 금융사 승인 후 알려 주세요.</p></section>`;
+}
 function sheetHtml(R) {
   const P = GP.P, q = GP.L().quote, co = GP.lib.company;
   const valid = q.validDays ?? GP.lib.defaults.validDays ?? 30; const vd = new Date(Date.now() + valid * 864e5);
@@ -252,23 +286,40 @@ function sheetHtml(R) {
    ${R.groups.map(g => `<tr class="grp"><td colspan="5">${U.esc(g.name)}</td></tr>` + g.rows.map(r => `<tr><td>${U.esc(r.name)}</td><td class="c">${U.esc(r.spec)}</td><td class="n">${r.qty} ${r.unit}</td><td class="n">${r.pk ? `<input class="price" data-pk="${r.pk}" type="number" step="1000" value="${r.price || ''}" placeholder="단가 입력">` : U.won(r.price)}</td><td class="n">${U.won(r.amount)}</td></tr>`).join('')).join('') || '<tr><td colspan="5" class="c">도면에 기구를 놓으면 품목이 자동으로 들어와요</td></tr>'}
    </tbody></table>
    <div class="qtot"><span>소계</span><b>${U.won(R.sub)}원</b>${R.disc ? `<span>할인</span><b>-${U.won(R.disc)}원</b>` : ''}<span>공급가 (부가세 별도)</span><b>${U.won(R.supply)}원</b><span>부가세 (10%)</span><b>${U.won(R.vat)}원</b><span class="big">합계 (부가세 포함)</span><b class="big">${U.won(R.total)}원</b></div>
+   ${Q.fin(q).show && R.total > 0 ? (() => { const F = Q.finance(R); return `<div class="qfin"><b>${F.f.kind === 'lease' ? '리스' : '할부'} 예상 월 납입금</b><span>월 약 ${U.won(F.mLo)}${F.mHi !== F.mLo ? ` ~ ${U.won(F.mHi)}` : ''}원 <small>(${F.n}개월 · 연 ${F.lo}${F.hi !== F.lo ? `~${F.hi}` : ''}% 기준${F.down ? ` · 선수금 ${U.won(F.down)}원` : ''}${F.rv ? ` · 만기 잔존가치 ${U.won(F.rv)}원` : ''})</small></span><small>※ 예상 금액이며, 실제 금리와 조건은 신용도 및 금융사 심사에 따라 달라집니다.</small></div>`; })() : ''}
    ${q.note ? `<div class="qnote">${U.esc(q.note)}</div>` : ''}</div>`;
 }
 const qs = $('#quoteSheet');
 qs.addEventListener('click', e => {
   const b = e.target.closest('[data-q]'); if (b) { const a = b.dataset.q; if (a === 'pdf') GP.exp.quotePdf(); else if (a === 'prices') panels.settings('prices'); else if (a === 'close') ui.closeQuote(); return; }
-  if (e.target.id === 'qAdd') { const q = GP.L().quote; (q.extras = q.extras || []).push({ name: '', qty: 1, price: 0 }); GP.H.commit(); panels.renderQuote(); return; }
-  const xd = e.target.closest('[data-xdel]'); if (xd) { GP.L().quote.extras.splice(+xd.dataset.xdel, 1); GP.H.commit(); panels.renderQuote(); }
+  if (e.target.id === 'qAdd') { const q = GP.L().quote; (q.extras = q.extras || []).push({ name: '', qty: 1, unit: '개', price: 0 }); GP.H.commit(); panels.renderQuote(); const ins = $$('#quoteSheet .xn'); if (ins.length) ins[ins.length - 1].focus(); return; }
+  const xa = e.target.closest('[data-xadd]'); if (xa) { const q = GP.L().quote, n = xa.dataset.xadd; (q.extras = q.extras || []).push({ name: n, spec: xa.dataset.sp || '', qty: 1, unit: xa.dataset.un || '식', price: GP.lib.extraPrices[n] || 0 }); GP.H.commit(); panels.renderQuote(); ui.renderSummary(); GP.toast(`'${n}'을(를) 견적에 넣었어요${GP.lib.extraPrices[n] ? '' : ' · 단가를 입력해 주세요'}`); return; }
+  const xd = e.target.closest('[data-xdel]'); if (xd) { GP.L().quote.extras.splice(+xd.dataset.xdel, 1); GP.H.commit(); panels.renderQuote(); return; }
+  const fk = e.target.closest('[data-fk]'); if (fk) { setFin({ kind: fk.dataset.fk }); return; }
 });
 qs.addEventListener('change', e => {
   const t = e.target, q = GP.L().quote, v = +t.value;
   if (t.dataset.pk) { Q.setPrice(t.dataset.pk, Math.max(0, v || 0)); panels.renderQuote(); ui.renderSummary(); return; }
+  const fm = { fMonths: 'months', fDown: 'downPct', fLo: 'rateLo', fHi: 'rateHi', fRv: 'rvPct' }[t.id];
+  if (fm) { setFin({ [fm]: U.clamp(v || 0, 0, fm === 'months' ? 120 : 100) }); return; }
+  if (t.id === 'fOn') { setFin({ show: t.checked }); return; }
   if (t.id === 'qShip') q.shipping = v || 0; else if (t.id === 'qInst') q.install = v || 0; else if (t.id === 'qDp') q.discountPct = U.clamp(v || 0, 0, 100); else if (t.id === 'qDa') q.discountAmt = Math.max(0, v || 0);
   else if (t.id === 'qNo') q.no = t.value; else if (t.id === 'qValid') q.validDays = Math.max(1, v || 30); else if (t.id === 'qNote') q.note = t.value;
-  else if (t.dataset.x != null) { const x = q.extras[+t.dataset.x]; if (x) x[t.dataset.f] = t.dataset.f === 'name' ? t.value : (+t.value || 0); }
+  else if (t.dataset.x != null) {
+    const x = q.extras[+t.dataset.x], f = t.dataset.f; if (!x) return;
+    x[f] = ['name', 'spec', 'unit'].includes(f) ? t.value.trim() : Math.max(0, +t.value || 0);
+    const nm = (x.name || '').trim(), lib = GP.lib;     // remember the price and the name for next time
+    if (nm && (f === 'price' || f === 'name')) { if (x.price > 0) lib.extraPrices[nm] = x.price; lib.extraRecent = [nm].concat((lib.extraRecent || []).filter(v => v !== nm)).slice(0, 8); GP.saveLib(); }
+  }
   else return;
   GP.H.commit(); panels.renderQuote(); ui.renderSummary();
 });
+/* finance terms: kept on the quote; the terms (not the on/off) also become this device's default for the next quote */
+function setFin(o) {
+  const q = GP.L().quote; q.finance = Object.assign(Q.fin(q), o);
+  const d = Object.assign({}, q.finance); delete d.show; GP.lib.defaults.finance = d; GP.saveLib();
+  GP.H.commit(); panels.renderQuote();
+}
 qs.addEventListener('keydown', e => { if (e.target.dataset.pk && e.key === 'Enter') { e.target.blur(); } });
 
 /* ======================= dialogs ======================= */
@@ -305,6 +356,37 @@ panels.wizard = () => {
   };
   const save = () => { const g = id => $('#' + id); if (g('wzName')) { w.name = g('wzName').value.trim(); w.client = g('wzClient').value.trim(); w.consultant = g('wzCons').value.trim(); } if (g('wzPy')) { w.py = +g('wzPy').value || 60; w.ratio = +g('wzRatio').value || 1.5; } };
   render();
+};
+/* ---------- A안·B안 비교: every variant computed in turn (plan picture, equipment, space, floor, quote, checks) ---------- */
+panels.compare = () => {
+  const P = GP.P, keep = P.cur; if (P.variants.length < 2) { GP.toast('안이 하나뿐이에요. 위쪽 ＋로 B안을 만들면 비교할 수 있어요'); return; }
+  const catName = c => GP.lib.catNames[c] || (GP.CATS.find(x => x.id === c) || {}).name || c;
+  const V = P.variants.map((v, i) => {
+    P.cur = i; GP.S.dataChanged();
+    const L = GP.L(), R = GP.quote.compute(), list = GP.checks.full(), occ = GP.calc.occupancy(), ms = GP.calc.matSummary(), pl = GP.calc.partLength();
+    const byCat = {}; let eqN = 0; L.items.forEach(it => { if (GP.info.NO_QUOTE.has(it.type)) return; const c = (GP.getDef(it.type) || {}).cat; byCat[c] = (byCat[c] || 0) + 1; eqN++; });
+    let img = ''; try { img = GP.exp.planImage(420, 280, { notes: false, labels: false }).toDataURL('image/jpeg', .82); } catch (e) { }
+    return { name: v.name, img, eqN, byCat, room: occ.room, foot: occ.foot, used: occ.used, blocks: ms.blocks.reduce((n, b) => n + b.count, 0), part: Object.values(pl).reduce((a, b) => a + b, 0), total: R.total, missing: R.missing, err: list.filter(c => c.sev === 'err').length, warn: list.filter(c => c.sev === 'warn').length, aisle: (GP.checks.aisle && GP.checks.aisle.comps.length) || 0 };
+  });
+  P.cur = keep; GP.S.dataChanged(); GP.checks.full(); GP.S.invalidate();
+  const pct = (a, b) => b > 0 ? Math.round(a / b * 100) : 0;
+  const diff = (v, base, fmt, unit) => { const d = v - base; if (Math.abs(d) < 1e-9) return ''; return ` <small class="cmp-d ${d > 0 ? 'up' : 'dn'}">${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}${unit || ''}</small>`; };
+  const row = (label, f, num) => `<tr><th>${label}</th>${V.map((v, i) => `<td>${f(v)}${num && i ? diff(num(v), num(V[0]), num.fmt || (x => U.won(Math.round(x))), num.unit) : ''}</td>`).join('')}</tr>`;
+  const won = Object.assign(v => v.total, { fmt: x => U.won(Math.round(x)), unit: '원' });
+  const html = `<div class="cmp-wrap"><table class="cmp-tbl"><thead><tr><th></th>${V.map((v, i) => `<th>${U.esc(v.name)}${i === keep ? ' <small>(지금 보는 안)</small>' : ''}</th>`).join('')}</tr></thead><tbody>
+    <tr><th>도면</th>${V.map(v => `<td>${v.img ? `<img src="${v.img}" alt="">` : ''}</td>`).join('')}</tr>
+    ${row('기구 수', v => `<b>${v.eqN}대</b>`, Object.assign(v => v.eqN, { fmt: x => x, unit: '대' }))}
+    ${row('구성', v => Object.entries(v.byCat).sort((a, b) => b[1] - a[1]).map(([c, k]) => `${U.esc(catName(c))} ${k}`).join(' · ') || '-')}
+    ${row('기구가 차지하는 면적', v => `${U.r2(v.foot)}㎡ <small>(${pct(v.foot, v.room)}%)</small>`, Object.assign(v => v.foot, { fmt: x => U.r2(x), unit: '㎡' }))}
+    ${row('사용 공간 포함', v => `${U.r2(v.used)}㎡ <small>(${pct(v.used, v.room)}%)</small>`, Object.assign(v => v.used, { fmt: x => U.r2(x), unit: '㎡' }))}
+    ${row('고무블럭', v => v.blocks ? `${v.blocks}장` : '-', Object.assign(v => v.blocks, { fmt: x => x, unit: '장' }))}
+    ${row('가벽', v => v.part ? `${U.r2(v.part)}m` : '-', Object.assign(v => v.part, { fmt: x => U.r2(x), unit: 'm' }))}
+    ${row('견적 합계 (부가세 포함)', v => `<b>${U.won(v.total)}원</b>${v.missing ? `<br><small class="cmp-miss">가격 미입력 ${v.missing}개</small>` : ''}`, won)}
+    ${row('배치 점검', v => v.err + v.warn ? `<span class="cmp-bad">확인할 점 ${v.err + v.warn}개</span>${v.aisle ? ` <small>(좁은 통로 ${v.aisle}곳)</small>` : ''}` : '<span class="cmp-ok">이상 없음</span>')}
+    <tr><th></th>${V.map((v, i) => `<td>${i === keep ? '' : `<button class="btn sm" data-cmpgo="${i}">${U.esc(v.name)} 보기</button>`}</td>`).join('')}</tr>
+  </tbody></table></div><p class="note">숫자 옆 작은 글씨는 ${U.esc(V[0].name)}과의 차이예요. 사용 공간은 기구 앞뒤로 운동할 때 필요한 공간까지 포함한 면적이에요.</p>`;
+  GP.modal('안 비교', html, '<button class="btn primary" data-close>닫기</button>', { size: 'wide' });
+  $('#modalBody').onclick = e => { const b = e.target.closest('[data-cmpgo]'); if (!b) return; GP.closeModal(); const vb = $(`#variants [data-var="${b.dataset.cmpgo}"]`); if (vb) vb.click(); };
 };
 panels.versions = async () => {
   const list = await GP.listVersions();
@@ -351,7 +433,9 @@ panels.settings = (tab) => {
         <div class="acts"><button class="btn sm primary" id="ghOn">연결하기</button></div><span class="note" id="ghStat"></span>`) + `</section>
         <section class="blk"><h3>인터넷 없는 현장 대비</h3><p class="note">3D 모델은 처음 볼 때 받아서 이 기기에 저장돼요. 현장에 가기 전에 한 번 눌러 두면 어디서나 3D가 떠요. (약 15MB)</p><div class="row2"><button class="btn" id="m3All">3D 모델 전체 받아두기</button><span class="note" id="m3Stat"></span></div></section>`;
     } else {
-      body += `<p class="note">단가·이름·내 물품·세트 같은 설정을 파일로 저장해 두거나 다른 기기로 옮길 수 있어요.</p><div class="row2"><button class="btn" id="libExport">설정 파일 저장</button><label class="btn" style="position:relative;overflow:hidden">설정 파일 불러오기<input type="file" id="libImport" accept=".json" style="position:absolute;inset:0;opacity:0"></label></div>`;
+      body += `<section class="blk"><h3>자동 백업 폴더</h3><div id="bkBox">${GP.backup.statusHtml()}</div></section>
+        <section class="blk"><h3>모든 프로젝트를 파일 하나로</h3><p class="note">새 PC로 옮기거나 만일에 대비해 보관해요. 불러올 때는 메뉴 → 프로젝트 파일 열기에서 이 파일을 고르면, 없는 프로젝트만 추가되고 같은 프로젝트는 더 최근 것으로 남아요.</p><div class="acts"><button class="btn" id="bkAllSave">모든 프로젝트 저장</button></div></section>
+        <section class="blk"><h3>설정 파일</h3><p class="note">단가·이름·내 물품·세트 같은 설정을 파일로 저장해 두거나 다른 기기로 옮길 수 있어요.</p><div class="row2"><button class="btn" id="libExport">설정 파일 저장</button><label class="btn" style="position:relative;overflow:hidden">설정 파일 불러오기<input type="file" id="libImport" accept=".json" style="position:absolute;inset:0;opacity:0"></label></div></section>`;
     }
     GP.modal('설정', body, '<button class="btn primary" data-close>닫기</button>', { size: 'wide', onClose: () => { GP.emit('library'); panels.renderQuote(); ui.renderSummary(); ui.renderInspector(); GP.changed([], { commit: false }); } });
     const mb = $('#modalBody');

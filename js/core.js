@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.0.0';
+GP.VERSION = '2.1.0';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
@@ -179,7 +179,8 @@ const LIB_DEFAULT = () => ({
   names: {}, catNames: {}, prices: {}, power: {}, favorites: ['treadmill', 'bike', 'latpull', 'chest', 'legpress_plate', 'powerrack', 'bench_flat', 'bench_adj', 'dbrack2'], hidden: [],
   matPrices: {}, trimPrices: {}, partPrices: { wall: 0, glass: 0, half: 0 },
   customTypes: {}, sets: [],
-  defaults: { blocksPerPyeong: 13, aisleMin: .9, shipping: 0, install: 0, validDays: 30, cordLen: 3 },
+  extraPrices: {}, extraRecent: [],      // quote-only items (not on the plan): last price per name, recently used names
+  defaults: { blocksPerPyeong: 13, aisleMin: .9, shipping: 0, install: 0, validDays: 30, cordLen: 3, finance: { kind: 'install', months: 36, downPct: 0, rateLo: 6, rateHi: 12, rvPct: 0 } },
   company: { name: 'GOFIT KOREA', ceo: '', tel: '', addr: '', bizNo: '', email: '' },
   guideSeen: false,
 });
@@ -205,8 +206,9 @@ GP.TRIMS = { rubber: '경사형 고무 마감재', alu: '경사형 알루미늄 
 GP.PARTS = { wall: '일반 가벽', glass: '유리 파티션', half: '허리 높이 반벽' };
 GP.OPENINGS = { door: '여닫이 문', door2: '양개문', glass2: '유리 자동문', slide: '미닫이 문', opening: '개구부(문 없음)', window: '창문' };
 
+GP.DEFAULT_ROOM = [[0, 0], [10, 0], [10, 8], [0, 8]];     // a new project starts with one plain 10 x 8 m room
 GP.newLayout = (pts) => ({
-  room: { pts: pts || [[0, 0], [12, 0], [12, 8], [0, 8]] },
+  room: { pts: pts || GP.DEFAULT_ROOM.map(q => q.slice()) },
   wallColors: {}, wallMarks: {},
   openings: [], partitions: [], items: [], mats: [], zones: [], rooms: [], notes: [], dims: [], scenes: [],
   quote: { extras: [], shipping: null, install: null, discountPct: 0, discountAmt: 0, note: '', validDays: null, no: '' },
@@ -230,7 +232,7 @@ GP.validateProject = (o) => {
   p.images = o.images || {};
   p.variants = o.variants.map(v => {
     const L = Object.assign(GP.newLayout(), v.layout || {});
-    if (!L.room || !Array.isArray(L.room.pts) || L.room.pts.length < 3) L.room = { pts: [[0, 0], [12, 0], [12, 8], [0, 8]] };
+    if (!L.room || !Array.isArray(L.room.pts) || L.room.pts.length < 3) L.room = { pts: GP.DEFAULT_ROOM.map(q => q.slice()) };
     ['openings', 'partitions', 'items', 'mats', 'zones', 'rooms', 'notes', 'dims', 'scenes'].forEach(k => { if (!Array.isArray(L[k])) L[k] = []; });
     L.quote = Object.assign(GP.newLayout().quote, L.quote || {});
     L.wallColors = L.wallColors || {}; L.wallMarks = L.wallMarks || {};
@@ -264,10 +266,10 @@ H.canUndo = () => H.idx > 0; H.canRedo = () => H.idx < H.stack.length - 1;
 /* ---------------- project persistence ---------------- */
 GP.projectPayload = () => { const p = GP.P; const used = new Set(); p.variants.forEach(v => v.layout.items.forEach(it => { if (String(it.type).startsWith('c_')) used.add(it.type); })); const ct = {}; used.forEach(k => { if (GP.lib.customTypes[k]) ct[k] = GP.lib.customTypes[k]; }); return Object.assign({}, p, { customTypes: ct }); };
 GP.saveProject = async (thumb) => {
-  if (!GP.P || GP.viewOnly) return;
+  if (!GP.P || GP.viewOnly || GP.P.unnamed) return;      // the first-run project is saved once it has a name
   const p = GP.projectPayload(); p.updatedAt = Date.now();
   const rec = { id: p.id, name: p.name, client: p.client, updatedAt: p.updatedAt, thumb: thumb || (await DB.get('projects', p.id))?.thumb || '', data: p };
-  await DB.put('projects', p.id, rec); await DB.put('kv', 'lastProject', p.id);
+  await DB.put('projects', p.id, rec); await DB.put('kv', 'lastProject', p.id); GP.emit('saved', p.updatedAt);
   const now = Date.now();
   if (now - H.lastVersionAt > 4 * 60 * 1000) { H.lastVersionAt = now; await GP.addVersion(''); }
 };
