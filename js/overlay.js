@@ -18,6 +18,8 @@ OV.sync = () => {
   if (u.tool === 'vertex' && !GP.viewOnly) {
     const P = L.room.pts;
     for (let i = 0; i < P.length; i++) { const e = G.edge(P, i), off = GP.WALL_T + .38; spec('w' + i, 'ov wl edit' + ((OV.hiWall && OV.hiWall.has(i)) ? ' hi' : ''), e.L.toFixed(2) + ' m', [(e.a[0] + e.b[0]) / 2 - e.nx * off, (e.a[1] + e.b[1]) / 2 - e.nz * off], { rotSeg: [e.a, e.b], minLen: 34, data: { wall: i }, interactive: true }); }
+    // corner angles: press to type an angle
+    for (let i = 0; i < P.length; i++) { const a = G.interior(P, i), q = angPos(P, i); if (!q) continue; const right = [90, 180, 270].some(v => Math.abs(a - v) < .3); spec('a' + i, 'ov ang edit' + (right ? ' right' : ''), (Math.round(a * 10) / 10) + '°', q, { data: { ang: i }, interactive: true }); }
   }
   diff();
   OV.syncHandles();
@@ -54,7 +56,6 @@ OV.syncHandles = () => {
   const t = GP.tools.polyTarget();
   if (t) {
     const P = t.pts, n = P.length, room = t.kind === 'room';
-    if (room) for (let i = 0; i < n; i++) { const a = G.interior(P, i); if ([90, 180, 270].some(v => Math.abs(a - v) < .3)) continue; const q = angPos(P, i); if (q) hspecs.push({ cls: 'ov ang', html: (Math.round(a * 10) / 10) + '°', pos: q }); }
     const segs = t.open ? n - 1 : n;
     for (let i = 0; i < segs; i++) { const a = P[i], b = P[(i + 1) % n]; hspecs.push({ cls: 'ov hd mid', html: '+', pos: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], h: 'm', i, title: '끌어서 꺾기' }); }
     for (let i = 0; i < n; i++) hspecs.push({ cls: 'ov hd' + (GP.tools.selV === i || GP.tools.selVs.has(i) ? ' sel' : ''), html: room ? i + 1 : '', pos: P[i], h: 'v', i, title: '끌어서 이동 · Shift+클릭 여러 개 선택 · 더블클릭 삭제' });
@@ -91,6 +92,23 @@ base.addEventListener('click', e => {
   t.classList.add('editing'); t.innerHTML = `<input type="number" step="0.01" min="0.3" value="${L0.toFixed(2)}" aria-label="벽 길이 (m)">`; const inp = t.firstChild; inp.focus(); inp.select(); let done = false;
   const fin = ok => { if (done) return; done = true; t.classList.remove('editing'); const v = parseFloat(inp.value); const rec = [...els.values()].find(r => r.el === t); if (rec) rec.html = ''; if (ok && v >= .3 && v < 500 && Math.abs(v - L0) > .0005) GP.tools.setWallLength(i, v); OV.sync(); };
   inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') fin(true); else if (ev.key === 'Escape') fin(false); }); inp.addEventListener('blur', () => fin(true));
+});
+
+/* ---------------- corner angle edit: the angle, and which wall turns to make it (that wall keeps its length; its far end moves) ---------------- */
+base.addEventListener('click', e => {
+  const t = e.target.closest('.ang.edit'); if (!t) return; const i = +t.dataset.ang, P = GP.L().room.pts, n = P.length, a0 = G.interior(P, i);
+  const v = k => `<b class="vtx">${(k + n) % n + 1}</b>`, nx = (i + 1) % n, pv = (i - 1 + n) % n;
+  document.querySelectorAll('#angEdit').forEach(el => el.removeAttribute('id')); t.id = 'angEdit';
+  GP.popover(t, `<div class="ph">${v(i)} 꼭짓점 각도</div><div class="ang-pop"><div class="unit"><input type="number" id="angIn" step="0.5" min="1" max="359" value="${Math.round(a0 * 10) / 10}"><em>°</em></div>
+    <button class="mi" data-act="next"><div><b>${v(i)}–${v(nx)} 벽을 돌려서 맞추기</b><small>${v(nx)} 꼭짓점이 움직여요 · <kbd>Enter</kbd></small></div></button>
+    <button class="mi" data-act="prev"><div><b>${v(pv)}–${v(i)} 벽을 돌려서 맞추기</b><small>${v(pv)} 꼭짓점이 움직여요</small></div></button>
+    <p class="note">돌리는 벽의 길이는 그대로예요. 그 다음 벽이 늘거나 줄어서 맞춰져요.</p></div>`, (act) => {
+    const val = parseFloat($('#angIn').value); if (!(val > 0 && val < 360)) { GP.toast('1~359° 사이로 넣어 주세요', { bad: true }); return true; }
+    if (Math.abs(val - a0) < .05) return false;
+    return !GP.tools.setAngle(i, val, act === 'prev' ? 'prev' : 'next');
+  });
+  const inp = $('#angIn'); setTimeout(() => { inp.focus(); inp.select(); }, 20);
+  inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') { const b = document.querySelector('#pop [data-act="next"]'); if (b) b.click(); } else if (ev.key === 'Escape') GP.closePop(); });
 });
 
 /* ---------------- SVG previews (drawing, openings, fill wall) ---------------- */

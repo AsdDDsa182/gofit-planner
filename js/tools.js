@@ -479,6 +479,14 @@ tools.deleteVertex = (i) => {
   if (t.pts.length - del.length < min) { GP.toast(`꼭짓점은 최소 ${min}개가 필요해요`, { bad: true }); return; }
   del.forEach(k => t.pts.splice(k, 1)); selOnly(-1); GP.changed(t.kind === 'room' ? 'room' : t.kind);
 };
+tools.setAngle = (i, deg, side) => {
+  const P = GP.L().room.pts, n = P.length, p = P[i], j = side === 'prev' ? (i - 1 + n) % n : (i + 1) % n, keep = P[j].slice();
+  const L = G.len(p, keep), a0 = Math.atan2(keep[1] - p[1], keep[0] - p[0]), d = (deg - G.interior(P, i)) * DEG; let best = null;
+  for (const s of [1, -1]) { const a = a0 + s * d; P[j] = [U.r3(p[0] + Math.cos(a) * L), U.r3(p[1] + Math.sin(a) * L)]; const err = Math.abs(G.interior(P, i) - deg); if (!best || err < best.err) best = { err, pt: P[j].slice() }; }
+  P[j] = best.pt;
+  if (best.err > .3 || G.selfX(P)) { P[j] = keep; GP.toast('이 각도로 바꾸면 벽이 서로 겹쳐요. 다른 쪽 벽을 돌리거나 각도를 조금 바꿔 보세요', { bad: true, ms: 4500 }); GP.emit('overlay'); return false; }
+  GP.changed('room'); GP.toast(`${i + 1}번 꼭짓점을 ${Math.round(G.interior(P, i) * 10) / 10}°로 바꿨어요`); return true;
+};
 tools.setWallLength = (i, Lnew) => {
   const P = GP.L().room.pts, e = G.edge(P, i), delta = Lnew - e.L, pb = e.b[0] * e.dx + e.b[1] * e.dz;
   P.forEach((p, k) => { if (k !== i && (p[0] * e.dx + p[1] * e.dz) >= pb - 1e-3) { p[0] = U.r3(p[0] + e.dx * delta); p[1] = U.r3(p[1] + e.dz * delta); } });
