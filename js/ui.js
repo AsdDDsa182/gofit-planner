@@ -190,10 +190,10 @@ $$('#styleSeg button').forEach(b => b.classList.toggle('on', b.dataset.s === GP.
 
 /* ---------------- hint bar ---------------- */
 const HINTS = {
-  select: '기구를 <b>끌어서</b> 이동 · <kbd>R</kbd> 회전 · <kbd>Shift</kbd>+클릭 여러 개 선택 · 빈 곳을 끌면 화면 이동',
+  select: '기구를 <b>끌어서</b> 이동 · 빈 곳을 <b>끌면</b> 여러 개 선택 · 화면 이동은 오른쪽 버튼(또는 <kbd>Space</kbd>)+끌기 · <kbd>R</kbd> 회전',
   selectSpace: '벽·문·가벽을 <b>눌러서</b> 고쳐요 · 문은 양 끝 점을 끌어 폭 조절',
   selectFloor: '고무블럭 구역을 <b>눌러서</b> 종류·마감재를 바꿔요',
-  vertex: '꼭짓점·벽 <b>드래그</b> · <kbd>Shift</kbd>+클릭 여러 개 같이 · <b>＋</b> 끌어 꺾기 · 길이·각도 숫자를 <b>눌러</b> 입력',
+  vertex: '꼭짓점·벽 <b>드래그</b> · 빈 곳을 <b>끌면</b> 여러 개 선택 · <kbd>Shift</kbd>+클릭 추가 · <b>＋</b> 끌어 꺾기 · 길이·각도 숫자를 <b>눌러</b> 입력',
   part: '<b>클릭</b>으로 가벽 시작 · 계속 클릭해 꺾기 · <b>더블클릭</b>이나 <kbd>Enter</kbd>로 끝 · 숫자 입력 후 <kbd>Enter</kbd>로 길이 지정',
   opening: '벽이나 가벽 위를 <b>클릭</b>해서 놓기',
   roomlabel: '방 안을 <b>클릭</b>하면 이름을 붙이고 면적을 계산해요',

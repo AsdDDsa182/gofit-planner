@@ -69,7 +69,8 @@ function renderUL() {
   c.innerHTML = `<div class="row2"><label class="fld"><span>${UL.kind === 'image' ? '이미지 가로 실제 길이' : '단위 배율'}</span>${UL.kind === 'image' ? numI('ulW', UL.w, .1, 'm', 'min="1"') : `<select id="ulScale">${[[1, 'm'], [.001, 'mm'], [.01, 'cm'], [.0254, 'inch']].map(([v, l]) => `<option value="${v}" ${Math.abs((UL.scale || 1) - v) < 1e-9 ? 'selected' : ''}>${l}</option>`).join('')}</select>`}</label><label class="fld"><span>진하기</span><input type="range" id="ulOp" min=".1" max="1" step=".05" value="${UL.op}"></label></div>
    <div class="row2"><label class="fld"><span>위치 X</span>${numI('ulX', U.r2(UL.x), .1, 'm')}</label><label class="fld"><span>위치 Y</span>${numI('ulY', U.r2(UL.z), .1, 'm')}</label></div>
    ${UL.kind === 'dxf' && UL.loops && UL.loops.length ? `<button class="btn wide soft" id="ulUseLoop">가장 큰 닫힌 선을 벽으로 쓰기 (${UL.loops.length}개 중 ${(UL.loopIdx || 0) + 1}번째)</button>` : ''}
-   <button class="btn wide ghost" id="ulDel">도면 치우기</button>`;
+   <div class="row2"><button class="btn" id="ulHide">${UL.hidden ? '밑그림 다시 보기' : '밑그림 잠깐 숨기기'}</button><button class="btn ghost" id="ulDel">도면 치우기</button></div>
+   <p class="note">진하기를 낮추면 밑그림이 연해져서 그 위에 그린 벽이 잘 보여요.</p>`;
 }
 panels.renderUL = renderUL;
 const spEl = $('#panel-space');
@@ -81,6 +82,7 @@ spEl.addEventListener('click', e => {
   if (t.id === 'walkReset') { sp.walk = roomToWalk(GP.L().room.pts); renderSpBody(); return; }
   const wd = t.closest('[data-del]'); if (wd) { sp.walk.splice(+wd.dataset.del, 1); renderSpBody(); applyRoomLive(walkToPts(sp.walk)); return; }
   const vd = t.closest('[data-vdel]'); if (vd) { const P = GP.L().room.pts; if (P.length > 3) { P.splice(+vd.dataset.vdel, 1); GP.changed('room'); renderVTable(); } return; }
+  if (t.id === 'ulHide') { const UL = GP.S.underlay; if (UL) { UL.hidden = !UL.hidden; GP.S.invalidate(); renderUL(); } return; }
   if (t.id === 'ulDel') { GP.S.buildUnderlay(null); GP.DB.del('blobs', 'ul:' + GP.P.id); renderUL(); return; }
   if (t.id === 'ulUseLoop') { const UL = GP.S.underlay; const loop = UL.loops[UL.loopIdx || 0]; UL.loopIdx = ((UL.loopIdx || 0) + 1) % UL.loops.length; const s = UL.scale || 1; applyRoomLive(loop.map(p => [p[0] * s + UL.x, p[1] * s + UL.z]), true); renderUL(); GP.toast('캐드 도면의 선을 벽으로 가져왔어요. 다시 누르면 다음 선을 써요'); return; }
 });

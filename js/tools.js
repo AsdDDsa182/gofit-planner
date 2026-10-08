@@ -209,13 +209,19 @@ tools.attach = (cv) => {
   cv.addEventListener('pointerleave', () => { if (GP.S.ghost && !press) { GP.S.ghost.visible = false; GP.S.invalidate(); } if (!press && !drag) tools.clearHover(); });
   cv.addEventListener('contextmenu', e => e.preventDefault());
 };
+/* Space held: a left drag moves the view (box select is the plain drag now) */
+let spaceDown = false;
+window.addEventListener('keydown', e => { if (e.code !== 'Space' || e.repeat) return; const tg = (e.target.tagName || '').toLowerCase(); if (tg === 'input' || tg === 'textarea' || tg === 'select' || tg === 'button') return; if (!GP.S.canvas || (GP.V3 && GP.V3.on)) return; spaceDown = true; GP.S.canvas.style.cursor = 'grab'; e.preventDefault(); });
+window.addEventListener('keyup', e => { if (e.code === 'Space') { spaceDown = false; if (GP.S.canvas && !press) GP.S.canvas.style.cursor = ''; } });
+window.addEventListener('blur', () => { spaceDown = false; });
+const boxSelect = e => e.pointerType !== 'touch';
 function startPinch() { const [a, b] = [...pointers.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2 }; press = null; drag = null; draw = draw && draw.rect ? null : draw; $('#ovMarquee').hidden = true; }
 function onDown(e) {
   const S = GP.S; pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 2) { startPinch(); return; }
   if (drag) return;
   try { canvas().setPointerCapture(e.pointerId); } catch (_) { }
-  if (e.button === 1 || e.button === 2) { press = { pan: true, x: e.clientX, y: e.clientY, moved: true }; canvas().style.cursor = 'grabbing'; return; }
+  if (e.button === 1 || e.button === 2 || (spaceDown && e.button === 0)) { press = { pan: true, x: e.clientX, y: e.clientY, moved: true }; canvas().style.cursor = 'grabbing'; return; }
   if (e.button !== 0) return;
   if (GP.viewOnly) { press = { x: e.clientX, y: e.clientY, view: true }; return; }
   if (ui.placing) { press = { placing: true }; ghostUpdate(e.clientX, e.clientY, e.altKey); return; }
@@ -239,7 +245,7 @@ function onDown(e) {
     if (obj.k !== 'wall') { const o = GP.findBy(obj.k, obj.id); drag = { kind: obj.k, obj: o, sx: e.clientX, sy: e.clientY, moved: false, fx: fp.x, fz: fp.z, snap: JSON.stringify(o) }; }
     return;
   }
-  if (e.shiftKey) { press = { marquee: true, x: e.clientX, y: e.clientY }; return; }
+  if (e.shiftKey || (boxSelect(e) && ui.step !== 'floor')) { press = { marquee: true, add: e.shiftKey, x: e.clientX, y: e.clientY }; return; }
   press = { pan: true, x: e.clientX, y: e.clientY, moved: false };
 }
 function onMove(e) {
@@ -263,9 +269,10 @@ function onUp(e) {
   if (press && press.placing) { press = null; if (e.type !== 'pointercancel') placeGhost(e.shiftKey); return; }
   if (press && press.marquee) {
     $('#ovMarquee').hidden = true; const r = S.canvas.getBoundingClientRect(); const x0 = Math.min(press.x, e.clientX) - r.left, x1 = Math.max(press.x, e.clientX) - r.left, y0 = Math.min(press.y, e.clientY) - r.top, y1 = Math.max(press.y, e.clientY) - r.top;
-    if (press.verts) { const tg = tools.polyTarget(); press = null; if (tg) { tg.pts.forEach((p, k) => { const [sx, sy] = S.toScreen(p[0], 0, p[1]); if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) tools.selVs.add(k); }); tools.selV = tools.selVs.size ? [...tools.selVs][tools.selVs.size - 1] : -1; GP.emit('overlay'); S.invalidate(); } return; }
-    const hits = GP.L().items.filter(it => { const [sx, sy] = S.toScreen(it.x, 0, it.z); return sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1; }).map(it => ({ k: 'item', id: it.uid }));
-    press = null; if (hits.length) ui.select(hits, true); return;
+    const add = press.add, tiny = x1 - x0 < 4 && y1 - y0 < 4;      // a click (no box): clears the selection unless Shift is held
+    if (press.verts) { const tg = tools.polyTarget(); press = null; if (tg) { if (!add) tools.selVs.clear(); if (!tiny) tg.pts.forEach((p, k) => { const [sx, sy] = S.toScreen(p[0], 0, p[1]); if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) tools.selVs.add(k); }); tools.selV = tools.selVs.size ? [...tools.selVs][tools.selVs.size - 1] : -1; GP.emit('overlay'); S.invalidate(); } return; }
+    const hits = tiny ? [] : GP.L().items.filter(it => { const [sx, sy] = S.toScreen(it.x, 0, it.z); return sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1; }).map(it => ({ k: 'item', id: it.uid }));
+    press = null; if (hits.length) ui.select(hits, add); else if (!add && !ui.multi) ui.clearSel(); return;
   }
   if (draw) { toolUp(e); return; }
   if (drag) {
@@ -324,7 +331,7 @@ function toolDown(t, e, fp) {
       startMulti(target, a, fp, Sv.size === 2 ? { nx: ed.nx, nz: ed.nz } : null); try { canvas().setPointerCapture(e.pointerId); } catch (_) { }
       GP.emit('overlay'); S.invalidate(); return true;
     }
-    if (e.shiftKey) { press = { marquee: true, verts: true, x: e.clientX, y: e.clientY }; return true; }
+    if (e.shiftKey || boxSelect(e)) { press = { marquee: true, verts: true, add: e.shiftKey, x: e.clientX, y: e.clientY }; return true; }
     if (tools.selVs.size) { selOnly(-1); GP.emit('overlay'); S.invalidate(); }
     press = { pan: true, x: e.clientX, y: e.clientY, moved: true }; return true;
   }

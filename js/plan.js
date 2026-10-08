@@ -131,8 +131,6 @@ S.drawPlan = (x, V, o) => {
     x.lineWidth = 1; for (const [step, col] of [[1, o.white || LINE ? '#F0F1EF' : '#E6E8E5'], [5, o.white || LINE ? '#E5E7E4' : '#D9DDD8']]) { if (step === 1 && s < 14) continue; x.strokeStyle = col; x.beginPath(); for (let gx = Math.ceil(x0 / step) * step; gx <= x1; gx += step) { const [sx] = toS(gx, 0); x.moveTo(Math.round(sx) + .5, 0); x.lineTo(Math.round(sx) + .5, V.H); } for (let gz = Math.ceil(z0 / step) * step; gz <= z1; gz += step) { const [, sy] = toS(0, gz); x.moveTo(0, Math.round(sy) + .5); x.lineTo(V.W, Math.round(sy) + .5); } x.stroke(); }
   }
   W2S();
-  // underlay
-  const UL = scr && S.underlay; if (UL) { x.globalAlpha = UL.op; if (UL.kind === 'image' && UL.img) x.drawImage(UL.img, UL.x, UL.z, UL.w, UL.w * UL.aspect); else if (UL.kind === 'dxf' && UL.segs) { const k = UL.scale || 1; x.strokeStyle = '#C0392B'; x.lineWidth = px; x.beginPath(); for (const [a, b] of UL.segs) { x.moveTo(a[0] * k + UL.x, a[1] * k + UL.z); x.lineTo(b[0] * k + UL.x, b[1] * k + UL.z); } x.stroke(); } x.globalAlpha = 1; }
   // floor
   if (P.length >= 3) { path(P); x.fillStyle = '#FFFFFF'; x.fill(); }
   // zones (under mats so they read as areas)
@@ -146,6 +144,8 @@ S.drawPlan = (x, V, o) => {
     path(m.pts); const isSel = sel.has('mat:' + m.id), isHov = hov && hov.k === 'mat' && hov.id === m.id; x.strokeStyle = isSel ? '#2450E0' : isHov ? '#D9711A' : LINE ? '#1B1F23' : '#3A3F45'; x.lineWidth = (isSel || isHov ? 2.4 : 1.1) * px; x.stroke();
     if (m.trim && m.trim !== 'none') drawTrims(x, m, px);
   }
+  // underlay (customer's floor plan to trace): over the floor and the mats so it shows through them; walls and equipment stay on top
+  const UL = scr && S.underlay; if (UL && !UL.hidden) { x.globalAlpha = UL.op; if (UL.kind === 'image' && UL.img) x.drawImage(UL.img, UL.x, UL.z, UL.w, UL.w * UL.aspect); else if (UL.kind === 'dxf' && UL.segs) { const k = UL.scale || 1; x.strokeStyle = '#C0392B'; x.lineWidth = px; x.beginPath(); for (const [a, b] of UL.segs) { x.moveTo(a[0] * k + UL.x, a[1] * k + UL.z); x.lineTo(b[0] * k + UL.x, b[1] * k + UL.z); } x.stroke(); } x.globalAlpha = 1; }
   // narrow aisle overlay
   if (lay.aisle && GP.checks && GP.checks.aisle && GP.checks.aisle.cv) { const A = GP.checks.aisle; x.imageSmoothingEnabled = false; x.drawImage(A.cv, A.x, A.z, A.w, A.h); x.imageSmoothingEnabled = true; }
   // items
