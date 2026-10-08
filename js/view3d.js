@@ -406,10 +406,10 @@ V3.eyeViews = () => {
   return out;
 };
 V3._walkTest = { step: () => { lastT = performance.now() - 40; walkStep(); }, state: () => wk, free };   // lets a test drive the walk without animation frames (hidden page)
-/* looking around: drag on the 3D view */
+/* looking around: drag on the 3D view. A mouse looks where it is dragged (like a game, look.s = -1); a finger drags the scene (look.s = 1) */
 let look = null;
-function lookDown(e) { if (!V3.walking || e.target.closest('.walk-joy')) return; look = { x: e.clientX, y: e.clientY, id: e.pointerId }; try { R.domElement.setPointerCapture(e.pointerId); } catch (_) { } e.stopImmediatePropagation(); }
-function lookMove(e) { if (!V3.walking || !look || e.pointerId !== look.id) return; wk.yaw += (e.clientX - look.x) * .005; wk.pitch = U.clamp(wk.pitch + (e.clientY - look.y) * .004, -1.1, 1.1); look.x = e.clientX; look.y = e.clientY; dirty = true; e.stopImmediatePropagation(); }
+function lookDown(e) { if (!V3.walking || e.target.closest('.walk-joy')) return; look = { x: e.clientX, y: e.clientY, id: e.pointerId, s: e.pointerType === 'touch' ? 1 : -1 }; try { R.domElement.setPointerCapture(e.pointerId); } catch (_) { } e.stopImmediatePropagation(); }
+function lookMove(e) { if (!V3.walking || !look || e.pointerId !== look.id) return; wk.yaw += (e.clientX - look.x) * .005 * look.s; wk.pitch = U.clamp(wk.pitch + (e.clientY - look.y) * .004 * look.s, -1.1, 1.1); look.x = e.clientX; look.y = e.clientY; dirty = true; e.stopImmediatePropagation(); }
 function lookUp(e) { if (look && e.pointerId === look.id) { look = null; if (V3.walking) e.stopImmediatePropagation(); } }
 window.addEventListener('keydown', e => {
   if (!V3.walking) return; const tag = (e.target.tagName || '').toLowerCase(); if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
