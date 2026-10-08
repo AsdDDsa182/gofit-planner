@@ -6,6 +6,7 @@ const GP = window.GP, U = GP.U, G = GP.G, $ = U.$, $$ = U.$$;
 /* ---------------- icons ---------------- */
 const sv = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 const IC = GP.IC = {
+  steps: sv('<path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.5 6 1.5 1.5L8 4.5M3.5 12l1.5 1.5L8 10.5M3.5 18l1.5 1.5L8 16.5"/>'),
   menu: sv('<path d="M4 7h16M4 12h16M4 17h16"/>'), undo: sv('<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>'), redo: sv('<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>'),
   x: sv('<path d="M18 6 6 18M6 6l12 12"/>'), share: sv('<path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"/><path d="m16 6-4-4-4 4"/><path d="M12 2v13"/>'),
   plus: sv('<path d="M12 5v14M5 12h14"/>'), minus: sv('<path d="M5 12h14"/>'), fit: sv('<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>'), search: sv('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>'),
@@ -184,7 +185,11 @@ $('#steps').addEventListener('click', e => { const b = e.target.closest('[data-s
 /* divider shadow under the step tabs while the panel is scrolled */
 ['space', 'place', 'floor'].forEach(s => $('#panel-' + s).addEventListener('scroll', e => $('#side').classList.toggle('scrolled', e.target.scrollTop > 2), { passive: true }));
 /* colour / line-only (CAD) style — applies to the plan, the 3D view and exports */
-ui.setStyle = (st) => { GP.S.style = st; try { localStorage.setItem('gofit:style', st); } catch (e) { } GP.S.invalidate(); if (GP.V3 && GP.V3.on) GP.V3.rebuild(); };
+ui.setStyle = (st) => { GP.S.style = st; try { localStorage.setItem('gofit:style', st); } catch (e) { } syncStyle(); GP.S.invalidate(); if (GP.V3 && GP.V3.on) GP.V3.rebuild(); };
+// colour / lines only: a switch on the top bar in both modes (the view menu has the same choice)
+const syncStyle = () => { const line = GP.S.style === 'line'; $$('#styleSeg button').forEach(b => b.classList.toggle('on', (b.dataset.s === 'line') === line)); $$('.vm-style button').forEach(b => b.classList.toggle('on', (b.dataset.act === 'style:line') === line)); };
+$('#styleSeg').addEventListener('click', e => { const b = e.target.closest('[data-s]'); if (b) ui.setStyle(b.dataset.s); });
+syncStyle();
 /* 보기 menu: drawing style, what the plan shows (these used to be a row of toggles under the plan), the wall magnet */
 const VIEW_LAYERS = [['labels', '기구 이름'], ['dims', '치수'], ['clear', '사용 공간', '기구 앞뒤로 운동에 필요한 공간'], ['mats', '바닥(고무블럭)'], ['zones', '존'], ['notes', '메모'], ['aisle', '좁은 통로', '기준보다 좁은 곳을 빨갛게'], ['egress', '비상 동선', '가장 먼 곳에서 출입문까지']];
 function viewMenuHtml() {
@@ -327,7 +332,7 @@ GP.on('changed', () => ui.renderSummary());
 GP.on('media', () => { ui.renderInspector(); GP.emit('library'); });
 GP.on('checks', () => { ui.renderSummary(); if (!pop.hidden && pop.dataset.anchor === 'checkBtn') openChecks(true); });
 ui.openQuote = () => { GP.tools && GP.tools.cancel(); $('#quoteSheet').hidden = false; GP.panels.renderQuote(); ui.renderInspector(); ui.renderSummary(); ui.renderGuideBits(); };
-ui.closeQuote = () => { $('#quoteSheet').hidden = true; ui.renderSummary(); ui.renderGuideBits(); };
+ui.closeQuote = () => { $('#quoteSheet').hidden = true; ui.renderSummary(); ui.renderGuideBits(); if (GP.wiz) GP.wiz.refresh(); };
 $('#quoteBtn').addEventListener('click', () => { if ($('#quoteSheet').hidden) ui.openQuote(); else ui.closeQuote(); });
 
 /* ---------------- inspector ---------------- */

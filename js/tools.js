@@ -159,7 +159,7 @@ const canvas = () => GP.S.canvas;
 
 /* ---------------- placing (catalog / sets / paste) ---------------- */
 tools.startPlacing = (list, o) => {
-  tools.cancel(); if (ui.step !== 'place') ui.setStep('place'); if (ui.tool !== 'select') ui.setTool('select'); ui.clearSel();
+  tools.cancel(); if (ui.step !== 'place' && !(GP.wiz && GP.wiz.on)) ui.setStep('place'); if (ui.tool !== 'select') ui.setTool('select'); ui.clearSel();
   ui.placing = { list: list.map(q => Object.assign({ rel: [0, 0, 0] }, q)), rot: 0, relK: 0, x: null, z: null, keep: !!(o && o.keep), label: o && o.label };
   GP.S.setGhost(ui.placing.list.map(q => q.it)); canvas().style.cursor = 'crosshair'; ui.setHint(); GP.emit('placing');
 };
@@ -599,7 +599,7 @@ act.key = (e, mod, k) => {
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (tools.polyTarget() && tools.selV >= 0 && ui.tool === 'vertex') tools.deleteVertex(tools.selV); else act.delSel(); return; }
   const st = e.shiftKey ? .5 : .05; const mv = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] }[e.key];
   if (mv && ui.sel.length) { e.preventDefault(); act.nudge(mv[0], mv[1]); return; }
-  const tk = { v: 'select', m: 'measure' }[k]; if (tk) ui.setTool(tk);
+  const tk = { v: 'select', m: 'measure' }[k]; if (tk && !(tk === 'measure' && GP.wiz && GP.wiz.on)) ui.setTool(tk);
 };
 act.inspAction = async (a, b) => {
   const L = GP.L(), so = ui.selObj(), it = ui.selItems()[0];

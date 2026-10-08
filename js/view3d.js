@@ -236,7 +236,7 @@ V3.whenLoaded = (ms) => new Promise(res => { const t0 = performance.now(); const
 function markSel() {
   const sel = GP.ui.selSet(); if (V3.selBox) { sc.remove(V3.selBox); V3.selBox = null; }
   const ids = [...sel].filter(k => k.startsWith('item:')).map(k => k.slice(5)); if (!ids.length) { dirty = true; return; }
-  const grp = new THREE.Group(); for (const id of ids) { const r = roots.get(id); if (!r) continue; const dm = r.userData.dm; const bx = new THREE.Box3(new THREE.Vector3(-dm.w / 2, 0, -dm.d / 2), new THREE.Vector3(dm.w / 2, dm.h, dm.d / 2)); const h = new THREE.Box3Helper(bx, new THREE.Color('#2450E0')); h.position.copy(r.position); h.rotation.copy(r.rotation); grp.add(h); }
+  const grp = new THREE.Group(); for (const id of ids) { const r = roots.get(id); if (!r) continue; const dm = r.userData.dm; const bx = new THREE.Box3(new THREE.Vector3(-dm.w / 2, 0, -dm.d / 2), new THREE.Vector3(dm.w / 2, dm.h, dm.d / 2)); const h = new THREE.Box3Helper(bx, new THREE.Color('#2450E0')), at = new THREE.Group(); at.position.copy(r.position); at.rotation.copy(r.rotation); at.add(h); grp.add(at); }   // Box3Helper moves itself to its box's centre every frame: the outer group carries the item's place and turn
   V3.selBox = grp; sc.add(grp); dirty = true;
 }
 function wallFade() {

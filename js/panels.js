@@ -44,6 +44,8 @@ function foldVals() {
   const L = GP.L(), A = Math.abs(G.area(L.room.pts)), bb = G.bounds(L.room.pts), set = (id, v) => { const el = $(`#panel-space [data-fold="${id}"] .fd-v`); if (el) el.textContent = v; };
   set('make', `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`); set('ceil', `${GP.P.settings.wallH}m`); set('vt', `${L.room.pts.length}개`);
 }
+panels.openFold = (id) => sp.open.add(id);
+GP.on('project', () => { sp.py = null; sp.walk = null; });      // a typed 평수 or half-entered wall walk belongs to the project it was typed in
 panels.spaceMode = (m) => { sp.mode = m; if (m === 'walk') sp.walk = null; panels.renderSpace(); };
 function renderSpBody() {
   const b = $('#spBody'); if (!b) return; const L = GP.L();
@@ -353,7 +355,7 @@ qs.addEventListener('keydown', e => { if (e.target.dataset.pk && e.key === 'Ente
 panels.editProjectInfo = () => {
   const P = GP.P;
   GP.modal('프로젝트 정보', `<label class="fld"><span>프로젝트 이름</span><input id="piName" value="${U.esc(P.name)}" autofocus></label><div class="row2"><label class="fld"><span>고객사</span><input id="piClient" value="${U.esc(P.client)}" placeholder="예: ○○피트니스 강남점"></label><label class="fld"><span>담당 컨설턴트</span><input id="piCons" value="${U.esc(P.consultant)}"></label></div>`, `<button class="btn" data-close>취소</button><button class="btn primary" id="piOk">저장</button>`, { size: 'narrow' });
-  $('#piOk').onclick = () => { P.name = $('#piName').value.trim() || P.name; P.client = $('#piClient').value.trim(); P.consultant = $('#piCons').value.trim(); GP.closeModal(); GP.H.commit(); GP.emit('project'); };
+  $('#piOk').onclick = () => { P.name = $('#piName').value.trim() || P.name; P.client = $('#piClient').value.trim(); P.consultant = $('#piCons').value.trim(); GP.closeModal(); P.updatedAt = Date.now(); GP.emit('dirty'); GP.emit('project'); };
 };
 panels.projects = async () => {
   const list = await GP.listProjects();

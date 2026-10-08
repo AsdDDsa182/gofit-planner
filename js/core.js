@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.2.1';
+GP.VERSION = '2.2.2';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
@@ -245,13 +245,13 @@ GP.validateProject = (o) => {
   return p;
 };
 GP.P = null;
-GP.L = () => GP.P.variants[GP.P.cur].layout;
+GP.L = () => GP.P ? GP.P.variants[GP.P.cur].layout : null;      // null only while the first project is still loading
 GP.findItem = uid => GP.L().items.find(i => i.uid === uid);
 GP.findBy = (kind, id) => { const L = GP.L(); const map = { item: L.items, part: L.partitions, opening: L.openings, mat: L.mats, zone: L.zones, room: L.rooms, note: L.notes, dim: L.dims }; const arr = map[kind]; if (!arr) return null; return arr.find(o => (o.uid || o.id) === id) || null; };
 
 /* ---------------- history ---------------- */
 const H = GP.H = { stack: [], idx: -1, lastVersionAt: 0 };
-H.snap = () => { const p = GP.P; return JSON.stringify({ name: p.name, client: p.client, consultant: p.consultant, settings: p.settings, variants: p.variants, cur: p.cur }); };
+H.snap = () => { const p = GP.P; return JSON.stringify({ settings: p.settings, variants: p.variants, cur: p.cur }); };      // name / client stay out: undoing a move must not bring back an old name
 H.reset = () => { H.stack = [H.snap()]; H.idx = 0; GP.emit('history'); };
 H.commit = () => {
   const s = H.snap(); if (H.stack[H.idx] === s) return false;

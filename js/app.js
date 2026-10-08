@@ -59,7 +59,10 @@ app.newProject = async (w) => {
     p = GP.newProject({ name: w.name || '새 프로젝트', pts }); p.client = w.client || ''; p.consultant = w.consultant || '';
   }
   if (w.name) p.name = w.name; if (w.client) p.client = w.client; if (w.consultant) p.consultant = w.consultant;
+  const easy = GP.wiz && GP.wiz.mode() === 'easy' && !GP.viewOnly;
+  if (easy && !p.sample) p.wiz = { step: 1, max: 1, picks: null, space: ['py', 'shape', 'walk', 'trace'].includes(w.mode) ? w.mode : 'py', partAns: null };
   ui.step = 'space'; await app.loadProject(p); await GP.saveProject(); await GP.DB.put('kv', 'lastProject', p.id);
+  if (easy) return;
   if (w.mode === 'walk' || w.mode === 'shape') { const b = document.querySelector(`#spMode [data-m="${w.mode}"]`); if (b) b.click(); }
   if (w.mode === 'trace') GP.toast('왼쪽 아래 “고객 도면 대고 그리기”에서 평면도 사진이나 DXF를 올려 주세요', { ms: 5000 });
 };

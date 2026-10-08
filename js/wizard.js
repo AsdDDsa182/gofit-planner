@@ -25,12 +25,13 @@ W.setMode = (m) => { GP.lib.mode = m; GP.saveLib(); apply(); if (m === 'expert')
 function apply() {
   const easy = !GP.viewOnly && W.mode() === 'easy'; W.on = easy;
   $('#app').classList.toggle('easy', easy); $('#wiz').hidden = !easy;
-  const mb = $('#modeBtn'); if (mb) { mb.hidden = GP.viewOnly; mb.innerHTML = easy ? `${IC.gear}<span class="lbl">전문가 모드</span>` : `${IC.help}<span class="lbl">쉬운 모드</span>`; mb.title = easy ? '모든 도구가 보이는 화면으로' : '단계별로 안내하는 화면으로'; }
+  const mb = $('#modeBtn'); if (mb) { mb.hidden = GP.viewOnly; mb.innerHTML = easy ? `${IC.gear}<span class="lbl">전문가 모드</span>` : `${IC.steps}<span class="lbl">쉬운 모드</span>`; mb.title = easy ? '모든 도구가 보이는 화면으로' : '단계별로 안내하는 화면으로'; }
   if (easy) { const s = st(); W.go(s.step != null ? s.step : defaultStep(), true); } else { parkSpace(); ui.renderTools(); ui.setHint(); }
   requestAnimationFrame(() => { GP.S.resize(); GP.emit('overlay'); });
 }
 function defaultStep() { const L = GP.L(); return L.items.some(eqOnly) ? 7 : 1; }
-W.onProject = () => { if (!GP.viewOnly) apply(); };
+W.onProject = () => { W.lastAuto = null; if (!GP.viewOnly) apply(); };
+W.refresh = () => { if (W.on && cur && cur.refresh) { const b = $('#wzBody'), y = b ? b.scrollTop : 0; cur.refresh(); const b2 = $('#wzBody'); if (b2) b2.scrollTop = y; } };
 
 /* ---------------- navigation ---------------- */
 let cur = null;
@@ -42,7 +43,7 @@ W.go = (i, quiet) => {
   render(); if (!quiet) GP.emit('dirty');
 };
 function render() {
-  const el = $('#wiz'), i = W.step, s = st(), last = i === STEPS.length - 1;
+  parkSpace(); const el = $('#wiz'), i = W.step, s = st(), last = i === STEPS.length - 1;
   el.innerHTML = `<div class="wz-head"><div class="wz-steps">${STEPS.map((x, k) => `<button class="wz-st${k === i ? ' on' : k <= (s.max || 0) ? ' done' : ''}" data-wgo="${k}" title="${x.t}"${k > (s.max || 0) + 1 ? ' disabled' : ''}>${k < i || (k <= (s.max || 0) && k !== i) ? '✓' : k + 1}</button>`).join('<i></i>')}</div>
     <div class="wz-where"><b>${i + 1}. ${STEPS[i].t}</b><span>${i + 1} / ${STEPS.length}</span></div></div>
     <div class="wz-body" id="wzBody"></div>
@@ -74,12 +75,14 @@ R.name = {
 };
 R.space = {
   render(b) {
+    parkSpace();      // the borrowed panel goes home first: replacing this step's HTML would otherwise throw it away
     const s = st(), m = s.space || 'py';
     b.innerHTML = head('공간 모양을 만들어요', '가지고 있는 정보에 맞는 방법을 고르세요. 오른쪽 도면에 바로 그려져요.') +
       `<div class="wz-cards">${[['py', '평수만 알아요', '평수와 가로·세로 비율로'], ['shape', '모양이 특이해요', 'L자 · 사선 · 사다리꼴'], ['walk', '벽 길이를 재 왔어요', '잰 길이를 차례로 입력'], ['trace', '도면 사진이 있어요', '사진 위에 따라 그리기']].map(([k, t, d]) => `<button class="wz-card${m === k ? ' on' : ''}" data-sm="${k}"><b>${t}</b><small>${d}</small></button>`).join('')}</div>
       <div class="wz-host wz-sm-${m === 'trace' ? 'trace' : 'make'}" id="wzSpace"></div>
       ${m === 'trace' ? `<div class="wz-tip"><b>따라 그리는 순서</b><ol><li>아래에서 도면 사진을 올려요.</li><li>「이미지 가로 실제 길이」를 맞춰요. (사진의 가로가 실제로 몇 m인지)</li><li>도면의 동그란 꼭짓점을 끌어 사진의 벽 모서리에 맞춰요. 벽 가운데 ＋를 끌면 꺾여요.</li></ol></div>` : ''}`;
     const host = $('#wzSpace'), ps = $('#panel-space'); host.appendChild(ps); ps.hidden = false;
+    GP.panels.openFold(m === 'trace' ? 'trace' : 'make');
     if (m !== 'trace') GP.panels.spaceMode(m); else { GP.panels.renderSpace(); ui.setTool('vertex'); }
     b.onclick = e => { const c = e.target.closest('[data-sm]'); if (!c) return; s.space = c.dataset.sm; R.space.render(b); };
   },
@@ -95,7 +98,7 @@ R.part = {
         <p class="note">도면에서 시작점을 클릭하고, 꺾이는 곳마다 클릭해요. 끝나면 위쪽 막대의 <b>완료</b>를 누르세요.</p>
         ${parts.length ? `<div class="wz-list">${parts.map((p, k) => { let l = 0; for (let j = 1; j < p.pts.length; j++) l += G.len(p.pts[j - 1], p.pts[j]); return `<div class="wz-li"><span>가벽 ${k + 1} · ${GP.PARTS[p.kind] || '일반 가벽'} · ${l.toFixed(2)}m</span><button class="btn xs ghost danger" data-pdel="${p.id}">지우기</button></div>`; }).join('')}</div>` : ''}` : ''}`;
     b.onclick = e => {
-      const a = e.target.closest('[data-pa]'); if (a) { s.partAns = a.dataset.pa; if (s.partAns === 'no' && L.partitions.length) { GP.toast('그려 둔 가벽은 그대로 있어요. 지우려면 목록에서 지우기를 누르세요'); } R.part.render(b); if (s.partAns === 'yes' && !L.partitions.length) ui.setTool('part'); return; }
+      const L = GP.L(), a = e.target.closest('[data-pa]'); if (a) { s.partAns = a.dataset.pa; if (s.partAns === 'no' && L.partitions.length) { GP.toast('그려 둔 가벽은 그대로 있어요. 지우려면 목록에서 지우기를 누르세요'); } R.part.render(b); if (s.partAns === 'yes' && !L.partitions.length) ui.setTool('part'); return; }
       const k = e.target.closest('[data-pk]'); if (k) { GP.tools.partKind = k.dataset.pk; R.part.render(b); return; }
       if (e.target.closest('#wzDraw')) { ui.setTool('part'); return; }
       const d = e.target.closest('[data-pdel]'); if (d) { L.partitions = L.partitions.filter(p => p.id !== d.dataset.pdel); L.openings = L.openings.filter(o => o.host !== d.dataset.pdel); GP.changed('parts'); R.part.render(b); }
@@ -117,7 +120,7 @@ R.door = {
     b.onclick = e => {
       const k = e.target.closest('[data-ok]'); if (k) { W.doorKind = k.dataset.ok; if (ui.tool === 'opening' && ui.openingKind !== 'window') ui.openingKind = W.doorKind; R.door.render(b); return; }
       const o = e.target.closest('[data-op]'); if (o) { const a = o.dataset.op; if (a === 'column') { GP.tools.startPlacing([{ it: { type: 'column' } }]); return; } ui.openingKind = a === 'window' ? 'window' : (W.doorKind || 'glass2'); ui.setTool('opening'); R.door.render(b); return; }
-      const d = e.target.closest('[data-odel]'); if (d) { L.openings = L.openings.filter(x => x.id !== d.dataset.odel); GP.changed('openings'); R.door.render(b); return; }
+      const d = e.target.closest('[data-odel]'); if (d) { const L = GP.L(); L.openings = L.openings.filter(x => x.id !== d.dataset.odel); GP.changed('openings'); R.door.render(b); return; }
       const c = e.target.closest('[data-ch]'); if (c) { setCeil(+c.dataset.ch); R.door.render(b); }
     };
     b.onchange = e => { if (e.target.id === 'wzCh') { setCeil(+e.target.value); R.door.render(b); } };
@@ -135,19 +138,19 @@ function picks() {
 }
 R.equip = {
   render(b) {
-    const pk = picks(), types = Object.keys(GP.CAT).filter(k => GP.EQUIP_CATS.has(cat(k)) && !GP.lib.hidden.includes(k) && !(GP.getDef(k) || {}).flat), q = eqQ.trim().replace(/\s+/g, '').toLowerCase();
+    const pk = picks(), types = Object.keys(GP.CAT).filter(k => GP.EQUIP_CATS.has(cat(k)) && !GP.lib.hidden.includes(k) && !(GP.getDef(k) || {}).flat);
     const n = Object.values(pk).reduce((a, v) => a + v, 0), A = Math.abs(G.area(GP.L().room.pts)) || 1;
     let foot = 0, price = 0, missing = 0; for (const [k, v] of Object.entries(pk)) { const d = GP.getDef(k); if (!d || !v) continue; const c = d.cl || {}; foot += (d.w + (c.l || 0) / 2 + (c.r || 0) / 2) * (d.d + (c.f || 0) + (c.b || 0) / 2) * v; const p = GP.lib.prices[k] || 0; if (p) price += p * v; else missing++; }
     const pct = Math.round(foot / A * 100);
     const row = k => { const d = GP.getDef(k), v = pk[k] || 0; return `<div class="wz-eq${v ? ' on' : ''}"><img src="${GP.SYM.thumbUrl(k)}" alt="" loading="lazy"><span class="wz-eqn"><b>${U.esc(GP.typeName(k))}</b><small>${U.cm(d.w)}×${U.cm(d.d)}cm</small></span><button class="wz-pm" data-dec="${k}" aria-label="빼기"${v ? '' : ' disabled'}>−</button><b class="wz-cnt">${v}</b><button class="wz-pm" data-inc="${k}" aria-label="더하기">+</button></div>`; };
-    const list = q ? `<div class="wz-eqs">${types.filter(k => (GP.typeName(k) + (GP.getDef(k).kw || '')).replace(/\s+/g, '').toLowerCase().includes(q)).map(row).join('') || '<p class="note">찾는 기구가 없어요.</p>'}</div>`
-      : EQ_GROUPS.map(([g, cs]) => { const ks = types.filter(k => cs.includes(cat(k))); const c = ks.reduce((a, k) => a + (pk[k] || 0), 0); return `<details class="fold" data-eg="${g}" ${eqOpen.has(g) ? 'open' : ''}><summary><span class="fd-t">${g}</span><span class="fd-v">${c ? c + '대' : ''}</span></summary><div class="fd-b wz-eqs">${ks.map(row).join('')}</div></details>`; }).join('');
+    const eqList = () => { const q = eqQ.trim().replace(/\s+/g, '').toLowerCase(); return q ? `<div class="wz-eqs">${types.filter(k => (GP.typeName(k) + (GP.getDef(k).kw || '')).replace(/\s+/g, '').toLowerCase().includes(q)).map(row).join('') || '<p class="note">찾는 기구가 없어요.</p>'}</div>`
+      : EQ_GROUPS.map(([g, cs]) => { const ks = types.filter(k => cs.includes(cat(k))); const c = ks.reduce((a, k) => a + (pk[k] || 0), 0); return `<details class="fold" data-eg="${g}" ${eqOpen.has(g) ? 'open' : ''}><summary><span class="fd-t">${g}</span><span class="fd-v">${c ? c + '대' : ''}</span></summary><div class="fd-b wz-eqs">${ks.map(row).join('')}</div></details>`; }).join(''); };
     b.innerHTML = head('어떤 기구가 필요하세요?', '개수만 정하면 다음 단계에서 알아서 놓아 드려요.') +
       `<div class="wz-sum"><div><b>${n}대</b><small>고른 기구</small></div><div><b class="${pct > 55 ? 'bad' : pct > 42 ? 'warn' : ''}">${pct}%</b><small>공간 차지 (사용 공간 포함)</small></div><div><b>${price ? '약 ' + U.won(Math.round(price * 1.1 / 10000)) + '만원' : '-'}</b><small>${missing ? `단가 미입력 ${missing}종` : '부가세 포함'}</small></div></div>
       ${pct > 55 ? '<p class="wz-warn">기구가 공간에 비해 많아요. 통로가 좁아지거나 못 놓는 기구가 생길 수 있어요.</p>' : ''}
       <div class="fld"><span>빠르게 고르기 (묶음)</span><div class="chips">${GP.SETS.map(sv => `<button class="chip" data-set="${sv.id}" title="${U.esc(sv.desc || '')}">＋ ${U.esc(sv.name)}</button>`).join('')}</div></div>
       <div class="search">${IC.search}<input id="wzQ" type="search" placeholder="기구 이름으로 찾기" value="${U.esc(eqQ)}"></div>
-      ${list}
+      <div id="wzEqList" class="wz-eqlist">${eqList()}</div>
       ${n ? `<button class="btn ghost sm" data-clear="1">모두 0대로</button>` : ''}`;
     b.onclick = e => {
       const i = e.target.closest('[data-inc]'), d = e.target.closest('[data-dec]'), set = e.target.closest('[data-set]');
@@ -156,9 +159,9 @@ R.equip = {
       else if (set) { const sv = GP.SETS.find(x => x.id === set.dataset.set); sv.items.forEach(([t]) => { if (GP.EQUIP_CATS.has(cat(t))) pk[t] = (pk[t] || 0) + 1; }); GP.toast(`'${sv.name}'을(를) 더했어요`); }
       else if (e.target.closest('[data-clear]')) { for (const k in pk) delete pk[k]; }
       else return;
-      const y = b.scrollTop; R.equip.render(b); b.scrollTop = y; GP.emit('dirty');
+      const y = b.scrollTop, inp = $('#wzQ'), typing = inp && document.activeElement === inp; R.equip.render(b); b.scrollTop = y; if (typing) { const i2 = $('#wzQ'); i2.focus(); i2.setSelectionRange(i2.value.length, i2.value.length); } GP.emit('dirty');
     };
-    b.oninput = e => { if (e.target.id === 'wzQ') { eqQ = e.target.value; const pos = e.target.selectionStart; R.equip.render(b); const inp = $('#wzQ'); inp.focus(); inp.setSelectionRange(pos, pos); } };
+    b.oninput = e => { if (e.target.id === 'wzQ') { eqQ = e.target.value; const l = $('#wzEqList'); if (l) l.innerHTML = eqList(); } };
     if (!b._tg) { b._tg = true; b.addEventListener('toggle', e => { const g = e.target.dataset && e.target.dataset.eg; if (!g) return; if (e.target.open) eqOpen.add(g); else eqOpen.delete(g); }, true); }
   },
   next() { const n = Object.values(picks()).reduce((a, v) => a + v, 0); if (!n) { GP.toast('기구를 하나 이상 골라 주세요. 기구 없이 넘어가려면 위쪽 단계 번호를 누르세요', { bad: true }); return false; } },
@@ -167,12 +170,13 @@ R.equip = {
 /* ---------------- automatic layout ---------------- */
 R.auto = {
   render(b) {
-    const L = GP.L(), placed = L.items.filter(eqOnly), pk = picks(), want = Object.values(pk).reduce((a, v) => a + v, 0), res = W.lastAuto;
+    const L = GP.L(), placed = L.items.filter(eqOnly), pk = picks(), want = Object.values(pk).reduce((a, v) => a + v, 0), res = W.lastAuto, df = diff();
     const list = (GP.checks.list || []).filter(c => c.sev !== 'info');
     b.innerHTML = head('자동으로 놓아 볼게요', '고른 기구를 종류별로 모아서 벽을 따라 놓아요. 기구마다 필요한 운동 공간과 출입문 앞 통로를 비워 둬요.') +
-      `<button class="btn primary wide big" id="wzAuto">${placed.length ? '다시 자동 배치하기' : `기구 ${want}대 자동 배치하기`}</button>
-      ${res ? `<div class="wz-res${res.failed.length ? ' warn' : ''}"><b>${res.placed}대를 놓았어요</b>${res.failed.length ? `<span>공간이 부족해서 ${res.failed.length}대는 못 놓았어요: ${[...new Set(res.failed)].map(t => U.esc(GP.typeName(t))).join(', ')}</span><span>기구 수를 줄이거나, 전문가 모드에서 직접 놓아 보세요.</span>` : ''}</div>` : ''}
-      ${placed.length ? `<div class="wz-tip"><b>원하는 대로 고치기</b><ul><li>기구를 <b>끌면</b> 옮겨져요. 벽에 딱 붙이고 싶으면 도면 오른쪽 아래 <b>벽 자석</b>을 켜세요.</li><li>기구를 <b>누르면</b> 오른쪽에 돌리기·지우기가 나와요. <kbd>R</kbd>로 돌려도 돼요.</li><li>마음에 안 들면 <b>다시 자동 배치</b>를 누르세요.</li></ul></div>` : ''}
+      `${placed.length && (df.more || df.extra) && !(res && res.failed.length >= df.more && !df.extra) ? `<div class="wz-res warn"><b>고른 기구와 도면이 달라요</b>${df.more && !(res && res.failed.length >= df.more) ? `<span>더 놓을 기구 ${df.more}대 · 지금 배치는 그대로 두고 빈자리에 놓을 수 있어요.</span>` : ''}${df.extra ? `<span>고른 개수보다 도면에 더 놓인 기구 ${df.extra}대 · 지우지 않고 그대로 둬요.</span>` : ''}<div class="row2">${df.more ? '<button class="btn sm primary" id="wzAdd">새로 고른 기구만 놓기</button>' : ''}<button class="btn sm" id="wzSync">고르기 목록을 도면에 맞추기</button></div></div>` : ''}
+      <button class="btn ${placed.length ? '' : 'primary '}wide big" id="wzAuto">${placed.length ? '처음부터 다시 자동 배치하기' : `기구 ${want}대 자동 배치하기`}</button>
+      ${res ? `<div class="wz-res${res.failed.length ? ' warn' : ''}"><b>${res.placed}대를 ${res.add ? '더 ' : ''}놓았어요</b>${res.failed.length ? `<span>공간이 부족해서 ${res.failed.length}대는 못 놓았어요: ${[...new Set(res.failed)].map(t => U.esc(GP.typeName(t))).join(', ')}</span><span>기구 수를 줄이거나, 전문가 모드에서 직접 놓아 보세요.</span>` : ''}</div>` : ''}
+      ${placed.length ? `<div class="wz-tip"><b>원하는 대로 고치기</b><ul><li>기구를 <b>끌면</b> 옮겨져요. 벽에 딱 붙이고 싶으면 도면 오른쪽 아래 <b>벽 자석</b>을 켜세요.</li><li>기구를 <b>누르면</b> 오른쪽에 돌리기·지우기가 나와요. <kbd>R</kbd>로 돌려도 돼요.</li><li>마음에 안 들면 <b>처음부터 다시 자동 배치하기</b>를 누르세요. 기구를 더 고르고 왔다면 <b>새로 고른 기구만 놓기</b>로 지금 배치를 살린 채 더할 수 있어요.</li></ul></div>` : ''}
       ${placed.length ? (list.length ? `<div class="wz-list"><div class="wz-lh">확인할 점 ${list.length}개 <small>눌러서 위치 보기</small></div>${list.slice(0, 6).map((c, k) => `<button class="wz-li chk ${c.sev}" data-ck="${k}"><i></i><span>${U.esc(c.msg)}</span></button>`).join('')}</div>` : '<p class="wz-ok">겹치거나 좁은 곳 없이 잘 놓였어요.</p>') : ''}`;
     b.onclick = async e => {
       if (e.target.closest('#wzAuto')) {
@@ -180,19 +184,25 @@ R.auto = {
         if (placed.length && !(await GP.confirm('지금 놓인 기구를 모두 지우고 다시 자동으로 놓을까요? 되돌리기로 돌아올 수 있어요.', '다시 배치'))) return;
         await runAuto(); R.auto.render(b); return;
       }
+      if (e.target.closest('#wzAdd')) { await runAuto('add'); R.auto.render(b); return; }
+      if (e.target.closest('#wzSync')) { st().picks = counts(); GP.toast('기구 고르기 목록을 지금 도면에 맞췄어요'); R.auto.render(b); GP.emit('dirty'); return; }
       const c = e.target.closest('[data-ck]'); if (c) { const it = list[+c.dataset.ck]; if (it.uids.length) ui.select(it.uids.map(u => ({ k: 'item', id: u }))); if (it.at) GP.S.focus(it.at); }
     };
   },
   refresh() { R.auto.render($('#wzBody')); },
 };
-async function runAuto() {
-  const pk = picks(), list = []; for (const [k, v] of Object.entries(pk)) for (let i = 0; i < v; i++) list.push(k);
+/* machines on the plan by type, and how they differ from the picks */
+function counts() { const c = {}; GP.L().items.filter(eqOnly).forEach(it => { c[it.type] = (c[it.type] || 0) + 1; }); return c; }
+function diff() { const pk = picks(), have = counts(); let more = 0, extra = 0; for (const k of new Set(Object.keys(pk).concat(Object.keys(have)))) { const d = (pk[k] || 0) - (have[k] || 0); if (d > 0) more += d; else extra -= d; } return { more, extra }; }
+async function runAuto(mode) {
+  const pk = picks(), list = [], add = mode === 'add', have = counts();
+  for (const [k, v] of Object.entries(pk)) for (let i = add ? (have[k] || 0) : 0; i < v; i++) list.push(k);
   GP.busy && GP.busy(true, '자동 배치 중… 기구마다 통로를 확인하고 있어요');
   await new Promise(r => setTimeout(r, 40));      // let the busy card paint before the heavy part
   try {
-    const r = GP.autoLayout(list), L = GP.L();
-    L.items = L.items.filter(it => !eqOnly(it)).concat(r.placed.map(p => Object.assign({ uid: U.uid() }, p)));
-    W.lastAuto = { placed: r.placed.length, failed: r.failed };
+    const r = GP.autoLayout(list, { keep: add }), L = GP.L();
+    L.items = (add ? L.items : L.items.filter(it => !eqOnly(it))).concat(r.placed.map(p => Object.assign({ uid: U.uid() }, p)));
+    W.lastAuto = { placed: r.placed.length, failed: r.failed, add };
     ui.sel = []; GP.changed('items'); GP.checks.full(); GP.S.fit(); ui.renderInspector();
   } finally { GP.busy && GP.busy(false); }
 }
@@ -202,10 +212,15 @@ async function runAuto() {
    room with its back off the wall by its rear clearance; benches and whatever no wall takes go inside, near their group.
    A spot works when the item and its front zone are inside the room, its use space (front / back / sides) is clear of every other
    item, partition and column, and nothing stands in the 1.5 m in front of a door. */
-GP.autoLayout = (types) => {
-  const L = GP.L(), P = L.room.pts, rect = G.rectPts, ov = G.overlap;
+GP.autoLayout = (types, opt) => {      // opt.keep: the machines on the plan stay where they are (and keep their use space)
+  opt = opt || {}; const L = GP.L(), P = L.room.pts, rect = G.rectPts, ov = G.overlap;
   const obst = [], placed = [], failed = [];
-  for (const it of L.items) { if (eqOnly(it)) continue; const d = GP.getDef(it.type) || {}; if (d.flat || d.wall || GP.mountOf(it) !== 'floor') continue; const C = GP.footprint(it); obst.push({ C, U: C }); }
+  for (const it of L.items) {
+    if (eqOnly(it) && !opt.keep) continue; const d = GP.getDef(it.type) || {}; if (d.wall || GP.mountOf(it) !== 'floor') continue;
+    // machines kept in place and floor areas (turf lane, lifting platform, stretching zone) keep their use space clear too
+    const C = GP.footprint(it), c = d.cl || {}, dm = GP.dims(it);
+    obst.push({ C, U: eqOnly(it) || d.flat ? rect(it.x, it.z, it.rot, -dm.w / 2 - (c.l || 0), dm.w / 2 + (c.r || 0), -dm.d / 2 - (c.b || 0), dm.d / 2 + (c.f || 0)) : C });
+  }
   for (const p of L.partitions) for (let i = 0; i < p.pts.length - 1; i++) { const a = p.pts[i], b = p.pts[i + 1], s = G.segInfo(a, b), t = (p.thick || .1) / 2 + .05, nx = -s.dz * t, nz = s.dx * t; const C = [[a[0] + nx, a[1] + nz], [b[0] + nx, b[1] + nz], [b[0] - nx, b[1] - nz], [a[0] - nx, a[1] - nz]]; obst.push({ C, U: C }); }
   const doorZ = [];
   for (const o of L.openings) { if (o.kind === 'window') continue; const hs = GP.hostSeg(o); if (!hs) continue; const sp = GP.openingSpan(o, hs), at = (u, d) => [hs.a[0] + hs.dx * u + hs.nx * d, hs.a[1] + hs.dz * u + hs.nz * d]; for (const sg of o.host === 'room' ? [1] : [1, -1]) doorZ.push([at(sp.s0 - .3, 0), at(sp.s1 + .3, 0), at(sp.s1 + .3, 1.5 * sg), at(sp.s0 - .3, 1.5 * sg)]); }
@@ -219,8 +234,9 @@ GP.autoLayout = (types) => {
     for (const z0 of doorZ) if (ov(F, z0)) return null;
     return { C, U: Uz };
   };
-  const keptFloor = L.items.filter(it => !eqOnly(it)), minW = GP.lib.defaults.aisleMin || .9, hasDoor = L.openings.some(o => o.kind !== 'window' && o.host === 'room');
-  const reach = () => { if (!hasDoor) return true; const E = GP.calc.egress(minW, keptFloor.concat(placed)); return !E || (!E.blocked.length && !E.cut.filter(eqOnly).length); };
+  const keptFloor = opt.keep ? L.items.slice() : L.items.filter(it => !eqOnly(it)), minW = GP.lib.defaults.aisleMin || .9, hasDoor = L.openings.some(o => o.kind !== 'window' && o.host === 'room');
+  const base = new Set(); if (hasDoor && opt.keep) { const E0 = GP.calc.egress(minW, keptFloor); if (E0) E0.blocked.concat(E0.cut).forEach(it => base.add(it)); }      // problems the plan already has
+  const reach = () => { if (!hasDoor) return true; const E = GP.calc.egress(minW, keptFloor.concat(placed)); return !E || (!E.blocked.some(it => !base.has(it)) && !E.cut.filter(eqOnly).some(it => !base.has(it))); };
   let misses = 0;      // spots that fit but would cut someone off from the doors; after 60 of them this item gives up (each test is a flood fill)
   const put = (k, x, z, rot, g) => { if (misses > 60) return false; const r = fits(k, x, z, rot); if (!r) return false; placed.push({ type: k, x: U.r3(x), z: U.r3(z), rot, C: r.C, U: r.U, g }); if (reach()) return true; placed.pop(); misses++; return false; };
   // walls, with their windows; the rotation that makes an item face into the room from that wall
@@ -283,15 +299,18 @@ R.floor = {
   refresh() { R.floor.render($('#wzBody')); },
 };
 function layMats(how, block) {
-  const L = GP.L(), P = L.room.pts; L.mats = [];
+  const L = GP.L(), P = L.room.pts;
+  const fw = L.items.filter(it => ['rack', 'bench', 'storage'].includes(cat(it)));
+  if (how === 'free' && !fw.length) { GP.toast('프리웨이트 기구(랙·벤치·덤벨랙)가 없어서 깔 곳이 없어요. 「공간 전체」를 골라 보세요', { bad: true, ms: 4500 }); return; }
+  L.mats = [];
   const add = pts => L.mats.push({ id: U.uid('m'), pts, block, thick: 25, trim: 'rubber' });
   if (how === 'all') add(P.map(p => p.slice()));
   else if (how === 'free') {
-    const fw = L.items.filter(it => ['rack', 'bench', 'storage'].includes(cat(it)));
-    if (!fw.length) { GP.toast('프리웨이트 기구(랙·벤치·덤벨랙)가 없어서 깔 곳이 없어요. 「공간 전체」를 골라 보세요', { bad: true, ms: 4500 }); GP.changed('mats'); return; }
-    // one area per cluster of free-weight items (items closer than 2.5 m belong together)
-    const cl = []; for (const it of fw) { const c = cl.find(g => g.some(o => Math.hypot(o.x - it.x, o.z - it.z) < 2.5)); if (c) c.push(it); else cl.push([it]); }
-    for (const g of cl) { const pts = []; g.forEach(it => { const d = GP.getDef(it.type), c = d.cl || {}; pts.push(...G.rectPts(it.x, it.z, it.rot, -d.w / 2 - (c.l || 0) - .3, d.w / 2 + (c.r || 0) + .3, -d.d / 2 - (c.b || 0) - .3, d.d / 2 + (c.f || 0) + .3)); }); const bb = G.bounds(pts); const r = GP.tools.clipPoly(P, [[U.snap(bb.minX, .5), U.snap(bb.minZ, .5)], [U.snap(bb.maxX, .5), U.snap(bb.minZ, .5)], [U.snap(bb.maxX, .5), U.snap(bb.maxZ, .5)], [U.snap(bb.minX, .5), U.snap(bb.maxZ, .5)]]); if (r.length >= 3) add(r.map(p => [U.r3(p[0]), U.r3(p[1])])); }
+    // one area around each free-weight item (its use space + 30 cm, on the 50 cm block grid); areas that touch become one, so no block is counted twice
+    const box = pts => { const b = G.bounds(pts); return { pts, x0: U.snap(b.minX, .5), x1: U.snap(b.maxX, .5), z0: U.snap(b.minZ, .5), z1: U.snap(b.maxZ, .5) }; };
+    const cl = fw.map(it => { const d = GP.dims(it), c = (GP.getDef(it.type) || {}).cl || {}; return box(G.rectPts(it.x, it.z, it.rot, -d.w / 2 - (c.l || 0) - .3, d.w / 2 + (c.r || 0) + .3, -d.d / 2 - (c.b || 0) - .3, d.d / 2 + (c.f || 0) + .3)); });
+    for (let i = 0; i < cl.length; i++) for (let j = i + 1; j < cl.length; j++) { const a = cl[i], b = cl[j]; if (a.x0 < b.x1 && b.x0 < a.x1 && a.z0 < b.z1 && b.z0 < a.z1) { cl[i] = box(a.pts.concat(b.pts)); cl.splice(j, 1); i = -1; break; } }
+    for (const g of cl) { const r = GP.tools.clipPoly(P, [[g.x0, g.z0], [g.x1, g.z0], [g.x1, g.z1], [g.x0, g.z1]]); if (r.length >= 3) add(r.map(p => [U.r3(p[0]), U.r3(p[1])])); }
   }
   GP.changed('mats');
 }
@@ -317,7 +336,8 @@ R.done = {
 };
 
 /* live updates of the open step (partitions drawn, doors placed, items moved) */
-GP.on('changed', U.debounce(() => { if (W.on && cur && cur.refresh) { const b = $('#wzBody'), y = b ? b.scrollTop : 0; cur.refresh(); if (b) $('#wzBody').scrollTop = y; } }, 120));
+GP.on('changed', U.debounce(() => W.refresh(), 120));
+GP.on('restore', () => { W.lastAuto = null; W.refresh(); });
 GP.on('tool', () => { if (W.on && cur && cur.refresh && (STEPS[W.step].id === 'door' || STEPS[W.step].id === 'part')) cur.refresh(); });
 
 $('#modeBtn') && $('#modeBtn').addEventListener('click', () => W.setMode(W.mode() === 'easy' ? 'expert' : 'easy'));
