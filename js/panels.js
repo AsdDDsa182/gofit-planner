@@ -131,11 +131,26 @@ const pl = { cat: 'fav', q: '' };
 panels.recent = []; try { panels.recent = JSON.parse(localStorage.getItem('gofit:recent') || '[]'); } catch (e) { }
 panels.pushRecent = (t) => { panels.recent = [t].concat(panels.recent.filter(x => x !== t)).slice(0, 12); try { localStorage.setItem('gofit:recent', JSON.stringify(panels.recent)); } catch (e) { } };
 function allTypes() { const out = Object.keys(GP.CAT).filter(k => !GP.lib.hidden.includes(k)); Object.keys(GP.lib.customTypes).forEach(k => out.push(k)); return out; }
+/* categories in four groups: the group row, then only that group's categories (with how many items each has) */
+const PL_GROUPS = [
+  { id: 'mine', name: '자주 쓰는', cats: ['fav', 'custom', 'sets'] },
+  { id: 'cardio', name: '유산소', cats: ['cardio', 'air'] },
+  { id: 'strength', name: '근력', cats: ['machine', 'plate', 'cable', 'rack', 'bench', 'storage'] },
+  { id: 'etc', name: '존·기타', cats: ['func', 'stretch', 'facility', 'special'] },
+];
+const plGroupOf = c => PL_GROUPS.find(g => g.cats.includes(c)) || PL_GROUPS[0];
+const plCatName = c => c === 'sets' ? '존 세트' : c === 'fav' ? '즐겨찾기' : (GP.lib.catNames[c] || (GP.CATS.find(x => x.id === c) || {}).name || c);
+function plCount(c) {
+  if (c === 'sets') return GP.SETS.length + GP.lib.sets.length;
+  if (c === 'fav') return new Set(GP.lib.favorites.concat(panels.recent).filter(k => GP.getDef(k))).size;
+  return allTypes().filter(k => (GP.getDef(k) || {}).cat === c).length;
+}
 panels.renderPlace = () => {
-  const el = $('#panel-place');
-  el.innerHTML = `<p class="lead">기구를 누른 뒤 도면을 클릭하면 놓여요. 끌어다 놓아도 되고, 벽 가까이 가져가면 벽에 붙어요.</p>
+  const el = $('#panel-place'), grp = plGroupOf(pl.cat);
+  el.innerHTML = `<p class="pl-lead">${IC.select}<span>기구를 누르고 도면을 클릭하면 놓여요 · 끌어다 놓아도 돼요</span></p>
   <div class="search">${IC.search}<input id="plQ" type="search" placeholder="기구 검색 (예: 랫풀다운, 벤치)" value="${U.esc(pl.q)}"></div>
-  <div class="chips" id="plCats">${GP.CATS.map(c => `<button class="chip${pl.cat === c.id ? ' on' : ''}" data-cat="${c.id}">${c.id !== 'fav' ? `<span class="dot" style="--c:var(--cat-${c.id})"></span>` : ''}${U.esc(GP.lib.catNames[c.id] || c.name)}</button>`).join('')}<button class="chip${pl.cat === 'sets' ? ' on' : ''}" data-cat="sets">존 세트</button></div>
+  <div class="seg full pl-groups" id="plGroups">${PL_GROUPS.map(g => `<button data-grp="${g.id}" class="${g === grp ? 'on' : ''}">${g.id === 'mine' ? IC.star : ''}${g.name}</button>`).join('')}</div>
+  <div class="pl-subs" id="plCats">${grp.cats.map(c => `<button class="pl-sub${pl.cat === c ? ' on' : ''}" data-cat="${c}">${U.esc(plCatName(c))}<em>${plCount(c)}</em></button>`).join('')}</div>
   <div class="grid" id="plGrid"></div>`;
   renderGrid();
 };
@@ -160,6 +175,7 @@ plEl.addEventListener('input', e => { if (e.target.id === 'plQ') { pl.q = e.targ
 plEl.addEventListener('click', e => {
   const t = e.target;
   const fv = t.closest('[data-fav]'); if (fv) { e.stopPropagation(); const k = fv.dataset.fav, f = GP.lib.favorites, i = f.indexOf(k); if (i >= 0) f.splice(i, 1); else f.unshift(k); GP.saveLib(); renderGrid(); return; }
+  const gb = t.closest('#plGroups [data-grp]'); if (gb) { const g = PL_GROUPS.find(x => x.id === gb.dataset.grp); if (g && !g.cats.includes(pl.cat)) { pl.cat = g.cats[0]; pl.q = ''; panels.renderPlace(); } return; }
   const c = t.closest('#plCats [data-cat]'); if (c) { pl.cat = c.dataset.cat; pl.q = ''; panels.renderPlace(); return; }
   const sd = t.closest('[data-setdel]'); if (sd) { e.stopPropagation(); GP.lib.sets = GP.lib.sets.filter(s => s.id !== sd.dataset.setdel); GP.saveLib(); renderGrid(); return; }
   const s = t.closest('[data-set]'); if (s) { const set = GP.SETS.concat(GP.lib.sets).find(q => q.id === s.dataset.set); if (set) GP.tools.startPlacing(set.items.filter(q => GP.getDef(q[0])).map(([type, x, z, r, extra]) => ({ it: Object.assign({ type }, extra || {}), rel: [x, z, r] })), { label: set.name }); return; }

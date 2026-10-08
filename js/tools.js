@@ -337,7 +337,7 @@ function toolDown(t, e, fp) {
   }
   if (t === 'part') {
     const p = snapPoint(fp.x, fp.z, { alt: e.altKey, prev: draw && draw.pts[draw.pts.length - 1], shift: e.shiftKey });
-    if (!draw) draw = { tool: 'part', pts: [p], cur: p, num: '' };
+    if (!draw) { draw = { tool: 'part', pts: [p], cur: p, num: '' }; if (ui.sel.length) ui.clearSel(); }   // the inspector closes so the drawing bar has room
     else { const last = draw.pts[draw.pts.length - 1]; if (G.len(last, p) > .05) draw.pts.push(p); else if (draw.pts.length >= 2) finishDraw(); }
     GP.emit('overlay'); return true;
   }
@@ -386,6 +386,31 @@ function finishDraw() {
   else if (draw.tool === 'matPoly') { if (draw.pts.length >= 3) { const poly = snapPolyVerts(draw.pts); draw = null; addMat(isConvex(poly) ? clipToRoom(poly) : poly); } else draw = null; }
   GP.emit('overlay');
 }
+/* drawing a partition / a mat outline: a bar stays on screen the whole time with what to do next and
+   buttons for it (finishing needs no double click) */
+const dbar = document.createElement('div'); dbar.className = 'drawbar'; dbar.hidden = true;
+dbar.innerHTML = `<div class="db-t"><b class="db-title"></b><span class="db-info"></span></div><div class="db-b"><button class="btn sm primary" data-db="done">완료 <kbd>Enter</kbd></button><button class="btn sm" data-db="undo">마지막 점 지우기</button><button class="btn sm ghost" data-db="cancel">취소 <kbd>Esc</kbd></button></div>`;
+$('#stage').appendChild(dbar);
+function drawBar() {
+  const t = ui.tool, on = !GP.viewOnly && (t === 'part' || t === 'matPoly') && !(GP.V3 && GP.V3.on); dbar.hidden = !on; if (!on) return;
+  const d = draw && draw.tool === t ? draw : null, n = d ? d.pts.length : 0, part = t === 'part', need = part ? 2 : 3;
+  let len = 0; if (d) for (let i = 1; i < n; i++) len += G.len(d.pts[i - 1], d.pts[i]);
+  dbar.querySelector('.db-title').textContent = part ? (d ? `가벽 그리는 중 · 점 ${n}개 · 길이 ${len.toFixed(2)}m` : '가벽 그리기') : (d ? `구역 그리는 중 · 점 ${n}개` : '고무블럭 구역 그리기');
+  dbar.querySelector('.db-info').innerHTML = !d ? (part ? '시작할 곳을 <b>클릭</b>하세요. 계속 클릭하면 꺾여요.' : '모서리를 차례로 <b>클릭</b>하세요.')
+    : d.num ? `길이 <b>${d.num} m</b> 입력 중 · <kbd>Enter</kbd>로 확정`
+    : n < need ? (part ? '다음 점을 <b>클릭</b>하세요. 숫자를 치고 Enter를 누르면 그 길이로 그려져요.' : '다음 모서리를 <b>클릭</b>하세요.')
+    : (part ? '끝내려면 마지막 점에서 <b>더블클릭</b>하거나 <b>완료</b>를 누르세요.' : '첫 점을 누르거나 <b>더블클릭</b>, 또는 <b>완료</b>를 누르면 완성돼요.');
+  dbar.querySelector('[data-db="done"]').hidden = n < need; dbar.querySelector('[data-db="undo"]').hidden = !d;
+}
+tools.drawBar = drawBar;
+dbar.addEventListener('click', e => {
+  const b = e.target.closest('[data-db]'); if (!b) return; const a = b.dataset.db;
+  if (a === 'done') finishDraw();
+  else if (a === 'undo') { if (draw) { if (draw.pts.length > 1) draw.pts.pop(); else draw = null; } GP.emit('overlay'); }
+  else if (a === 'cancel') { if (draw) { draw = null; GP.emit('overlay'); } else ui.setTool('select'); }
+  drawBar();
+});
+GP.on('overlay', drawBar); GP.on('tool', drawBar); GP.on('step', drawBar);
 function openingHover(fp) {
   const L = GP.L(), tol = .45; let best = null;
   const P = L.room.pts; for (let i = 0; i < P.length; i++) { const e = G.edge(P, i); const c = G.closest(fp.x, fp.z, e.a, e.b); const s = (fp.x - e.a[0]) * e.nx + (fp.z - e.a[1]) * e.nz; const d = Math.abs(s + GP.WALL_T / 2); if (d < tol && (!best || d < best.d)) best = { host: 'room', seg: i, t: c.t, L: e.L, d }; }

@@ -211,6 +211,7 @@ const HINTS = {
 ui.setHint = (custom) => {
   const h = $('#hint'); let s = custom;
   const v3 = GP.V3 && GP.V3.on;
+  if (!v3 && (ui.tool === 'part' || ui.tool === 'matPoly')) { h.innerHTML = ''; h.hidden = true; if (GP.tools && GP.tools.drawBar) GP.tools.drawBar(); return; }   // the drawing bar says it (and keeps saying it)
   if (v3 && GP.V3.walking && !custom) { h.innerHTML = ''; h.hidden = true; return; }     // the walk mode shows its own help
   if (!s && v3 && !GP.viewOnly) s = ui.placing ? HINTS.placing3d : ui.step === 'place' ? HINTS.select3d : HINTS.other3d;
   if (!s) { if (GP.viewOnly) s = ''; else if (ui.placing) s = HINTS.placing; else if (ui.tool === 'select') s = ui.step === 'space' ? HINTS.selectSpace : ui.step === 'floor' ? HINTS.selectFloor : HINTS.select; else s = HINTS[ui.tool] || ''; }
