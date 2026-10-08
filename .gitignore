@@ -8,3 +8,5 @@
 # OS clutter
 Thumbs.db
 desktop.ini
+/*.lnk
+/icons/gofit.ico
