@@ -172,10 +172,11 @@ R.auto = {
     b.innerHTML = head('자동으로 놓아 볼게요', '고른 기구를 종류별로 모아서 벽을 따라 놓아요. 기구마다 필요한 운동 공간과 출입문 앞 통로를 비워 둬요.') +
       `<button class="btn primary wide big" id="wzAuto">${placed.length ? '다시 자동 배치하기' : `기구 ${want}대 자동 배치하기`}</button>
       ${res ? `<div class="wz-res${res.failed.length ? ' warn' : ''}"><b>${res.placed}대를 놓았어요</b>${res.failed.length ? `<span>공간이 부족해서 ${res.failed.length}대는 못 놓았어요: ${[...new Set(res.failed)].map(t => U.esc(GP.typeName(t))).join(', ')}</span><span>기구 수를 줄이거나, 전문가 모드에서 직접 놓아 보세요.</span>` : ''}</div>` : ''}
-      ${placed.length ? `<div class="wz-tip"><b>원하는 대로 고치기</b><ul><li>기구를 <b>끌면</b> 옮겨져요. 벽 가까이 가져가면 벽에 붙어요.</li><li>기구를 <b>누르면</b> 오른쪽에 돌리기·지우기가 나와요. <kbd>R</kbd>로 돌려도 돼요.</li><li>마음에 안 들면 <b>다시 자동 배치</b>를 누르세요.</li></ul></div>` : ''}
+      ${placed.length ? `<div class="wz-tip"><b>원하는 대로 고치기</b><ul><li>기구를 <b>끌면</b> 옮겨져요. 벽에 딱 붙이고 싶으면 도면 오른쪽 아래 <b>벽 자석</b>을 켜세요.</li><li>기구를 <b>누르면</b> 오른쪽에 돌리기·지우기가 나와요. <kbd>R</kbd>로 돌려도 돼요.</li><li>마음에 안 들면 <b>다시 자동 배치</b>를 누르세요.</li></ul></div>` : ''}
       ${placed.length ? (list.length ? `<div class="wz-list"><div class="wz-lh">확인할 점 ${list.length}개 <small>눌러서 위치 보기</small></div>${list.slice(0, 6).map((c, k) => `<button class="wz-li chk ${c.sev}" data-ck="${k}"><i></i><span>${U.esc(c.msg)}</span></button>`).join('')}</div>` : '<p class="wz-ok">겹치거나 좁은 곳 없이 잘 놓였어요.</p>') : ''}`;
     b.onclick = async e => {
       if (e.target.closest('#wzAuto')) {
+        if (!want) { GP.toast('먼저 놓을 기구를 골라 주세요', { bad: true }); W.go(4); return; }
         if (placed.length && !(await GP.confirm('지금 놓인 기구를 모두 지우고 다시 자동으로 놓을까요? 되돌리기로 돌아올 수 있어요.', '다시 배치'))) return;
         await runAuto(); R.auto.render(b); return;
       }

@@ -539,6 +539,12 @@ details.more>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--i
 .wz-send .btn{padding:10px 8px}
 .wz-ceil .chips{margin:2px 0 4px}
 @media (max-width:820px){.app.easy{--side-w:100%}.wz-body{padding:12px}}
+.magchip{right:12px;bottom:142px;z-index:2;display:flex;align-items:center;gap:7px;padding:7px 11px;font-size:12.5px;color:var(--ink-2);cursor:pointer}
+.magchip i{width:26px;height:15px;border-radius:999px;background:var(--line-2);position:relative;flex:none;transition:background .15s}
+.magchip i::after{content:'';position:absolute;left:2px;top:2px;width:11px;height:11px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.magchip.on i{background:var(--accent)}.magchip.on i::after{left:13px}
+.magchip b{color:var(--ink)}
+@media (max-width:820px){.magchip{right:8px;bottom:130px;padding:6px 9px}}
 .fold{border:1px solid var(--line);border-radius:12px;background:var(--panel)}
 .fold>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:10px 12px;font-size:13.5px;font-weight:600}
 .fold>summary::-webkit-details-marker{display:none}

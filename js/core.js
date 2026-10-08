@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.2.0';
+GP.VERSION = '2.2.1';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
@@ -179,7 +179,7 @@ const LIB_DEFAULT = () => ({
   names: {}, catNames: {}, prices: {}, power: {}, favorites: ['treadmill', 'bike', 'latpull', 'chest', 'legpress_plate', 'powerrack', 'bench_flat', 'bench_adj', 'dbrack2'], hidden: [],
   matPrices: {}, trimPrices: {}, partPrices: { wall: 0, glass: 0, half: 0 },
   customTypes: {}, sets: [],
-  extraPrices: {}, extraRecent: [], mode: 'easy',      // mode: 'easy' (step-by-step wizard) or 'expert' (every tool)      // quote-only items (not on the plan): last price per name, recently used names
+  extraPrices: {}, extraRecent: [], mode: 'easy', magnet: false,   // magnet: items dragged near a wall snap onto it (off by default)      // mode: 'easy' (step-by-step wizard) or 'expert' (every tool)      // quote-only items (not on the plan): last price per name, recently used names
   defaults: { blocksPerPyeong: 13, aisleMin: .9, shipping: 0, install: 0, validDays: 30, cordLen: 3, finance: { kind: 'install', months: 36, downPct: 0, rateLo: 6, rateHi: 12, rvPct: 0 } },
   company: { name: 'GOFIT KOREA', ceo: '', tel: '', addr: '', bizNo: '', email: '' },
   guideSeen: false,

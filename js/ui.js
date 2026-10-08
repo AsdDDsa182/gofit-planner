@@ -199,7 +199,7 @@ $('#viewBtn').addEventListener('click', () => {
     const S = GP.S;
     if (act.startsWith('style:')) ui.setStyle(act.slice(6));
     else if (act.startsWith('lay:')) { const k = act.slice(4); S.layers[k] = !S.layers[k]; if ((k === 'aisle' || k === 'egress') && S.layers[k]) GP.checks.full(); S.invalidate(); }
-    else if (act === 'magnet') { ui.magnet = !ui.magnet; GP.toast(ui.magnet ? '벽 자석을 켰어요' : '벽 자석을 껐어요 (5cm 격자로만 맞춰져요)'); }
+    else if (act === 'magnet') { ui.magnet = !ui.magnet; GP.toast(ui.magnet ? '벽 자석을 켰어요' : '벽 자석을 껐어요 (5cm 단위로만 맞춰져요)'); }
     $('#pop').innerHTML = viewMenuHtml(); return true;
   });
 });
@@ -254,7 +254,15 @@ ui.renderHUD = () => {
   $('#hud').innerHTML = `<div class="hud-area"><b>${(A / U.PY).toFixed(1)}</b><span>평</span><em>${A.toFixed(1)}㎡</em></div><div class="hud-meta">운동기구 ${eq}대</div>`;
 };
 const LAYERS = [['labels', '이름'], ['clear', '사용 공간'], ['mats', '바닥'], ['zones', '존'], ['dims', '치수'], ['notes', '메모'], ['aisle', '좁은 통로'], ['egress', '비상 동선'], ['magnet', '벽 자석']];
-ui.magnet = true;
+/* wall magnet: a device setting (off by default); the button on the plan and the 보기 menu both switch it */
+Object.defineProperty(ui, 'magnet', { get: () => !!GP.lib.magnet, set: v => { GP.lib.magnet = !!v; GP.saveLib(); ui.renderMagnet(); }, configurable: true });
+ui.renderMagnet = () => {
+  const b = $('#magChip'); if (!b) return; const on = ui.magnet;
+  b.hidden = GP.viewOnly || ui.step !== 'place'; b.classList.toggle('on', on);
+  b.innerHTML = `<i></i><span>벽 자석 <b>${on ? '켬' : '끔'}</b></span>`; b.title = on ? '켜져 있어요: 기구를 벽 가까이 가져가면 벽에 붙어요. 누르면 꺼져요' : '꺼져 있어요: 기구가 벽에 붙지 않고 5cm 단위로만 맞춰져요. 누르면 켜져요';
+};
+$('#magChip').addEventListener('click', () => { ui.magnet = !ui.magnet; GP.toast(ui.magnet ? '벽 자석을 켰어요 · 기구를 벽 가까이 가져가면 붙어요' : '벽 자석을 껐어요 · 벽에 붙지 않고 5cm 단위로 맞춰져요'); });
+GP.on('step', ui.renderMagnet); GP.on('booted', ui.renderMagnet);
 ui.renderLayers = () => {
   $('#layersBox').hidden = true; return;   // moved into the 보기 menu (top bar)
   const S = GP.S; let lays = LAYERS; if (GP.viewOnly) lays = LAYERS.filter(l => ['labels', 'clear', 'mats', 'zones', 'dims', 'notes'].includes(l[0]));
