@@ -163,7 +163,7 @@ ui.renderGuideBits = () => {
       if (st === 'place' && !L.items.length) html = `<b>기구를 놓아 볼까요?</b><span>왼쪽 목록에서 기구를 누른 뒤 도면을 클릭하면 놓여요. 목록에서 도면으로 끌어다 놓아도 돼요.</span>`;
       else if (st === 'floor' && !L.mats.length) html = `<b>고무블럭을 깔아 볼까요?</b><span>왼쪽 ‘구역 그리기’에서 <b>방 전체</b>를 누르거나, <b>사각형</b>을 고른 뒤 깔 구역을 드래그해요.</span>`;
     }
-    eh.innerHTML = html; eh.hidden = !html;
+    eh.innerHTML = ''; eh.hidden = true; void html; ui.setHint();   // the hint line says it now (no card over the plan)
   }
 };
 $('#stepNext') && $('#stepNext').addEventListener('click', e => { const b = e.target.closest('[data-next]'); if (!b) return; const n = b.dataset.next; if (n === 'quote') ui.openQuote(); else ui.setStep(n); $('#side .panel:not([hidden])') && ($('#side .panel:not([hidden])').scrollTop = 0); });
@@ -184,16 +184,41 @@ $('#steps').addEventListener('click', e => { const b = e.target.closest('[data-s
 /* divider shadow under the step tabs while the panel is scrolled */
 ['space', 'place', 'floor'].forEach(s => $('#panel-' + s).addEventListener('scroll', e => $('#side').classList.toggle('scrolled', e.target.scrollTop > 2), { passive: true }));
 /* colour / line-only (CAD) style — applies to the plan, the 3D view and exports */
-ui.setStyle = (st) => { GP.S.style = st; try { localStorage.setItem('gofit:style', st); } catch (e) { } $$('#styleSeg button').forEach(b => b.classList.toggle('on', b.dataset.s === st)); GP.S.invalidate(); if (GP.V3 && GP.V3.on) GP.V3.rebuild(); };
-$('#styleSeg').addEventListener('click', e => { const b = e.target.closest('[data-s]'); if (b) ui.setStyle(b.dataset.s); });
-$$('#styleSeg button').forEach(b => b.classList.toggle('on', b.dataset.s === GP.S.style));
+ui.setStyle = (st) => { GP.S.style = st; try { localStorage.setItem('gofit:style', st); } catch (e) { } GP.S.invalidate(); if (GP.V3 && GP.V3.on) GP.V3.rebuild(); };
+/* 보기 menu: drawing style, what the plan shows (these used to be a row of toggles under the plan), the wall magnet */
+const VIEW_LAYERS = [['labels', '기구 이름'], ['dims', '치수'], ['clear', '사용 공간', '기구 앞뒤로 운동에 필요한 공간'], ['mats', '바닥(고무블럭)'], ['zones', '존'], ['notes', '메모'], ['aisle', '좁은 통로', '기준보다 좁은 곳을 빨갛게'], ['egress', '비상 동선', '가장 먼 곳에서 출입문까지']];
+function viewMenuHtml() {
+  const S = GP.S, lays = GP.viewOnly ? VIEW_LAYERS.filter(l => !['aisle', 'egress'].includes(l[0])) : VIEW_LAYERS;
+  const row = (act, on, t, d) => `<button class="mi chk${on ? ' on' : ''}" data-act="${act}"><i class="cb"></i><div><b>${t}</b>${d ? `<small>${d}</small>` : ''}</div></button>`;
+  return `<div class="ph">화면</div><div class="seg full vm-style"><button data-act="style:color" class="${S.style !== 'line' ? 'on' : ''}">컬러</button><button data-act="style:line" class="${S.style === 'line' ? 'on' : ''}">선만 (캐드처럼)</button></div>
+    <div class="ph">도면에 보이기</div>${lays.map(([k, t, d]) => row('lay:' + k, S.layers[k], t, d)).join('')}
+    ${GP.viewOnly ? '' : `<hr><div class="ph">편집 도움</div>${row('magnet', ui.magnet, '벽 자석', '기구를 벽 가까이 가져가면 붙어요')}`}`;
+}
+$('#viewBtn').addEventListener('click', () => {
+  GP.popover($('#viewBtn'), viewMenuHtml(), (act) => {
+    const S = GP.S;
+    if (act.startsWith('style:')) ui.setStyle(act.slice(6));
+    else if (act.startsWith('lay:')) { const k = act.slice(4); S.layers[k] = !S.layers[k]; if ((k === 'aisle' || k === 'egress') && S.layers[k]) GP.checks.full(); S.invalidate(); }
+    else if (act === 'magnet') { ui.magnet = !ui.magnet; GP.toast(ui.magnet ? '벽 자석을 켰어요' : '벽 자석을 껐어요 (5cm 격자로만 맞춰져요)'); }
+    $('#pop').innerHTML = viewMenuHtml(); return true;
+  });
+});
+/* help: shortcuts and the guide */
+$('#helpBtn').addEventListener('click', () => {
+  const k = (keys, t) => `<div class="hk"><span>${keys.map(x => `<kbd>${x}</kbd>`).join(' ')}</span><em>${t}</em></div>`;
+  GP.popover($('#helpBtn'), `<div class="ph">마우스</div><div class="hks">${k(['끌기'], '기구 옮기기 · 빈 곳은 여러 개 선택')}${k(['오른쪽 버튼 끌기'], '화면 이동')}${k(['Space', '끌기'], '화면 이동')}${k(['휠'], '확대 · 축소')}${k(['더블클릭'], '기구 3D 모델 보기')}</div>
+    <div class="ph">키보드</div><div class="hks">${k(['R'], '90° 회전')}${k(['Q', 'E'], '15° 회전')}${k(['Del'], '삭제')}${k(['Ctrl', 'D'], '복제')}${k(['Ctrl', 'Z'], '되돌리기')}${k(['방향키'], '5cm 이동 (Shift 50cm)')}${k(['Esc'], '취소 · 선택 해제')}</div>
+    <hr><button class="mi" data-act="guide">${IC.help}<div><b>사용 가이드 다시 보기</b><small>3단계로 둘러보기</small></div></button>`, a => { if (a === 'guide') GP.panels.guide(); });
+});
 
 /* ---------------- hint bar ---------------- */
 const HINTS = {
-  select: '기구를 <b>끌어서</b> 이동 · 빈 곳을 <b>끌면</b> 여러 개 선택 · 화면 이동은 오른쪽 버튼(또는 <kbd>Space</kbd>)+끌기 · <kbd>R</kbd> 회전',
-  selectSpace: '벽·문·가벽을 <b>눌러서</b> 고쳐요 · 문은 양 끝 점을 끌어 폭 조절',
+  select: '기구를 <b>끌어</b> 옮기고 · 빈 곳을 끌면 여러 개 선택',
+  selectSpace: '벽·문·가벽을 <b>눌러서</b> 고쳐요',
   selectFloor: '고무블럭 구역을 <b>눌러서</b> 종류·마감재를 바꿔요',
-  vertex: '꼭짓점·벽 <b>드래그</b> · 빈 곳을 <b>끌면</b> 여러 개 선택 · <kbd>Shift</kbd>+클릭 추가 · <b>＋</b> 끌어 꺾기 · 길이·각도 숫자를 <b>눌러</b> 입력',
+  emptyPlace: '왼쪽 목록에서 기구를 <b>누른 뒤</b> 도면을 클릭해 놓아 보세요',
+  emptyFloor: '왼쪽 <b>방 전체</b>를 누르거나 <b>사각형</b>으로 구역을 그려 고무블럭을 깔아요',
+  vertex: '꼭짓점·벽을 <b>끌어</b> 모양 바꾸기 · 길이·각도 숫자를 <b>눌러</b> 입력',
   part: '<b>클릭</b>으로 가벽 시작 · 계속 클릭해 꺾기 · <b>더블클릭</b>이나 <kbd>Enter</kbd>로 끝 · 숫자 입력 후 <kbd>Enter</kbd>로 길이 지정',
   opening: '벽이나 가벽 위를 <b>클릭</b>해서 놓기',
   roomlabel: '방 안을 <b>클릭</b>하면 이름을 붙이고 면적을 계산해요',
@@ -214,6 +239,7 @@ ui.setHint = (custom) => {
   if (!v3 && (ui.tool === 'part' || ui.tool === 'matPoly')) { h.innerHTML = ''; h.hidden = true; if (GP.tools && GP.tools.drawBar) GP.tools.drawBar(); return; }   // the drawing bar says it (and keeps saying it)
   if (v3 && GP.V3.walking && !custom) { h.innerHTML = ''; h.hidden = true; return; }     // the walk mode shows its own help
   if (!s && v3 && !GP.viewOnly) s = ui.placing ? HINTS.placing3d : ui.step === 'place' ? HINTS.select3d : HINTS.other3d;
+  if (!s && !v3 && !GP.viewOnly && !ui.placing && ui.tool === 'select' && GP.P) { const L = GP.L(); if (ui.step === 'place' && !L.items.length) s = HINTS.emptyPlace; else if (ui.step === 'floor' && !L.mats.length) s = HINTS.emptyFloor; }
   if (!s) { if (GP.viewOnly) s = ''; else if (ui.placing) s = HINTS.placing; else if (ui.tool === 'select') s = ui.step === 'space' ? HINTS.selectSpace : ui.step === 'floor' ? HINTS.selectFloor : HINTS.select; else s = HINTS[ui.tool] || ''; }
   if (ui.tool === 'opening' && !custom) s += `<span class="opts">${Object.entries(GP.OPENINGS).map(([k, v]) => `<button class="btn xs ${ui.openingKind === k ? 'on' : ''}" data-ok="${k}">${v}</button>`).join('')}</span>`;
   if ((ui.placing || ['part', 'matPoly', 'measure', 'fillwall', 'opening'].includes(ui.tool)) && !custom) s += ` <button class="btn xs" data-cancel>취소 Esc</button>`;
@@ -230,6 +256,7 @@ ui.renderHUD = () => {
 const LAYERS = [['labels', '이름'], ['clear', '사용 공간'], ['mats', '바닥'], ['zones', '존'], ['dims', '치수'], ['notes', '메모'], ['aisle', '좁은 통로'], ['egress', '비상 동선'], ['magnet', '벽 자석']];
 ui.magnet = true;
 ui.renderLayers = () => {
+  $('#layersBox').hidden = true; return;   // moved into the 보기 menu (top bar)
   const S = GP.S; let lays = LAYERS; if (GP.viewOnly) lays = LAYERS.filter(l => ['labels', 'clear', 'mats', 'zones', 'dims', 'notes'].includes(l[0]));
   $('#layersBox').innerHTML = `<span class="lb-t">${IC.eye}</span>` + lays.map(([k, n]) => `<button class="tg${(k === 'magnet' ? ui.magnet : S.layers[k]) ? ' on' : ''}" data-layer="${k}"><i></i>${n}</button>`).join('');
 };
@@ -245,31 +272,47 @@ $('#zoomBox').addEventListener('click', e => { const b = e.target.closest('[data
 /* ---------------- variants (A안 / B안) ---------------- */
 ui.renderVariants = () => {
   const P = GP.P; const v = $('#variants'); v.hidden = GP.viewOnly && P.variants.length < 2;
-  v.innerHTML = P.variants.map((q, i) => `<button class="${i === P.cur ? 'on' : ''}" data-var="${i}" title="더블클릭해서 이름 바꾸기">${U.esc(q.name)}</button>`).join('') + (GP.viewOnly ? '' : `<button class="add" data-var="add" title="지금 안을 복사해서 새 안 만들기">＋</button>`) + (!GP.viewOnly && P.variants.length > 1 ? `<button class="add cmp" data-var="cmp" title="안끼리 기구 수·면적·견적을 나란히 비교">비교</button>` : '');
+  v.innerHTML = `<button class="on var-btn" data-var="menu" title="배치안 바꾸기 · 새 안 만들기 · 비교">${U.esc(P.variants[P.cur].name)}${P.variants.length > 1 ? `<small>${P.cur + 1}/${P.variants.length}</small>` : ''}<span class="caret">▾</span></button>`;
 };
 $('#variants').addEventListener('click', e => {
   const b = e.target.closest('[data-var]'); if (!b) return; const v = b.dataset.var, P = GP.P;
-  if (v === 'cmp') { GP.panels.compare(); return; }
+  if (v === 'menu') {
+    const eq = L => L.items.filter(it => !GP.info.NO_QUOTE.has(it.type)).length;
+    GP.popover(b, `<div class="ph">배치안</div>${P.variants.map((q, i) => `<button class="mi${i === P.cur ? ' cur' : ''}" data-act="v${i}"><div><b>${U.esc(q.name)}${i === P.cur ? ' · 지금 보는 안' : ''}</b><small>기구 ${eq(q.layout)}대</small></div></button>`).join('')}
+      ${GP.viewOnly ? '' : `<hr><button class="mi" data-act="add">${IC.plus}<div><b>새 안 만들기</b><small>지금 안을 복사해서 시작해요</small></div></button>${P.variants.length > 1 ? `<button class="mi" data-act="cmp">${IC.doc}<div><b>안 비교</b><small>기구 수 · 면적 · 견적을 나란히</small></div></button>` : ''}<button class="mi" data-act="ren">${IC.note}<div><b>이름 바꾸기 · 삭제</b><small>${U.esc(P.variants[P.cur].name)}</small></div></button>`}`, (a) => {
+      if (a === 'cmp') GP.panels.compare(); else if (a === 'ren') ui.varRename(P.cur); else if (a === 'add') ui.varPick('add'); else if (a[0] === 'v') ui.varPick(+a.slice(1));
+    });
+    return;
+  }
+  ui.varPick(v);
+});
+ui.varPick = (v) => {
+  const P = GP.P;
   if (v === 'add') { const src = P.variants[P.cur]; const n = { id: U.uid('v'), name: String.fromCharCode(65 + P.variants.length) + '안', layout: U.clone(src.layout) }; P.variants.push(n); P.cur = P.variants.length - 1; ui.sel = []; GP.changed('all'); ui.renderVariants(); GP.emit('project'); GP.toast(`${n.name}을 만들었어요. 지금 안을 복사했어요`); return; }
   const i = +v; if (i === P.cur) return; P.cur = i; ui.sel = []; GP.tools && GP.tools.cancel(); GP.changed('all', { commit: false }); if (!GP.viewOnly) GP.H.commit(); ui.renderVariants(); GP.emit('project');
-});
-$('#variants').addEventListener('dblclick', async e => {
-  const b = e.target.closest('[data-var]'); if (!b || b.dataset.var === 'add' || b.dataset.var === 'cmp' || GP.viewOnly) return; const i = +b.dataset.var, P = GP.P;
+};
+ui.varRename = (i) => {
+  const P = GP.P; if (GP.viewOnly) return;
   GP.modal('안 이름', `<label class="fld"><span>이름</span><input id="vName" value="${U.esc(P.variants[i].name)}" autofocus></label>`, `${P.variants.length > 1 ? '<button class="btn danger" id="vDel">이 안 삭제</button>' : ''}<button class="btn" data-close>닫기</button><button class="btn primary" id="vOk">저장</button>`, { size: 'narrow' });
   $('#vOk').onclick = () => { P.variants[i].name = $('#vName').value.trim() || P.variants[i].name; GP.closeModal(); ui.renderVariants(); GP.H.commit(); };
   const del = $('#vDel'); if (del) del.onclick = async () => { GP.closeModal(); if (!(await GP.confirm(`${P.variants[i].name}을 삭제할까요? 되돌리기로 복구할 수 있어요.`, '삭제', true))) return; P.variants.splice(i, 1); P.cur = Math.min(P.cur, P.variants.length - 1); ui.sel = []; GP.changed('all'); ui.renderVariants(); };
-});
+};
 
 /* ---------------- quote summary card (right side) ---------------- */
+ui.smOpen = (() => { try { return localStorage.getItem('gofit:smOpen') === '1'; } catch (e) { return false; } })();
 ui.renderSummary = () => {
   const box = $('#summary'); if (!box || !GP.P) return;
   const hide = GP.viewOnly || !$('#insp').hidden || !$('#quoteSheet').hidden; box.hidden = hide; if (hide) return;
   const R = GP.quote.compute(); const list = GP.checks.list || []; const errs = list.filter(c => c.sev === 'err').length, warns = list.filter(c => c.sev === 'warn').length;
-  box.innerHTML = `<div class="sm-h"><b>견적 요약</b><button class="btn xs" id="smOpen">${IC.doc}견적서</button></div>
+  const open = ui.smOpen, st = errs ? 'err' : warns ? 'warn' : 'ok';
+  box.classList.toggle('mini', !open);
+  box.innerHTML = open ? `<div class="sm-h"><b>견적 요약</b><span class="sm-acts"><button class="btn xs" id="smOpen">${IC.doc}견적서</button><button class="icon-btn ghost sm" id="smFold" title="접기" aria-label="접기">${IC.up}</button></span></div>
     <div class="kv"><span>부가세 별도</span><b>${U.won(R.supply)}원</b><span>부가세 포함</span><b class="big">${U.won(R.total)}원</b></div>
     ${R.missing ? `<p class="sm-miss">가격 미입력 ${R.missing}개 · 견적서에서 입력</p>` : ''}
-    <button class="sm-chk ${errs ? 'err' : warns ? 'warn' : 'ok'}" id="checkBtn"><i></i>${errs + warns ? `확인할 점 ${errs + warns}개` : '배치 점검 이상 없음'}</button>`;
-  $('#smOpen').onclick = () => ui.openQuote();
+    <button class="sm-chk ${st}" id="checkBtn"><i></i>${errs + warns ? `확인할 점 ${errs + warns}개` : '배치 점검 이상 없음'}</button>`
+    : `<button class="sm-mini" id="smFold" title="견적 요약 펼치기"><span>견적</span><b>${U.won(R.total)}원</b>${R.missing ? `<em>미입력 ${R.missing}</em>` : ''}${IC.down}</button><button class="sm-chk mini ${st}" id="checkBtn" title="배치 점검"><i></i>${errs + warns ? `확인 ${errs + warns}` : '이상 없음'}</button>`;
+  const so = $('#smOpen'); if (so) so.onclick = () => ui.openQuote();
+  $('#smFold').onclick = () => { ui.smOpen = !ui.smOpen; try { localStorage.setItem('gofit:smOpen', ui.smOpen ? '1' : ''); } catch (e) { } ui.renderSummary(); };
   $('#checkBtn').onclick = () => { GP.checks.full(); openChecks(); };
 };
 GP.on('changed', () => ui.renderSummary());
@@ -392,7 +435,7 @@ window.addEventListener('keydown', e => {
 
 /* ---------------- top bar buttons ---------------- */
 GP.fillIcons(document);
-$('#undoBtn').innerHTML = IC.undo; $('#redoBtn').innerHTML = IC.redo; $('#menuBtn').innerHTML = IC.menu; modal.querySelector('[data-close]').innerHTML = IC.x;
+$('#undoBtn').innerHTML = IC.undo; $('#redoBtn').innerHTML = IC.redo; $('#helpBtn').innerHTML = IC.help; $('#menuBtn').innerHTML = IC.menu; modal.querySelector('[data-close]').innerHTML = IC.x;
 $('#undoBtn').addEventListener('click', () => GP.H.undo()); $('#redoBtn').addEventListener('click', () => GP.H.redo());
 GP.on('history', () => { $('#undoBtn').disabled = !GP.H.canUndo(); $('#redoBtn').disabled = !GP.H.canRedo(); });
 ui.renderTop = () => { $('#projName').textContent = GP.P.name; $('#projClient').textContent = [GP.P.client, GP.P.consultant ? '담당 ' + GP.P.consultant : ''].filter(Boolean).join(' · ') || (GP.viewOnly ? '' : '고객사 정보 입력'); document.title = `${GP.P.name} — 고핏 플래너`; };

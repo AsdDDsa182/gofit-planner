@@ -21,10 +21,12 @@
     <button class="btn xs bkchip" id="bkChip" hidden title="브라우저를 다시 열면 백업 폴더 사용을 한 번 허락해야 해요">백업 폴더 연결</button>
     <div class="variants" id="variants"></div>
     <div class="seg viewseg" id="viewSeg"><button data-v="2d" class="on">2D 도면</button><button data-v="3d">3D 보기</button></div>
-    <div class="seg viewseg" id="styleSeg" title="색상 없이 선으로만 보기 (캐드 도면처럼)"><button data-s="color">컬러</button><button data-s="line">선만</button></div>
+    <button class="btn viewmenu" id="viewBtn" title="컬러·선만, 도면에 보일 것 고르기"><span class="ic" data-ic="eye"></span><span class="lbl">보기</span><span class="caret">▾</span></button>
     <div class="tb-right">
       <button class="icon-btn" id="undoBtn" title="되돌리기 (Ctrl+Z)" aria-label="되돌리기"></button>
       <button class="icon-btn" id="redoBtn" title="다시 실행 (Ctrl+Y)" aria-label="다시 실행"></button>
+      <button class="btn ghost modebtn" id="modeBtn"></button>
+      <button class="icon-btn" id="helpBtn" title="도움말 · 단축키" aria-label="도움말"></button>
       <button class="btn" id="quoteBtn" title="견적서 보기·가격 입력"><span class="ic" data-ic="doc"></span><span class="lbl">견적서</span></button>
       <button class="btn primary" id="shareBtn" title="고객에게 링크·PDF·이미지로 보내기"><span class="ic" data-ic="share"></span><span class="lbl">보내기</span></button>
     </div>
@@ -40,6 +42,7 @@
     <div class="panel" id="panel-place"></div>
     <div class="panel" id="panel-floor" hidden></div>
     <div class="stepnext" id="stepNext"></div>
+    <div class="wiz" id="wiz" hidden></div>
   </aside>
 
   <main class="stage" id="stage">
@@ -86,6 +89,7 @@
 <script src="js/viewer3d.js"></script>
 <script src="js/view3d.js"></script>
 <script src="js/backup.js"></script>
+<script src="js/wizard.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

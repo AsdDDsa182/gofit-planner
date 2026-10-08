@@ -41,6 +41,7 @@ app.loadProject = async (p) => {
   ui.setStep(ui.step || 'place'); GP.checks.full(); ui.renderSummary(); GP.emit('overlay');
   if (!GP.viewOnly) await GP.panels.restoreUL();
   saveSt('ok', p.updatedAt);
+  if (GP.wiz) GP.wiz.onProject();
 };
 app.openProject = async (id) => {
   if (GP.P && !GP.viewOnly) await app.saveNow();
@@ -124,7 +125,9 @@ app.welcome = () => {
     GP.P.name = (nm || '').trim() || '새 프로젝트'; GP.P.client = (cl || '').trim(); delete GP.P.unnamed;
     GP.modalOnClose = null; GP.closeModal();
     await GP.saveProject(); await GP.DB.put('kv', 'lastProject', GP.P.id);
-    ui.renderTop(); ui.setStep('space');
+    ui.renderTop();
+    if (GP.wiz && GP.wiz.on) { GP.wiz.go(1); return; }      // easy mode: the wizard walks on from here
+    ui.setStep('space');
     GP.toast('기본 공간(10 × 8 m)이 깔려 있어요. 벽을 끌거나 크기를 입력해 바꿔 보세요', { ms: 5000 });
     if (!GP.lib.guideSeen) setTimeout(() => GP.panels.guide(), 600);
   };
@@ -182,7 +185,7 @@ app.boot = async () => {
   await app.loadProject(p);
   S.frame(); GP.emit('booted');
   if (fresh) app.welcome();
-  else if (!GP.lib.guideSeen) setTimeout(() => GP.panels.guide(), 400);
+  else if (!GP.lib.guideSeen && !(GP.wiz && GP.wiz.on)) setTimeout(() => GP.panels.guide(), 400);
   if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !window.GP_VIEW) { navigator.serviceWorker.register('sw.js').catch(() => { }); }
 };
 app.boot().catch(e => { console.error(e); const st = $('#stage'); st.insertAdjacentHTML('beforeend', `<div class="busy"><div class="busy-card"><b>앱을 시작하지 못했어요</b><small class="note">${U.esc(e.message || e)}</small><button class="btn" onclick="location.reload()">새로고침</button></div></div>`); });

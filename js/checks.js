@@ -227,15 +227,15 @@ checks.full = () => {
 
 /* ---------- emergency exit: passages at least minW wide from the doors (room doors are exits; doors in partitions let people through).
    Each exit gets a 1.2 m "porch" outside it, so the door frame narrows the way out exactly as much as it does in reality. ---------- */
-calc.egress = (minW) => {
+calc.egress = (minW, list) => {        // list: items to test instead of the plan's (the automatic layout tries spots with it)
   const L = GP.L(), P = L.room.pts; if (P.length < 3) return null;
   const exits = L.openings.filter(o => o.kind !== 'window' && o.host === 'room');
-  const gr = makeGrid(.1, 1.5), free = new Uint8Array(gr.inside), items = [], W = gr.W, c = gr.cell;
-  for (const it of L.items) { const def = GP.getDef(it.type); if (!def || def.flat || def.wall || GP.mountOf(it) !== 'floor') continue; stampPoly(gr, free, GP.footprint(it), 0); items.push(it); }
+  const gr = makeGrid(.1, 1.5), free = new Uint8Array(gr.inside), items = [], W = gr.W, c = gr.cell, psegs = [];   // psegs: partition pieces (door gaps left out)
+  for (const it of list || L.items) { const def = GP.getDef(it.type); if (!def || def.flat || def.wall || GP.mountOf(it) !== 'floor') continue; stampPoly(gr, free, GP.footprint(it), 0); items.push(it); }
   for (const p of L.partitions) for (let i = 0; i < p.pts.length - 1; i++) {
     const a = p.pts[i], b = p.pts[i + 1], s = G.segInfo(a, b);
     const gaps = L.openings.filter(o => o.host === p.id && o.seg === i && o.kind !== 'window').map(o => GP.openingSpan(o)).filter(Boolean).sort((u, v) => u.s0 - v.s0);
-    const seg = (u, v) => { if (v - u > .01) stampSeg(gr, free, [a[0] + s.dx * u, a[1] + s.dz * u], [a[0] + s.dx * v, a[1] + s.dz * v], (p.thick || .1) / 2, 0); };
+    const seg = (u, v) => { if (v - u > .01) { const A = [a[0] + s.dx * u, a[1] + s.dz * u], B = [a[0] + s.dx * v, a[1] + s.dz * v]; stampSeg(gr, free, A, B, (p.thick || .1) / 2, 0); psegs.push([A, B]); } };
     let t0 = 0; for (const g of gaps) { seg(t0, g.s0); t0 = g.s1; } seg(t0, s.L);
   }
   const porch = exits.map(o => { const hs = GP.hostSeg(o); if (!hs) return null; const sp = GP.openingSpan(o, hs), at = (u, d) => [hs.a[0] + hs.dx * u + hs.nx * d, hs.a[1] + hs.dz * u + hs.nz * d]; return { o, hs, sp, at, poly: [at(sp.s0, .02), at(sp.s1, .02), at(sp.s1, -1.2), at(sp.s0, -1.2)] }; }).filter(Boolean);
@@ -265,7 +265,8 @@ calc.egress = (minW) => {
   if (open) for (const it of items) {
     if (blocked.has(it)) continue; const d = GP.dims(it), cl = (GP.getDef(it.type) || {}).cl || {}; let ok = false;
     const ex = Math.max(.9, cl.f || 0, cl.b || 0, cl.l || 0, cl.r || 0) + .1, R = G.rectPts(it.x, it.z, it.rot, -d.w / 2 - ex, d.w / 2 + ex, -d.d / 2 - ex, d.d / 2 + ex), b = G.bounds(R);
-    for (let z = b.minZ; z <= b.maxZ && !ok; z += c) for (let x = b.minX; x <= b.maxX; x += c) { const k = cellOf(x, z); if (k >= 0 && dist[k] < Infinity && G.pip(x, z, R)) { ok = true; break; } }
+    // a reached cell counts only on the machine's side of every partition (the access zone may reach through a thin wall)
+    for (let z = b.minZ; z <= b.maxZ && !ok; z += c) for (let x = b.minX; x <= b.maxX; x += c) { const k = cellOf(x, z); if (k >= 0 && dist[k] < Infinity && G.pip(x, z, R) && !psegs.some(([A, B]) => G.segX([it.x, it.z], [x, z], A, B))) { ok = true; break; } }
     if (!ok) cut.push(it);
   }
   // the longest way out (inside the room), and its route: walk downhill to a door

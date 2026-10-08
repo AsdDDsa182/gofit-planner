@@ -382,7 +382,7 @@ function addMat(poly) { const L = GP.L(), pb = GP.panels.matBrush(); const m = {
 tools.addMat = addMat;
 function finishDraw() {
   const L = GP.L(); if (!draw) return;
-  if (draw.tool === 'part') { if (draw.pts.length >= 2) { const p = { id: U.uid('pt'), pts: draw.pts, thick: .1, kind: 'wall' }; L.partitions.push(p); draw = null; GP.changed('parts'); ui.select([{ k: 'part', id: p.id }]); GP.toast('가벽을 만들었어요. 오른쪽에서 종류·두께를 바꿀 수 있어요'); } else draw = null; }
+  if (draw.tool === 'part') { if (draw.pts.length >= 2) { const kind = tools.partKind || 'wall', p = { id: U.uid('pt'), pts: draw.pts, thick: kind === 'glass' ? .06 : .1, kind }; L.partitions.push(p); draw = null; GP.changed('parts'); if (GP.wiz && GP.wiz.on) ui.setTool('select'); ui.select([{ k: 'part', id: p.id }]); GP.toast('가벽을 만들었어요. 오른쪽에서 종류·두께를 바꿀 수 있어요'); } else draw = null; }
   else if (draw.tool === 'matPoly') { if (draw.pts.length >= 3) { const poly = snapPolyVerts(draw.pts); draw = null; addMat(isConvex(poly) ? clipToRoom(poly) : poly); } else draw = null; }
   GP.emit('overlay');
 }

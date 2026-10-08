@@ -14,7 +14,7 @@ const SHAPES = {
   trap: { name: '사다리꼴', ps: [['t', '윗변', 13], ['w', '아랫변', 18], ['d', '깊이', 11]], make: p => [[0, 0], [p.t, 0], [p.w, p.d], [0, p.d]], icon: 'M4 6h20l12 24H4z' },
 };
 panels.SHAPES = SHAPES;
-const sp = { mode: 'py', shape: 'rect', vals: {}, walk: null };
+const sp = { mode: 'py', shape: 'rect', vals: {}, walk: null, open: new Set(['make']) };   // open: which folds of the space panel are open
 for (const k in SHAPES) sp.vals[k] = Object.fromEntries(SHAPES[k].ps.map(p => [p[0], p[2]]));
 let liveT = 0;
 function applyRoomLive(P, fit) {
@@ -24,19 +24,27 @@ function applyRoomLive(P, fit) {
 panels.renderSpace = () => {
   const P = GP.P, st = P.settings, L = GP.L(), A = Math.abs(G.area(L.room.pts));
   const el = $('#panel-space');
-  el.innerHTML = `<p class="lead">고객 매장의 벽 모양과 크기를 만들어요. 숫자를 바꾸면 바로 도면에 반영돼요. 문·창문·가벽은 도면 위 도구로 넣어요.</p>
-  <section class="blk"><h3>공간 만들기</h3>
-    <div class="seg full" id="spMode"><button data-m="py" class="${sp.mode === 'py' ? 'on' : ''}">평수로</button><button data-m="shape" class="${sp.mode === 'shape' ? 'on' : ''}">모양 템플릿</button><button data-m="walk" class="${sp.mode === 'walk' ? 'on' : ''}">실측 입력</button></div>
-    <div id="spBody" class="blk" style="border:0;padding:0"></div></section>
-  <section class="blk"><h3>지금 모양 그대로 평수 맞추기</h3><div class="row2"><label class="fld"><span>목표 평수 (지금 ${(A / U.PY).toFixed(1)}평)</span>${numI('fitPy', (A / U.PY).toFixed(1), .5, '평', 'min="3"')}</label><button class="btn" id="fitApply">비율 유지하고 맞추기</button></div></section>
-  <section class="blk"><h3>천장 높이</h3><div class="row2"><label class="fld"><span>바닥에서 천장까지</span>${numI('ceilH', st.wallH, .05, 'm', 'min="2" max="8"')}</label><p class="note" style="margin:0;align-self:end">기구마다 쓸 때 필요한 높이(트레드밀 위 사람 키, 스텝밀 맨 위 계단 등)를 이 높이로 점검해요. 3D 벽 높이로도 쓰여요.</p></div></section>
-  <section class="blk"><h3>고객 로고</h3><p class="note">로고 이미지를 올리면 벽에 붙는 로고가 생겨요.</p><label class="btn wide file" style="position:relative;overflow:hidden">로고 이미지 올리기<input type="file" id="logoFile" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label></section>
-  <details class="blk" ${sp.vt ? 'open' : ''} id="vtBlk"><summary>꼭짓점 좌표 (m)</summary><table class="tbl" id="vtable"></table></details>
-  <section class="blk"><h3>고객 도면 대고 그리기</h3><p class="note">받은 평면도 사진이나 캐드 파일(DXF)을 바닥에 깔고 <b>벽 편집</b> 도구로 꼭짓점을 맞추면 실제 모양 그대로 만들 수 있어요.</p>
+  // folds: only "make the room" is open at first; each title shows its current value so closed ones still say something
+  const fold = (id, title, val, body) => `<details class="fold" data-fold="${id}" ${sp.open.has(id) ? 'open' : ''}><summary><span class="fd-t">${title}</span>${val ? `<span class="fd-v">${val}</span>` : ''}</summary><div class="fd-b">${body}</div></details>`;
+  const bb = G.bounds(L.room.pts);
+  el.innerHTML = `<p class="lead">고객 매장의 벽 모양과 크기를 만들어요. 문·창문·가벽은 도면 위 도구로 넣어요.</p>
+  ${fold('make', '공간 만들기', `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`, `<div class="seg full" id="spMode"><button data-m="py" class="${sp.mode === 'py' ? 'on' : ''}">평수로</button><button data-m="shape" class="${sp.mode === 'shape' ? 'on' : ''}">모양 템플릿</button><button data-m="walk" class="${sp.mode === 'walk' ? 'on' : ''}">실측 입력</button></div>
+    <div id="spBody" class="blk" style="border:0;padding:0"></div>`)}
+  ${fold('ceil', '천장 높이', `${st.wallH}m`, `<label class="fld"><span>바닥에서 천장까지</span>${numI('ceilH', st.wallH, .05, 'm', 'min="2" max="8"')}</label><p class="note" style="margin:0">기구마다 쓸 때 필요한 높이(트레드밀 위 사람 키, 스텝밀 맨 위 계단 등)를 이 높이로 점검해요. 3D 벽 높이로도 쓰여요.</p>`)}
+  ${fold('trace', '고객 도면 대고 그리기', GP.S.underlay ? '도면 깔림' : '', `<p class="note">받은 평면도 사진이나 캐드 파일(DXF)을 깔고 <b>벽 모양</b> 도구로 꼭짓점을 맞추면 실제 모양 그대로 만들 수 있어요.</p>
     <div class="row2"><label class="btn file" style="position:relative;overflow:hidden">이미지·PDF 캡처<input type="file" id="ulImg" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label><label class="btn file" style="position:relative;overflow:hidden">캐드 파일 (DXF)<input type="file" id="ulDxf" accept=".dxf" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label></div>
-    <div id="ulCtl"></div></section>`;
+    <div id="ulCtl"></div>`)}
+  ${fold('fit', '지금 모양 그대로 평수 맞추기', '', `<div class="row2"><label class="fld"><span>목표 평수 (지금 ${(A / U.PY).toFixed(1)}평)</span>${numI('fitPy', (A / U.PY).toFixed(1), .5, '평', 'min="3"')}</label><button class="btn" id="fitApply">비율 유지하고 맞추기</button></div>`)}
+  ${fold('logo', '고객 로고', '', `<p class="note">로고 이미지를 올리면 벽에 붙는 로고가 생겨요.</p><label class="btn wide file" style="position:relative;overflow:hidden">로고 이미지 올리기<input type="file" id="logoFile" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>`)}
+  ${fold('vt', '꼭짓점 좌표 (m)', `${L.room.pts.length}개`, `<table class="tbl" id="vtable"></table>`)}`;
   renderSpBody(); renderVTable(); renderUL();
 };
+/* the closed folds' titles keep showing the current size, ceiling and corner count */
+function foldVals() {
+  const L = GP.L(), A = Math.abs(G.area(L.room.pts)), bb = G.bounds(L.room.pts), set = (id, v) => { const el = $(`#panel-space [data-fold="${id}"] .fd-v`); if (el) el.textContent = v; };
+  set('make', `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`); set('ceil', `${GP.P.settings.wallH}m`); set('vt', `${L.room.pts.length}개`);
+}
+panels.spaceMode = (m) => { sp.mode = m; if (m === 'walk') sp.walk = null; panels.renderSpace(); };
 function renderSpBody() {
   const b = $('#spBody'); if (!b) return; const L = GP.L();
   if (sp.mode === 'py') {
@@ -66,6 +74,7 @@ function renderVTable() {
 }
 function renderUL() {
   const c = $('#ulCtl'); if (!c) return; const UL = GP.S.underlay; if (!UL) { c.innerHTML = ''; return; }
+  const fd = c.closest('details'); if (fd && !fd.open) { fd.open = true; sp.open.add('trace'); }
   c.innerHTML = `<div class="row2"><label class="fld"><span>${UL.kind === 'image' ? '이미지 가로 실제 길이' : '단위 배율'}</span>${UL.kind === 'image' ? numI('ulW', UL.w, .1, 'm', 'min="1"') : `<select id="ulScale">${[[1, 'm'], [.001, 'mm'], [.01, 'cm'], [.0254, 'inch']].map(([v, l]) => `<option value="${v}" ${Math.abs((UL.scale || 1) - v) < 1e-9 ? 'selected' : ''}>${l}</option>`).join('')}</select>`}</label><label class="fld"><span>진하기</span><input type="range" id="ulOp" min=".1" max="1" step=".05" value="${UL.op}"></label></div>
    <div class="row2"><label class="fld"><span>위치 X</span>${numI('ulX', U.r2(UL.x), .1, 'm')}</label><label class="fld"><span>위치 Y</span>${numI('ulY', U.r2(UL.z), .1, 'm')}</label></div>
    ${UL.kind === 'dxf' && UL.loops && UL.loops.length ? `<button class="btn wide soft" id="ulUseLoop">가장 큰 닫힌 선을 벽으로 쓰기 (${UL.loops.length}개 중 ${(UL.loopIdx || 0) + 1}번째)</button>` : ''}
@@ -103,7 +112,7 @@ spEl.addEventListener('change', e => {
 });
 spEl.addEventListener('focusin', e => { if (e.target.id && e.target.id.startsWith('shp_')) { GP.OV.hiWall = hiWallsFor(e.target.dataset.k); GP.emit('overlay'); } });
 spEl.addEventListener('focusout', e => { if (e.target.id && e.target.id.startsWith('shp_')) { GP.OV.hiWall = null; GP.emit('overlay'); } });
-spEl.addEventListener('toggle', e => { if (e.target.id === 'vtBlk') sp.vt = e.target.open; }, true);
+spEl.addEventListener('toggle', e => { const f = e.target.dataset && e.target.dataset.fold; if (!f) return; if (e.target.open) sp.open.add(f); else sp.open.delete(f); }, true);
 panels.addLogo = async (f) => {
   const src = await U.readFile(f); const im = await U.downscaleImage(src, 1024); const id = U.uid('img'); GP.P.images[id] = { src: im.src, w: im.w, h: im.h };
   const L = GP.L(), P = L.room.pts, e = G.edge(P, 0); const ratio = im.h / im.w, w = 1.6, h = U.r3(Math.min(1.2, w * ratio));
@@ -566,6 +575,6 @@ panels.guide = () => {
 /* ---------------- refresh hooks ---------------- */
 panels.refresh = () => { const s = ui.step; if (s === 'space') panels.renderSpace(); else if (s === 'place') panels.renderPlace(); else if (s === 'floor') panels.renderFloor(); panels.renderQuote(); };
 GP.on('step', () => panels.refresh());
-GP.on('changed', (P) => { const s = ui.step; if (s === 'floor') panels.renderFloor(); else if (s === 'space') { renderVTable(); if (P && (P.has('all') || P.has('settings'))) panels.renderSpace(); } panels.renderQuote(); });
+GP.on('changed', (P) => { const s = ui.step; if (s === 'floor') panels.renderFloor(); else if (s === 'space') { renderVTable(); foldVals(); if (P && (P.has('all') || P.has('settings'))) panels.renderSpace(); } panels.renderQuote(); });
 GP.on('selection', () => { if (ui.step === 'floor') panels.renderFloor(); });
 })();
