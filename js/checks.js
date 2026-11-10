@@ -136,6 +136,10 @@ calc.distances = (it) => {
 /* ---------- checks ---------- */
 const checks = GP.checks = { conflicts: new Map(), list: [], aisle: null };
 function vr(it) { const y = GP.itemY(it), h = GP.dims(it).h; return [y, y + h]; }
+// a free bench under a rack's or smith machine's bar (its centre inside the rack) is how the pair is used, not a clash
+const IN_RACK = new Set(['bench_flat', 'bench_adj', 'bench_util']);
+const nested = (a, b) => { const rk = f => f.d.cat === 'rack' && f.it.type !== 'chindip'; const [r, bn] = rk(a) && IN_RACK.has(b.it.type) ? [a, b] : rk(b) && IN_RACK.has(a.it.type) ? [b, a] : []; return !!r && G.pip(bn.it.x, bn.it.z, r.c); };
+checks.nested = nested;
 checks.quick = () => {
   const L = GP.L(), P = L.room.pts, m = new Map(); const add = (u, r) => { if (!m.has(u)) m.set(u, new Set()); m.get(u).add(r); };
   const F = L.items.map(it => ({ it, c: GP.footprint(it), d: GP.getDef(it.type) || {}, v: vr(it), mount: GP.mountOf(it) }));
@@ -147,7 +151,7 @@ checks.quick = () => {
     else for (const pp of partPolys) if (G.overlap(f.c, pp.poly, .01) && f.v[0] < pp.h) { add(f.it.uid, 'part'); break; }
   }
   for (let i = 0; i < F.length; i++) for (let j = i + 1; j < F.length; j++) {
-    const a = F[i], b = F[j]; if (a.d.flat || b.d.flat) continue; if ((a.d.wall || a.mount !== 'floor') && (b.d.wall || b.mount !== 'floor') && a.mount !== b.mount) continue;
+    const a = F[i], b = F[j]; if (a.d.flat || b.d.flat || nested(a, b)) continue; if ((a.d.wall || a.mount !== 'floor') && (b.d.wall || b.mount !== 'floor') && a.mount !== b.mount) continue;
     const thin = f => (f.d.wall || f.mount === 'wall') && GP.dims(f.it).d <= .07; if (thin(a) !== thin(b) && (thin(a) ? b : a).mount === 'floor') continue;
     if (a.v[1] <= b.v[0] + .01 || b.v[1] <= a.v[0] + .01) continue;
     if (G.overlap(a.c, b.c)) { add(a.it.uid, 'overlap'); add(b.it.uid, 'overlap'); }
@@ -172,7 +176,7 @@ checks.full = () => {
   for (const f of F) {
     if (f.mount !== 'floor' || f.d.flat) continue; const c = f.d.cl || {}; if (!(c.f + c.b + c.l + c.r)) continue; const d = GP.dims(f.it);
     const zone = G.rectPts(f.it.x, f.it.z, f.it.rot, -d.w / 2 + .02, d.w / 2 - .02, -d.d / 2 - c.b, d.d / 2 + c.f); if (!(c.f + c.b)) continue;
-    for (const g of F) { if (g === f || g.d.flat || g.mount !== 'floor' || g.d.wall) continue; if (conf.get(f.it.uid)?.has('overlap') && G.overlap(f.c, g.c)) continue; if (G.overlap(zone, g.c, .05)) { push('warn', 'clear', `${nameOf(f.it)} 앞뒤 사용 공간에 ${U.jo(nameOf(g.it), '이', '가')} 들어와 있어요`, [f.it.uid, g.it.uid], [g.it.x, g.it.z]); } }
+    for (const g of F) { if (g === f || g.d.flat || g.mount !== 'floor' || g.d.wall || nested(f, g)) continue; if (conf.get(f.it.uid)?.has('overlap') && G.overlap(f.c, g.c)) continue; if (G.overlap(zone, g.c, .05)) { push('warn', 'clear', `${nameOf(f.it)} 앞뒤 사용 공간에 ${U.jo(nameOf(g.it), '이', '가')} 들어와 있어요`, [f.it.uid, g.it.uid], [g.it.x, g.it.z]); } }
   }
   // carry-in through doors
   const doors = L.openings.filter(o => o.kind !== 'window');
