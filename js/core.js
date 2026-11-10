@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.10.1';
+GP.VERSION = '2.11.0';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
@@ -253,11 +253,13 @@ const sNums = (o, ks) => { for (const k of ks) if (o[k] != null) { const v = sNu
 function sDeep(o, depth) {      // custom equipment definitions: text stays text (it is escaped where shown), everything else must be a plain word or a number
   if (!o || typeof o !== 'object' || depth > 6) return; for (const k of Object.keys(o)) { const v = o[k]; if (typeof v === 'string') { if (/name|label|kw|text|memo/i.test(k)) o[k] = v.slice(0, 120); else if (!WORD.test(v) && !HEX.test(v)) delete o[k]; } else if (typeof v === 'object') sDeep(v, depth + 1); else if (typeof v === 'number' && !isFinite(v)) delete o[k]; }
 }
+/* types taken out of the catalog: a plan (file, link, old version) that still has one gets the nearest machine in its place */
+const GONE = { latlong: 'latpull', multipress: 'shoulder' };
 function sanitizeLayout(L) {
   L.room = { pts: sPts(L.room && L.room.pts, 3) || GP.DEFAULT_ROOM.map(q => q.slice()) };
   L.partitions = L.partitions.filter(q => q && sPts(q.pts, 2)).map(q => { q.pts = sPts(q.pts, 2); q.id = sWord(q.id) || U.uid('pt'); q.thick = U.clamp(sNum(q.thick, .1), .03, .6); q.kind = GP.PARTS[q.kind] ? q.kind : 'wall'; sKeys(q, ['color', 'frameC', 'glass']); sNums(q, ['height']); return q; });
   L.openings = L.openings.filter(o => o && sNum(o.t) !== undefined && sNum(o.w) !== undefined && Number.isInteger(+o.seg)).map(o => { o.id = sWord(o.id) || U.uid('o'); o.host = sWord(o.host) || 'room'; o.seg = +o.seg; o.t = +o.t; o.w = U.clamp(+o.w, .3, 8); o.kind = GP.OPENINGS[o.kind] ? o.kind : 'door'; sNums(o, ['h', 'sill']); sKeys(o, ['leafC', 'frameC', 'glass', 'hw', 'hinge', 'wtype']); return o; });
-  L.items = L.items.filter(it => sWord(String(it.type))).map(it => { it.type = String(it.type); it.uid = sWord(String(it.uid)) || U.uid(); it.x = +it.x; it.z = +it.z; sNums(it, ['w', 'd', 'h', 'elev']); sKeys(it, ['grp', 'mount', 'img']); if (it.load != null) it.load = it.load === true || undefined; if (it.name != null) it.name = sTxt(it.name, 80) || undefined;
+  L.items = L.items.filter(it => sWord(String(it.type))).map(it => { it.type = GONE[it.type] || String(it.type); it.uid = sWord(String(it.uid)) || U.uid(); it.x = +it.x; it.z = +it.z; sNums(it, ['w', 'd', 'h', 'elev']); sKeys(it, ['grp', 'mount', 'img']); if (it.load != null) it.load = it.load === true || undefined; if (it.name != null) it.name = sTxt(it.name, 80) || undefined;
     if (it.params && typeof it.params === 'object') { for (const k of Object.keys(it.params)) { const v = it.params[k]; if (!(typeof v === 'boolean' || (typeof v === 'number' && isFinite(v)) || sWord(v) !== undefined) || !WORD.test(k)) delete it.params[k]; } } else delete it.params; return it; });
   L.mats = L.mats.filter(m => m && sPts(m.pts, 3)).map(m => { m.pts = sPts(m.pts, 3); m.id = sWord(m.id) || U.uid('m'); if (!GP.TRIMS[m.trim]) m.trim = 'rubber'; return m; });
   L.zones = L.zones.filter(z => z && sPts(z.pts, 3)).map(z => { z.pts = sPts(z.pts, 3); z.id = sWord(z.id) || U.uid('z'); z.color = sHex(z.color, '#2f6bd8'); z.name = sTxt(z.name, 60); return z; });
