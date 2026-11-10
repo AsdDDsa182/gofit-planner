@@ -18,6 +18,33 @@ GP.CATS = [
   { id: 'special', name: '특수 물품' },
   { id: 'custom', name: '내 물품' },
 ];
+/* wall & floor finishes (3D, and a light floor pattern on the plan). size: metres one image covers; rough: how matt it looks in 3D.
+   The images were made with Codex image generation and made seamless (assets/tex). No image: the drawn concrete / the paint colour. */
+GP.TEX = {
+  floor: [
+    { id: 'concrete', name: '기본 콘크리트' },
+    { id: 'floor_oak', name: '밝은 원목', size: 1.2, rough: .62 },
+    { id: 'floor_walnut', name: '짙은 원목', size: 1.2, rough: .6 },
+    { id: 'floor_concrete', name: '폴리싱 콘크리트', size: 2, rough: .5 },
+    { id: 'floor_epoxy', name: '에폭시', size: 2, rough: .42 },
+    { id: 'floor_porcelain', name: '포셀린 타일', size: 1.2, rough: .55 },
+    { id: 'floor_marble', name: '대리석', size: 1.2, rough: .3 },
+    { id: 'floor_carpet', name: '카펫 타일', size: 1, rough: 1 },
+    { id: 'floor_terrazzo', name: '테라조', size: 1, rough: .5 },
+  ],
+  wall: [
+    { id: 'paint', name: '페인트' },
+    { id: 'wall_concrete', name: '노출 콘크리트', size: 1.2, rough: .9 },
+    { id: 'wall_brick_red', name: '적벽돌', size: 1, rough: .95 },
+    { id: 'wall_brick_white', name: '흰 벽돌', size: 1, rough: .9 },
+    { id: 'wall_wood_slat', name: '우드 슬랫', size: 1, rough: .7 },
+    { id: 'wall_subway_tile', name: '서브웨이 타일', size: .9, rough: .25 },
+    { id: 'wall_slate', name: '슬레이트 석재', size: 1.2, rough: .85 },
+    { id: 'wall_plaster_dark', name: '다크 미장', size: 2, rough: .85 },
+  ],
+};
+GP.texDef = id => GP.TEX.floor.find(t => t.id === id) || GP.TEX.wall.find(t => t.id === id) || null;
+GP.texUrl = (id, thumb) => `assets/tex/${thumb ? 'thumb/' : ''}${id}.jpg`;
 GP.EQUIP_CATS = new Set(['cardio', 'machine', 'plate', 'cable', 'rack', 'bench', 'storage', 'func', 'stretch', 'air']);
 const CAT = GP.CAT = {};
 /* sizes follow the generic 3D models in models/basic (m). T(id, name, cat, w, d, h, clearance [front, back, left, right], opts) — w = width (local X), d = depth (local Z, +Z is the user/access side) */

@@ -289,11 +289,16 @@ R.floor = {
       `<div class="wz-cards">${[['free', '프리웨이트 구역만', '랙·벤치·덤벨 주변 (추천)'], ['all', '공간 전체', '바닥 전체를 덮어요'], ['none', '깔지 않기', '고무블럭 없이']].map(([k, t, d]) => `<button class="wz-card${how === k ? ' on' : ''}" data-fh="${k}"><b>${t}</b><small>${d}</small></button>`).join('')}</div>
       ${how !== 'none' ? `<div class="fld"><span>고무블럭 종류</span><div class="wz-blocks">${Object.entries(GP.BLOCKS).map(([k, v]) => `<button class="wz-blk${blk === k ? ' on' : ''}" data-fb="${k}"><i style="background:${v.color}"></i>${U.esc(v.name.replace(' 고무블럭', ''))}</button>`).join('')}</div></div>` : ''}
       <button class="btn primary wide" id="wzMat">${how === 'none' ? '고무블럭 모두 치우기' : '이대로 깔기'}</button>
-      <p class="note">${L.mats.length ? `지금 고무블럭 ${L.mats.length}구역 · ${n}장이 깔려 있어요.` : '아직 깔린 고무블럭이 없어요.'}</p>`;
+      <p class="note">${L.mats.length ? `지금 고무블럭 ${L.mats.length}구역 · ${n}장이 깔려 있어요.` : '아직 깔린 고무블럭이 없어요.'}</p>
+      <div class="wz-fin"><div class="wz-lh">매장 바닥 · 벽 마감 <small>3D와 제안서에 보여요</small></div>
+        <span class="lbl">바닥</span>${ui.texGrid('floor', GP.P.settings.floorBase)}
+        <span class="lbl">벽</span>${ui.texGrid('wall', GP.P.settings.wallTex || 'paint')}
+        <button class="btn sm" id="wz3d">${IC.cube}3D로 보기</button></div>`;
     b.onclick = e => {
       const h = e.target.closest('[data-fh]'); if (h) { s.floorHow = h.dataset.fh; R.floor.render(b); return; }
       const k = e.target.closest('[data-fb]'); if (k) { s.floorBlock = k.dataset.fb; R.floor.render(b); return; }
-      if (e.target.closest('#wzMat')) { layMats(s.floorHow || 'free', s.floorBlock || 'coat'); R.floor.render(b); }
+      if (e.target.closest('#wzMat')) { layMats(s.floorHow || 'free', s.floorBlock || 'coat'); R.floor.render(b); return; }
+      if (e.target.closest('#wz3d')) GP.V3.show(!GP.V3.on);
     };
   },
   refresh() { R.floor.render($('#wzBody')); },

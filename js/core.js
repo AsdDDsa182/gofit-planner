@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.2.7';
+GP.VERSION = '2.3.0';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
@@ -209,7 +209,7 @@ GP.OPENINGS = { door: '여닫이 문', door2: '양개문', glass2: '유리 자�
 GP.DEFAULT_ROOM = [[0, 0], [10, 0], [10, 8], [0, 8]];     // a new project starts with one plain 10 x 8 m room
 GP.newLayout = (pts) => ({
   room: { pts: pts || GP.DEFAULT_ROOM.map(q => q.slice()) },
-  wallColors: {}, wallMarks: {},
+  wallColors: {}, wallMarks: {}, wallTex: {},      // wallTex: one wall's own finish (wall index → GP.TEX id)
   openings: [], partitions: [], items: [], mats: [], zones: [], rooms: [], notes: [], dims: [], scenes: [],
   quote: { extras: [], shipping: null, install: null, discountPct: 0, discountAmt: 0, note: '', validDays: null, no: '' },
 });
@@ -219,7 +219,7 @@ GP.newProject = (o) => {
   return {
     v: 2, id, name: o.name || '새 프로젝트', client: o.client || '', consultant: o.consultant || '',
     createdAt: Date.now(), updatedAt: Date.now(),
-    settings: { wallH: 2.8, wallColor: '#eeede8', floorBase: 'concrete', frameColor: 'black', accent: '#f08a1c', shroud: '#141517' },
+    settings: { wallH: 2.8, wallColor: '#eeede8', floorBase: 'concrete', wallTex: 'paint', frameColor: 'black', accent: '#f08a1c', shroud: '#141517' },      // floorBase / wallTex: GP.TEX ids
     variants: [{ id: U.uid('v'), name: 'A안', layout: GP.newLayout(o.pts) }], cur: 0,
     images: {},
   };
@@ -235,7 +235,7 @@ GP.validateProject = (o) => {
     if (!L.room || !Array.isArray(L.room.pts) || L.room.pts.length < 3) L.room = { pts: GP.DEFAULT_ROOM.map(q => q.slice()) };
     ['openings', 'partitions', 'items', 'mats', 'zones', 'rooms', 'notes', 'dims', 'scenes'].forEach(k => { if (!Array.isArray(L[k])) L[k] = []; });
     L.quote = Object.assign(GP.newLayout().quote, L.quote || {});
-    L.wallColors = L.wallColors || {}; L.wallMarks = L.wallMarks || {};
+    L.wallColors = L.wallColors || {}; L.wallMarks = L.wallMarks || {}; L.wallTex = L.wallTex || {};
     L.mats.forEach(m => { m.thick = 25; if (!GP.BLOCKS[m.block]) m.block = 'coat'; if (!m.trim) m.trim = 'rubber'; });
     L.items = L.items.filter(it => it && isFinite(it.x) && isFinite(it.z) && it.type).map(it => Object.assign(it, { uid: it.uid || U.uid(), rot: U.normRot(+it.rot || 0) }));
     return { id: v.id || U.uid('v'), name: v.name || 'A안', layout: L };

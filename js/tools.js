@@ -222,7 +222,7 @@ function ghostBad(t) { const C = GP.footprint(t); if (!G.rectInside(C, GP.L().ro
 function placeGhost(keep) {
   const pl = ui.placing; if (!pl || !pl.placed || !GP.S.ghost || !GP.S.ghost.visible) return;
   const L = GP.L(), added = [];
-  pl.placed.forEach(p => { const it = Object.assign({}, p, { uid: U.uid() }); L.items.push(it); added.push(it); });
+  const gmap = {}; pl.placed.forEach(p => { const it = Object.assign({}, p, { uid: U.uid() }); if (it.grp) it.grp = gmap[it.grp] || (gmap[it.grp] = U.uid('g')); L.items.push(it); added.push(it); });
   GP.changed('items');
   if (!keep && !pl.keep) { tools.cancel(); ui.select(added.map(it => ({ k: 'item', id: it.uid }))); }
   GP.panels && GP.panels.pushRecent(added[0].type);
@@ -279,11 +279,12 @@ function onDown(e) {
   const uid = ui.step !== 'floor' ? S.itemAt(fp.x, fp.z) : null;
   const add = e.shiftKey || ui.multi;
   if (uid) {
-    const key = 'item:' + uid; const cur = ui.selSet();
+    const key = 'item:' + uid; const cur = ui.selSet(), deep = (e.ctrlKey || e.metaKey) && !add;      // Ctrl+click: one member of a group
     if (add) { ui.select([{ k: 'item', id: uid }], true); if (!ui.selSet().has(key)) return; }
+    else if (deep) ui.select([{ k: 'item', id: uid }], false, true);
     else if (!cur.has(key)) ui.select([{ k: 'item', id: uid }]);
     const its = ui.selItems(); const it = GP.findItem(uid);
-    drag = { kind: 'items', anchor: uid, sx: e.clientX, sy: e.clientY, moved: false, fx: fp.x, fz: fp.z, start: its.map(q => ({ uid: q.uid, x: q.x, z: q.z })), relK: its.length === 1 ? detectRelK(it) : null, ox: it.x - fp.x, oz: it.z - fp.z };
+    drag = { kind: 'items', anchor: uid, sx: e.clientX, sy: e.clientY, moved: false, fx: fp.x, fz: fp.z, start: its.map(q => ({ uid: q.uid, x: q.x, z: q.z })), relK: its.length === 1 ? detectRelK(it) : null, ox: it.x - fp.x, oz: it.z - fp.z, altDup: e.altKey };
     GP.tip.hide(); canvas().style.cursor = 'grabbing'; return;
   }
   const obj = hitObject(fp.x, fp.z, e.clientX, e.clientY);
@@ -324,6 +325,7 @@ function onUp(e) {
   if (draw) { toolUp(e); return; }
   if (drag) {
     const d = drag; drag = null; canvas().style.cursor = '';
+    if (d.cloned) { const a = GP.findItem(d.anchor); if (a) act.lastDup = { dx: a.x - d.origin.x, dz: a.z - d.origin.z, uids: d.start.map(s => s.uid) }; ui.setHint(); }
     if (d.moved) { if (d.kind === 'mat') tools.snapMat(d.obj); GP.changed(d.kind === 'items' ? 'items' : d.kind); ui.renderInspector(); }
     return;
   }
@@ -353,7 +355,14 @@ function dragMove(e) {
   const S = GP.S; const d = drag;
   if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
   d.moved = true; const fp = S.floorAt(e.clientX, e.clientY);
-  if (d.kind === 'items') { moveItems(d, fp, e.altKey); return; }
+  if (d.kind === 'items') {
+    if (d.altDup && !d.cloned) {      // Alt held when the drag started: copy, and drag the copies
+      const src = d.start.map(s => GP.findItem(s.uid)).filter(Boolean), out = cloneItems(src, 0, 0), map = new Map(src.map((it, k) => [it.uid, out[k].uid]));
+      d.start = d.start.map(s => ({ uid: map.get(s.uid), x: s.x, z: s.z })); d.origin = d.start.find(s => s.uid === map.get(d.anchor)); d.anchor = map.get(d.anchor); d.cloned = true;
+      ui.select(out.map(it => ({ k: 'item', id: it.uid })), false, true); GP.S.dataChanged(); ui.setHint('복제해서 옮기는 중 · 놓은 뒤 <kbd>Shift</kbd>+<kbd>D</kbd>: 같은 간격으로 하나 더');
+    }
+    moveItems(d, fp, e.altKey && !d.altDup); return;
+  }
   let dx = fp.x - d.fx, dz = fp.z - d.fz; if (!e.altKey) { dx = U.snap(dx, .05); dz = U.snap(dz, .05); }
   const orig = JSON.parse(d.snap), o = d.obj;
   if (d.kind === 'opening') { const hs = GP.hostSeg(o); if (!hs) return; const c = G.closest(fp.x, fp.z, hs.a, hs.b); o.t = U.r3(U.clamp(e.altKey ? c.t : U.snap(c.t, .05), o.w / 2, hs.L - o.w / 2)); S.invalidate(); GP.emit('overlay'); return; }
@@ -617,6 +626,15 @@ act.setZ = (it, zAbs) => {
   const m = GP.mountOf(it); const h = GP.dims(it).h;
   if (m === 'ceil') it.elev = U.r3(Math.max(0, GP.P.settings.wallH - h - zAbs)); else if (m === 'wall') it.elev = U.r3(Math.max(0, zAbs)); else it.elev = U.r3(Math.max(0, zAbs - GP.surfaceAt(it.x, it.z, it)));
 };
+/* wall / floor finish: kind 'floor' | 'wall'; wall = one wall's own finish ('' = the room's) */
+act.setTex = (kind, id, wall) => {
+  const P = GP.P, L = GP.L();
+  if (kind === 'floor') P.settings.floorBase = id || 'concrete';
+  else if (wall != null) { L.wallTex = L.wallTex || {}; if (id) L.wallTex[wall] = id; else delete L.wallTex[wall]; }
+  else P.settings.wallTex = id || 'paint';
+  GP.changed(['room', 'settings']); ui.renderInspector();
+  if (!(GP.V3 && GP.V3.on) && GP.texDef(id) && GP.texDef(id).size && !act._texTold) { act._texTold = true; GP.toast(kind === 'floor' ? '바닥 재질은 3D 보기에서 제대로 보여요 (도면에는 연하게)' : '벽 재질은 3D 보기에서 보여요', { ms: 3500 }); }
+};
 act.rotateSel = (delta) => {
   const its = ui.selItems(); if (!its.length) return;
   if (its.length > 1) return act.groupRotate(delta);
@@ -626,11 +644,29 @@ act.rotateSel = (delta) => {
 };
 act.groupRotate = (delta) => { const its = ui.selItems(); let cx = 0, cz = 0; its.forEach(it => { cx += it.x; cz += it.z; }); cx /= its.length; cz /= its.length; cx = U.snap(cx, .05); cz = U.snap(cz, .05); its.forEach(it => { const [lx, lz] = G.w2l(cx, cz, 0, it.x, it.z); const [nx, nz] = G.l2w(cx, cz, delta, lx, lz); it.x = U.r3(nx); it.z = U.r3(nz); it.rot = U.normRot(it.rot + delta); }); GP.changed('items'); };
 act.snapSelToWall = () => { const it = ui.selItems()[0]; if (!it) return; const d = GP.dims(it); const rk = detectRelK(it); const m = wallSnap(it.x, it.z, it.rot, d.w, d.d, { force: true, relK: rk != null ? rk : 0 }); if (m) { it.x = m.x; it.z = m.z; it.rot = m.rot; GP.changed('items'); ui.renderInspector(); } };
+/* copies of grouped items form groups of their own */
+const cloneItems = (its, dx, dz) => { const L = GP.L(), gmap = {}; return its.map(it => { const n = Object.assign(U.clone(it), { uid: U.uid(), x: U.r3(it.x + dx), z: U.r3(it.z + dz) }); if (n.grp) n.grp = gmap[n.grp] || (gmap[n.grp] = U.uid('g')); L.items.push(n); return n; }); };
 act.dupSel = () => {
-  const its = ui.selItems(); if (!its.length) return; const L = GP.L(); const out = [];
-  if (its.length === 1) { const it = its[0], d = GP.dims(it), c = (GP.getDef(it.type) || {}).cl || {}; const gap = Math.max(.1, ((c.l || 0) + (c.r || 0)) / 2); const [nx, nz] = G.l2w(it.x, it.z, it.rot, d.w + gap, 0); const n = Object.assign(U.clone(it), { uid: U.uid(), x: U.r3(nx), z: U.r3(nz) }); L.items.push(n); out.push(n); }
-  else its.forEach(it => { const n = Object.assign(U.clone(it), { uid: U.uid(), x: U.r3(it.x + .5), z: U.r3(it.z + .5) }); L.items.push(n); out.push(n); });
-  GP.changed('items'); ui.select(out.map(it => ({ k: 'item', id: it.uid })));
+  const its = ui.selItems(); if (!its.length) return; let dx = .5, dz = .5;
+  if (its.length === 1) { const it = its[0], d = GP.dims(it), c = (GP.getDef(it.type) || {}).cl || {}; const gap = Math.max(.1, ((c.l || 0) + (c.r || 0)) / 2); const [nx, nz] = G.l2w(it.x, it.z, it.rot, d.w + gap, 0); dx = nx - it.x; dz = nz - it.z; }
+  const out = cloneItems(its, dx, dz); act.lastDup = { dx, dz, uids: out.map(it => it.uid) };
+  GP.changed('items'); ui.select(out.map(it => ({ k: 'item', id: it.uid })), false, true);
+};
+/* Shift+D: one more copy, the same distance on from the last one (like Photoshop's duplicate-again) */
+act.dupAgain = () => {
+  const its = ui.selItems(), ld = act.lastDup; if (!its.length) return;
+  const same = ld && ld.uids.length === its.length && its.every(it => ld.uids.includes(it.uid));
+  if (!same) { act.dupSel(); GP.toast('복제했어요. 끌어서 간격을 정하고 Shift+D를 누르면 같은 간격으로 이어서 복제돼요', { ms: 4000 }); return; }
+  const out = cloneItems(its, ld.dx, ld.dz); act.lastDup = { dx: ld.dx, dz: ld.dz, uids: out.map(it => it.uid) };
+  GP.changed('items'); ui.select(out.map(it => ({ k: 'item', id: it.uid })), false, true);
+};
+act.group = () => {
+  const its = ui.selItems(); if (its.length < 2) { GP.toast('기구를 두 개 이상 함께 골라 주세요', { bad: true }); return; }
+  const g = U.uid('g'); its.forEach(it => { it.grp = g; }); GP.changed('items'); ui.renderInspector(); GP.emit('overlay');
+  GP.toast(`${its.length}개를 그룹으로 묶었어요. 하나만 고르려면 Ctrl+클릭`, { ms: 3500 });
+};
+act.ungroup = () => {
+  const its = ui.selItems().filter(it => it.grp); if (!its.length) return; its.forEach(it => { delete it.grp; }); GP.changed('items'); ui.renderInspector(); GP.emit('overlay'); GP.toast('그룹을 풀었어요');
 };
 act.delSel = () => {
   const L = GP.L(); if (!ui.sel.length) return; let n = 0;
@@ -674,6 +710,8 @@ act.setMount = (it, m) => {
 };
 act.key = (e, mod, k) => {
   if (mod && k === 'd') { e.preventDefault(); act.dupSel(); return; }
+  if (mod && k === 'g') { e.preventDefault(); if (e.shiftKey) act.ungroup(); else act.group(); return; }
+  if (!mod && e.shiftKey && k === 'd') { e.preventDefault(); act.dupAgain(); return; }
   if (mod && k === 'c') { act.copy(); return; }
   if (mod && k === 'v') { e.preventDefault(); act.paste(); return; }
   if (mod && k === 'a') { e.preventDefault(); ui.select(GP.L().items.map(it => ({ k: 'item', id: it.uid }))); return; }
@@ -699,6 +737,7 @@ act.inspAction = async (a, b) => {
   if (a === 'alignF') return act.align('F'); if (a === 'alignC') return act.align('C'); if (a === 'alignB') return act.align('B');
   if (a === 'gap') return act.gap(+$('#mGap').value || 0); if (a === 'even') return act.gap(0, true);
   if (a === 'grot') return act.groupRotate(90);
+  if (a === 'group') return act.group(); if (a === 'ungroup') return act.ungroup();
   if (a === 'saveset') return GP.panels.saveSetDialog(ui.selItems());
   if (so && so.k === 'part' && a === 'pkind') { so.obj.kind = b.dataset.v; GP.changed('parts'); ui.renderInspector(); return; }
   if (so && so.k === 'opening') { if (a === 'oflip') so.obj.flip = !so.obj.flip; if (a === 'ohinge') so.obj.hinge = so.obj.hinge === 'R' ? 'L' : 'R'; GP.changed('openings'); return; }

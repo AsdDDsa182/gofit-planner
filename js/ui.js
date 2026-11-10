@@ -111,8 +111,14 @@ GP.tip = {
 /* ---------------- selection ---------------- */
 const ui = GP.ui = { step: 'place', tool: 'select', sel: [], multi: false, placing: null, drawing: null };
 ui.selSet = () => new Set(ui.sel.map(s => s.k + ':' + s.id));
-ui.select = (list, add) => {
-  list = (list || []).filter(Boolean);
+/* items in a group (it.grp) are picked together */
+ui.withGroups = (list) => {
+  const L = GP.L(), seen = new Set(list.map(s => s.k + ':' + s.id)), out = list.slice();
+  for (const s of list) { if (s.k !== 'item') continue; const it = GP.findItem(s.id); if (!it || !it.grp) continue; for (const q of L.items) if (q.grp === it.grp && !seen.has('item:' + q.uid)) { seen.add('item:' + q.uid); out.push({ k: 'item', id: q.uid }); } }
+  return out;
+};
+ui.select = (list, add, raw) => {
+  list = (list || []).filter(Boolean); if (!raw) list = ui.withGroups(list);
   if (add) { const cur = ui.selSet(); list.forEach(s => { const k = s.k + ':' + s.id; if (cur.has(k)) ui.sel = ui.sel.filter(q => q.k + ':' + q.id !== k); else ui.sel.push(s); }); }
   else ui.sel = list;
   GP.emit('selection');
@@ -335,6 +341,15 @@ ui.openQuote = () => { GP.tools && GP.tools.cancel(); $('#quoteSheet').hidden = 
 ui.closeQuote = () => { $('#quoteSheet').hidden = true; ui.renderSummary(); ui.renderGuideBits(); if (GP.wiz) GP.wiz.refresh(); };
 $('#quoteBtn').addEventListener('click', () => { if ($('#quoteSheet').hidden) ui.openQuote(); else ui.closeQuote(); });
 
+/* ---------------- wall / floor finish swatches (space panel, wizard floor step, wall inspector) ---------------- */
+ui.texGrid = (kind, cur, o) => {
+  o = o || {}; const list = (o.inherit ? [{ id: '', name: o.inherit }] : []).concat(GP.TEX[kind]);
+  const face = t => t.size ? `background-image:url(${GP.texUrl(t.id, true)})` : t.id === 'paint' ? `background:${GP.P.settings.wallColor || '#eeede8'}` : t.id === 'concrete' ? 'background:#c7c9c6' : 'background:repeating-linear-gradient(45deg,#e6e8e5 0 4px,#fff 4px 8px)';
+  return `<div class="texgrid" data-tk="${kind}"${o.wall != null ? ` data-wall="${o.wall}"` : ''}>${list.map(t => `<button class="texsw${(cur || '') === t.id ? ' on' : ''}" data-tex="${t.id}" title="${U.esc(t.name)}"><i style="${face(t)}"></i><span>${U.esc(t.name)}</span></button>`).join('')}</div>`;
+};
+ui.texName = id => (GP.texDef(id) || {}).name || '';
+document.addEventListener('click', e => { const b = e.target.closest('.texgrid [data-tex]'); if (!b || GP.viewOnly) return; const g = b.closest('.texgrid'); GP.act.setTex(g.dataset.tk, b.dataset.tex, g.dataset.wall != null ? +g.dataset.wall : null); });
+
 /* ---------------- inspector ---------------- */
 const insp = $('#insp');
 const num = (id, v, step, unit, o) => `<div class="unit"><input id="${id}" type="number" step="${step}" value="${v}" ${o || ''}><em>${unit}</em></div>`;
@@ -365,11 +380,12 @@ function inspItem(it) {
     + (mount === 'floor' && c && (c.f || c.b || c.l) ? `<p class="insp-note">권장 사용 공간 앞 ${c.f}m · 뒤 ${c.b}m · 양옆 ${c.l}m</p>` : '')
     + (GP.WEIGHTS && GP.WEIGHTS[it.type] ? `<p class="insp-note">무게 약 ${GP.WEIGHTS[it.type]}kg <small>(일반적인 업소용 기준${['plate', 'rack', 'storage'].includes(def.cat) ? ' · 원판·덤벨 제외' : ''})</small></p>` : '')
     + `<details class="sec more"><summary>줄 세우기 · 위치</summary><div class="row3"><label class="fld"><span>개수</span>${num('iRowN', 4, 1, '대', 'min="2" max="30"')}</label><label class="fld"><span>간격</span>${num('iRowG', Math.round(Math.max(10, ((c.l || 0) + (c.r || 0)) / 2 * 100)), 5, 'cm', 'min="0"')}</label><button class="btn sm" data-act="row">한 줄로</button></div><div class="row2"><label class="fld"><span>X</span>${num('iX', it.x.toFixed(2), .05, 'm')}</label><label class="fld"><span>Y</span>${num('iZ', it.z.toFixed(2), .05, 'm')}</label></div><div class="mount"><button class="${mount === 'floor' ? 'on' : ''}" data-act="mount" data-m="floor">바닥</button><button class="${mount === 'wall' ? 'on' : ''}" data-act="mount" data-m="wall">벽에 걸기</button><button class="${mount === 'ceil' ? 'on' : ''}" data-act="mount" data-m="ceil">천장</button></div></details>`
-    + `<div class="acts"><button class="btn sm" data-act="wall" title="가장 가까운 벽에 붙이기 (W)">벽에 붙이기</button><button class="btn sm" data-act="dup" title="옆으로 복제 (Ctrl+D)">복제</button><button class="btn sm" data-act="fav">${GP.lib.favorites.includes(it.type) ? '★' : '☆'} 즐겨찾기</button><button class="btn sm danger" data-act="del" title="삭제 (Delete)">삭제</button></div>`;
+    + `<div class="acts"><button class="btn sm" data-act="wall" title="가장 가까운 벽에 붙이기 (W)">벽에 붙이기</button><button class="btn sm" data-act="dup" title="옆으로 복제 (Ctrl+D) · Alt+끌기로 복제 · Shift+D 같은 간격으로 하나 더">복제</button><button class="btn sm" data-act="fav">${GP.lib.favorites.includes(it.type) ? '★' : '☆'} 즐겨찾기</button><button class="btn sm danger" data-act="del" title="삭제 (Delete)">삭제</button></div>`;
 }
 function renderMulti(items) {
-  insp.hidden = false;
-  insp.innerHTML = head(`${items.length}개 선택`, '함께 이동·회전·복제할 수 있어요', 'var(--accent)')
+  insp.hidden = false; const grouped = items.every(it => it.grp && it.grp === items[0].grp), anyG = items.some(it => it.grp);
+  insp.innerHTML = head(grouped ? `그룹 · ${items.length}개` : `${items.length}개 선택`, grouped ? '하나만 고르려면 Ctrl+클릭' : '함께 이동·회전·복제할 수 있어요', 'var(--accent)')
+    + `<div class="acts">${grouped ? '<button class="btn sm" data-act="ungroup" title="Ctrl+Shift+G">그룹 풀기</button>' : `<button class="btn sm primary" data-act="group" title="Ctrl+G">그룹으로 묶기</button>${anyG ? '<button class="btn sm" data-act="ungroup">그룹 풀기</button>' : ''}`}</div>`
     + `<div class="sec"><span class="lbl">간격 맞추기</span><div class="row2"><label class="fld"><span>기구 사이 간격</span>${num('mGap', GP.ui.lastGap ?? 50, 5, 'cm', 'min="0"')}</label><button class="btn sm" data-act="gap">간격 적용</button></div><button class="btn sm soft" data-act="even">양끝 고정하고 균등하게</button></div>`
     + `<div class="sec"><span class="lbl">줄 맞추기 (처음 고른 기구 기준)</span><div class="acts"><button class="btn sm" data-act="alignF">앞선</button><button class="btn sm" data-act="alignC">가운데</button><button class="btn sm" data-act="alignB">뒷선</button></div></div>`
     + `<div class="acts"><button class="btn sm" data-act="grot">90° 회전</button><button class="btn sm" data-act="mdup">복제</button><button class="btn sm" data-act="saveset">세트로 저장</button><button class="btn sm danger" data-act="mdel">삭제</button></div>`;
@@ -414,6 +430,7 @@ function inspWall(i) {
   const L = GP.L(), e = G.edge(L.room.pts, i), mk = (L.wallMarks || {})[i];
   insp.innerHTML = head(`벽 ${i + 1}`, `길이 ${e.L.toFixed(2)} m`, '#2B3036')
     + `<label class="fld"><span>길이 (끝쪽이 늘어나요)</span>${num('wL', e.L.toFixed(2), .01, 'm', 'min=".3"')}</label>`
+    + `<div class="sec"><span class="lbl">벽 재질 <small class="note">(3D에 보여요)</small></span>${ui.texGrid('wall', (L.wallTex || {})[i] || '', { inherit: '공간 기본', wall: i })}</div>`
     + `<div class="sec"><span class="lbl">벽 마감</span><div class="mount" style="grid-template-columns:1fr 1fr"><button class="${mk === 'mirror' ? '' : 'on'}" data-act="wmark" data-v="">시공 없음</button><button class="${mk === 'mirror' ? 'on' : ''}" data-act="wmark" data-v="mirror">${IC.mirror} 거울</button></div></div>`
     + `<div class="acts"><button class="btn sm" data-act="wdoor">문 넣기</button><button class="btn sm" data-act="wwin">창문 넣기</button><button class="btn sm" data-act="wfill">기구로 채우기</button></div>`;
 }

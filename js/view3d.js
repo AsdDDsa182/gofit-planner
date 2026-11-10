@@ -79,6 +79,16 @@ const V2 = (p) => new THREE.Vector2(p[0], -p[1]);
 function prismGeo(quad, y0, y1) { const g = new THREE.ExtrudeGeometry(new THREE.Shape(quad.map(V2)), { depth: Math.max(.001, y1 - y0), bevelEnabled: false }); g.rotateX(-Math.PI / 2); g.translate(0, y0, 0); return g; }
 function clear(g) { for (const ch of [...g.children]) { g.remove(ch); ch.traverse(o => { if (o.geometry && o.userData.own) o.geometry.dispose(); }); } }
 function mat(key, f) { return matCache[key] || (matCache[key] = f()); }
+/* finish images (GP.TEX): loaded once, repeated per metre (the floor's and the wall planes' UVs are in metres) */
+const texCache = {}; let texLoading = 0;
+function finishTex(id) {
+  if (texCache[id]) return texCache[id]; const d = GP.texDef(id); texLoading++;
+  const t = new THREE.TextureLoader().load(GP.texUrl(id), () => { texLoading--; dirty = true; }, undefined, () => { texLoading--; });
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; t.repeat.set(1 / d.size, 1 / d.size); return (texCache[id] = t);
+}
+const finishOf = id => { const d = GP.texDef(id); return d && d.size ? d : null; };
+/* the finished floor is matt (Lambert): under the strong overhead light a standard material's highlight lays a grey haze over the whole
+   floor and dark woods turned pink-grey; slightly darker than white so the floor reads at the picture's own colour */
 const std = (c, o) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: .8 }, o || {}));
 /* line (CAD) style: white faces + black feature edges */
 let LINE = false;
@@ -94,7 +104,7 @@ let wallMeshes = [];
 function buildRoom() {
   const g = groups.room; clear(g); wallMeshes = [];
   const L = GP.L(), st = GP.P.settings, P = L.room.pts; if (P.length < 3) return;
-  const fg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); fg.rotateX(-Math.PI / 2); const floor = new THREE.Mesh(fg, LINE ? CADM() : mat('floor', () => std('#ffffff', { map: V3.tex.concrete, roughness: .85 }))); floor.receiveShadow = true; floor.position.y = -.001; floor.userData.own = true; g.add(floor);
+  const fg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); fg.rotateX(-Math.PI / 2); const fd = finishOf(st.floorBase), floor = new THREE.Mesh(fg, LINE ? CADM() : fd ? mat('floor:' + fd.id, () => new THREE.MeshLambertMaterial({ color: '#d0d0d0', map: finishTex(fd.id) })) : mat('floor', () => std('#ffffff', { map: V3.tex.concrete, roughness: .85 }))); floor.receiveShadow = true; floor.position.y = -.001; floor.userData.own = true; g.add(floor);
   const H = V3.cut ? Math.min(1.1, st.wallH) : st.wallH, O = G.offset(P, WALL_T, true), n = P.length, marks = L.wallMarks || {};
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n, a = P[i], b = P[j], Ls = G.len(a, b); if (Ls < 1e-3) continue;
@@ -102,6 +112,17 @@ function buildRoom() {
     const wm = LINE ? new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }) : std(st.wallColor || '#eeede8', { roughness: .92, transparent: true, opacity: 1 });
     const inner = s => [a[0] + e.dx * s, a[1] + e.dz * s], outer = s => s <= 1e-6 ? O[i] : s >= Ls - 1e-6 ? O[j] : [a[0] + e.dx * s - e.nx * WALL_T, a[1] + e.dz * s - e.nz * WALL_T];
     for (const [s0, s1, y0, y1] of pieces(Ls, H, ops)) { const me = new THREE.Mesh(prismGeo([inner(s0), inner(s1), outer(s1), outer(s0)], y0, y1), wm); me.castShadow = true; me.receiveShadow = true; me.userData.own = true; if (LINE) addEdges(me); g.add(me); }
+    // the wall's finish: a thin plane on its room side, UVs in metres along the wall and up from the floor
+    const wd = !LINE && finishOf((L.wallTex || {})[i] || st.wallTex);
+    if (wd) {
+      const tm = std('#ffffff', { map: finishTex(wd.id), roughness: wd.rough, transparent: true, opacity: 1 });
+      for (const [s0, s1, y0, y1] of pieces(Ls, H, ops)) {
+        const w = s1 - s0, h = y1 - y0; if (w < .02 || h < .02) continue; const geo = new THREE.PlaneGeometry(w, h), uv = geo.attributes.uv;
+        for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) ? s1 : s0, uv.getY(k) ? y1 : y0);
+        const pl = new THREE.Mesh(geo, tm), c = (s0 + s1) / 2; pl.position.set(a[0] + e.dx * c + e.nx * .004, (y0 + y1) / 2, a[1] + e.dz * c + e.nz * .004); pl.rotation.y = Math.atan2(e.nx, e.nz); pl.receiveShadow = true; pl.userData.own = true; g.add(pl);
+      }
+      wallMeshes.push({ mat: tm, nx: -e.nx, nz: -e.nz });
+    }
     if (marks[i] === 'mirror') for (const [s0, s1, y0] of pieces(Ls, H, ops)) { if (y0 > 0 || s1 - s0 < .2) continue; const mh = Math.min(2.1, H - .15); if (mh < .3) continue; const w = s1 - s0 - .1, c = (s0 + s1) / 2; const pl = new THREE.Mesh(new THREE.PlaneGeometry(w, mh - .1), mat('mirror', () => std('#dfe7ee', { metalness: 1, roughness: .04 }))); pl.position.set(a[0] + e.dx * c + e.nx * .012, .1 + (mh - .1) / 2, a[1] + e.dz * c + e.nz * .012); pl.rotation.y = Math.atan2(e.nx, e.nz); pl.userData.own = true; if (LINE) toLine(pl); g.add(pl); }
     wallMeshes.push({ mat: wm, nx: -e.nx, nz: -e.nz });
   }
@@ -232,7 +253,7 @@ async function pump(total) {
 GP.on('booted', () => GP.SYM.ready.then(() => setTimeout(V3.prefetch, 1500))); // start after the plan pictures, so the first screen stays quick
 GP.on('changed', U.debounce(() => V3.prefetch(), 1500));
 GP.on('project', () => setTimeout(V3.prefetch, 800));
-V3.whenLoaded = (ms) => new Promise(res => { const t0 = performance.now(); const chk = () => { if (loading <= 0 || performance.now() - t0 > (ms || 25000)) res(); else setTimeout(chk, 200); }; chk(); });
+V3.whenLoaded = (ms) => new Promise(res => { const t0 = performance.now(); const chk = () => { if ((loading <= 0 && texLoading <= 0) || performance.now() - t0 > (ms || 25000)) res(); else setTimeout(chk, 200); }; chk(); });
 function markSel() {
   const sel = GP.ui.selSet(); if (V3.selBox) { sc.remove(V3.selBox); V3.selBox = null; }
   const ids = [...sel].filter(k => k.startsWith('item:')).map(k => k.slice(5)); if (!ids.length) { dirty = true; return; }

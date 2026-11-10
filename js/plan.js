@@ -47,6 +47,8 @@ S.resize = () => {
   const r = S.stage.getBoundingClientRect(); S.W = Math.max(1, r.width); S.H = Math.max(1, r.height); S.dpr = Math.min(window.devicePixelRatio || 1, 2.5);
   S.canvas.width = Math.round(S.W * S.dpr); S.canvas.height = Math.round(S.H * S.dpr); S.invalidate();
 };
+const texImgs = {};      // finish images for the plan (drawn once loaded)
+S.texImg = id => { let im = texImgs[id]; if (!im) { im = texImgs[id] = new Image(); im.onload = () => S.invalidate(); im.src = GP.texUrl(id); } return im.complete && im.naturalWidth ? im : null; };
 S.fit = (pad) => {
   const L = GP.L(); if (!L) return; const b = G.bounds(L.room.pts); const m = pad ?? 1.1;
   // keep the plan clear of the floating panels (tools left, summary / inspector right, hint top, layer bar bottom)
@@ -132,7 +134,7 @@ S.drawPlan = (x, V, o) => {
   }
   W2S();
   // floor
-  if (P.length >= 3) { path(P); x.fillStyle = '#FFFFFF'; x.fill(); }
+  if (P.length >= 3) { path(P); x.fillStyle = '#FFFFFF'; x.fill(); const fd = !LINE && !o.white && GP.texDef(st.floorBase), im = fd && fd.size && S.texImg(fd.id); if (im) { const pat = x.createPattern(im, 'repeat'); try { pat.setTransform(new DOMMatrix([fd.size / im.width, 0, 0, fd.size / im.height, 0, 0])); } catch (e) { } x.globalAlpha = .28; x.fillStyle = pat; x.fill(); x.globalAlpha = 1; } }
   // zones (under mats so they read as areas)
   if (lay.zones) for (const zn of L.zones) { if (zn.pts.length < 3) continue; path(zn.pts); if (!LINE) { x.globalAlpha = .1; x.fillStyle = zn.color || '#2f6bd8'; x.fill(); x.globalAlpha = 1; } x.setLineDash([6 * px, 4 * px]); x.lineWidth = (sel.has('zone:' + zn.id) ? 2.4 : 1.3) * px; x.strokeStyle = LINE && !sel.has('zone:' + zn.id) ? '#59626B' : zn.color || '#2f6bd8'; x.stroke(); x.setLineDash([]); }
   // rubber mats

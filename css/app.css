@@ -487,6 +487,15 @@ details.more>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--i
 .app.easy .insp .sec:has(#iPrice),.app.easy .insp .sec:has(#iW),.app.easy .insp .sec.more,.app.easy .insp [data-act="fav"],.app.easy .insp .insp-note{display:none}
 .app.easy #steps,.app.easy .side>.panel,.app.easy #stepNext,.app.easy #tools,.app.easy .topmid,.app.easy #variants,.app.easy #viewBtn,.app.easy #helpBtn,.app.easy #summary,.app.easy #quoteBtn,.app.easy #shareBtn{display:none!important}
 .modebtn{font-size:12.5px}
+.texgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(62px,1fr));gap:6px}
+.texsw{display:flex;flex-direction:column;align-items:stretch;gap:3px;padding:3px 3px 4px;border:1.5px solid var(--line);border-radius:9px;background:var(--panel);font-size:11px;line-height:1.2;text-align:center;color:var(--ink-2);min-width:0}
+.texsw i{display:block;aspect-ratio:1;border-radius:6px;background-size:cover;background-position:center;box-shadow:inset 0 0 0 1px rgba(0,0,0,.1)}
+.texsw span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.texsw:hover{border-color:var(--line-2)}
+.texsw.on{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);color:var(--ink);font-weight:600}
+.insp .texgrid{grid-template-columns:repeat(4,1fr)}
+.wz-fin{display:flex;flex-direction:column;gap:7px;border-top:1px solid var(--line);padding-top:12px}
+.wz-fin .btn{align-self:flex-start}
 .updchip{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700;animation:pulse 1.6s ease-in-out 3}
 .tb-right .modebtn .lbl{display:inline!important}
 @media (max-width:600px){.tb-right .modebtn .lbl{display:none!important}}
