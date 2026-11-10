@@ -336,7 +336,11 @@ function buildMats() {
     }
   }
 }
-/* equipment: procedural model first, swapped for the 3D file once it has loaded — the user's registered file, else the generic model (models/basic) */
+/* equipment with a 3D file (the user's registered one, else the generic model in models/basic): a faint box of its size until the
+   file has loaded, then the model. The rough procedural model is only for what has no file (made-to-size furniture, own items)
+   and for a file that cannot be loaded (offline and never fetched). */
+let holdGeo = null;      // one unit box for every stand-in (scaled per item; shared, so nothing to free)
+function holdBox(dm) { const h = Math.max(.05, dm.h), m = new THREE.Mesh(holdGeo || (holdGeo = new THREE.BoxGeometry(1, 1, 1)), mat('hold', () => new THREE.MeshBasicMaterial({ color: '#9aa3ab', transparent: true, opacity: .16, depthWrite: false }))); m.scale.set(dm.w, h, dm.d); m.position.y = h / 2; return m; }
 const roots = new Map(); let loading = 0, loadTotal = 0, loadDone = 0;
 function onMatAt(x, z) { for (const m of GP.L().mats) if (m.pts.length > 2 && G.pip(x, z, m.pts)) return .025; return 0; }
 function buildItems() {
@@ -345,11 +349,11 @@ function buildItems() {
     const def = GP.getDef(it.type); if (!def) continue; const dm = GP.dims(it), mount = GP.mountOf(it);
     const root = new THREE.Group(); root.userData.uid = it.uid; root.userData.dm = dm;
     const y = GP.itemY(it) + (mount === 'floor' && !def.flat ? onMatAt(it.x, it.z) : 0); root.position.set(it.x, y, it.z); root.rotation.y = -it.rot * DEG;
-    const proc = GP.R3.procModel(it); if (LINE) toLine(proc); root.add(proc); g.add(root); roots.set(it.uid, root);
-    const src = modelSrc(it.type, def); if (src) (want[it.type + '|' + src] = want[it.type + '|' + src] || []).push({ it, root, proc, dm });
+    const src = modelSrc(it.type, def), proc = src ? holdBox(dm) : GP.R3.procModel(it); if (LINE && !src) toLine(proc); root.add(proc); g.add(root); roots.set(it.uid, root);
+    if (src) (want[it.type + '|' + src] = want[it.type + '|' + src] || []).push({ it, root, proc, dm });
   }
   const keys = Object.keys(want); loadTotal = keys.length; loadDone = 0; loading = keys.length; setLoad();
-  keys.forEach(k => { const [t, src] = k.split('|'), b = src === 'basic'; GP.R3.glb(t, null, b).then(scene => { for (const q of want[k]) { if (roots.get(q.it.uid) !== q.root) continue; q.root.remove(q.proc); const gm = GP.R3.fitGlb(t, scene, q.dm, b, q.it, LINE ? toLine : null); if (LINE) toLine(gm); q.root.add(gm); } dirty = true; }).catch(() => { }).finally(() => { loading--; loadDone++; setLoad(); }); });
+  keys.forEach(k => { const [t, src] = k.split('|'), b = src === 'basic'; GP.R3.glb(t, null, b).then(scene => { for (const q of want[k]) { if (roots.get(q.it.uid) !== q.root) continue; q.root.remove(q.proc); const gm = GP.R3.fitGlb(t, scene, q.dm, b, q.it, LINE ? toLine : null); if (LINE) toLine(gm); q.root.add(gm); } dirty = true; }).catch(() => { for (const q of want[k]) { if (roots.get(q.it.uid) !== q.root) continue; q.root.remove(q.proc); const pm = GP.R3.procModel(q.it); if (LINE) toLine(pm); q.root.add(pm); } dirty = true; }).finally(() => { loading--; loadDone++; setLoad(); }); });
 }
 /* which 3D file an item shows: 'reg' (the user's registered file), 'basic' (generic model) or null (procedural only) */
 function modelSrc(t, def) {
@@ -447,15 +451,19 @@ function endDrag(e) {
   if (!d.moved) return false;
   GP.changed('items'); GP.ui.renderInspector(); return true;
 }
-/* placing ghost: the procedural model, see-through, over a blue (fits) / red (overlaps, outside the room) footprint */
+/* placing ghost: the item's own model, see-through, over a blue (fits) / red (overlaps, outside the room) footprint.
+   With a 3D file that is the file's model (only the footprint until it has loaded); the rough procedural model is for what has no file. */
 function ghostBuild() {
-  if (!R) return; if (ghost) { sc.remove(ghost.g); ghost.g.traverse(n => { if (n.userData.own) { n.geometry.dispose(); [].concat(n.material).forEach(m => m.dispose()); } }); ghost = null; }
+  if (!R) return; if (ghost) { sc.remove(ghost.g); ghost.g.traverse(n => { if (n.userData.own) { if (!n.userData.shared) n.geometry.dispose(); [].concat(n.material).forEach(m => m.dispose()); } }); ghost = null; }
   const pl = GP.ui.placing; if (!pl || !V3.on) { dirty = true; return; }
   const g = new THREE.Group(), parts = pl.list.map(q => {
-    const r = new THREE.Group(), m = GP.R3.procModel(q.it);
-    m.traverse(n => { if (n.isMesh) { n.material = Array.isArray(n.material) ? n.material.map(x => see(x.clone())) : see(n.material.clone()); n.castShadow = false; n.userData.own = true; n.geometry = n.geometry.clone(); } });
-    const dm = GP.dims(q.it), fp = new THREE.Mesh(new THREE.PlaneGeometry(dm.w, dm.d), new THREE.MeshBasicMaterial({ color: '#2450E0', transparent: true, opacity: .3, depthWrite: false }));
-    fp.rotation.x = -Math.PI / 2; fp.position.y = .03; fp.userData.own = true; r.add(m, fp); r.userData.fp = fp; r.visible = false; g.add(r); return r;
+    const r = new THREE.Group(), src = modelSrc(q.it.type), dm = GP.dims(q.it);
+    /* see-through copies of the materials; a file's geometry is shared with the models on the plan (never disposed here), a procedural one is cloned */
+    const faint = (m, shared) => { m.traverse(n => { if (n.isMesh) { n.material = Array.isArray(n.material) ? n.material.map(x => see(x.clone())) : see(n.material.clone()); n.castShadow = false; n.receiveShadow = false; n.userData.own = true; if (shared) n.userData.shared = true; else n.geometry = n.geometry.clone(); } }); return m; };
+    if (!src) r.add(faint(GP.R3.procModel(q.it)));
+    else { const b = src === 'basic'; GP.R3.glb(q.it.type, null, b).then(scene => { if (!ghost || ghost.g !== g) return; r.add(faint(GP.R3.fitGlb(q.it.type, scene, dm, b), true)); dirty = true; }).catch(() => { if (ghost && ghost.g === g) { r.add(faint(GP.R3.procModel(q.it))); dirty = true; } }); }
+    const fp = new THREE.Mesh(new THREE.PlaneGeometry(dm.w, dm.d), new THREE.MeshBasicMaterial({ color: '#2450E0', transparent: true, opacity: .3, depthWrite: false }));
+    fp.rotation.x = -Math.PI / 2; fp.position.y = .03; fp.userData.own = true; r.add(fp); r.userData.fp = fp; r.visible = false; g.add(r); return r;
   });
   sc.add(g); ghost = { g, parts }; dirty = true;
   if (last3d) ghostMove(last3d);
