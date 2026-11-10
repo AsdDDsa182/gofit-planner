@@ -353,7 +353,7 @@ function buildItems() {
     if (src) (want[it.type + '|' + src] = want[it.type + '|' + src] || []).push({ it, root, proc, dm });
   }
   const keys = Object.keys(want); loadTotal = keys.length; loadDone = 0; loading = keys.length; setLoad();
-  keys.forEach(k => { const [t, src] = k.split('|'), b = src === 'basic'; GP.R3.glb(t, null, b).then(scene => { for (const q of want[k]) { if (roots.get(q.it.uid) !== q.root) continue; q.root.remove(q.proc); const gm = GP.R3.fitGlb(t, scene, q.dm, b, q.it, LINE ? toLine : null); if (LINE) toLine(gm); q.root.add(gm); } dirty = true; }).catch(() => { for (const q of want[k]) { if (roots.get(q.it.uid) !== q.root) continue; q.root.remove(q.proc); const pm = GP.R3.procModel(q.it); if (LINE) toLine(pm); q.root.add(pm); } dirty = true; }).finally(() => { loading--; loadDone++; setLoad(); }); });
+  keys.forEach(k => { const [t, src] = k.split('|'), b = src === 'basic'; GP.R3.glb(t, null, b).then(scene => { for (const q of want[k]) { if (roots.get(q.it.uid) !== q.root) continue; q.root.remove(q.proc); const gm = GP.R3.fitGlb(t, scene, q.dm, b, q.it, LINE ? toLine : null); if (LINE) toLine(gm); else if (b) GP.R3.tint(gm, GP.eqColor(q.it)); q.root.add(gm); } dirty = true; }).catch(() => { for (const q of want[k]) { if (roots.get(q.it.uid) !== q.root) continue; q.root.remove(q.proc); const pm = GP.R3.procModel(q.it); if (LINE) toLine(pm); q.root.add(pm); } dirty = true; }).finally(() => { loading--; loadDone++; setLoad(); }); });
 }
 /* which 3D file an item shows: 'reg' (the user's registered file), 'basic' (generic model) or null (procedural only) */
 function modelSrc(t, def) {

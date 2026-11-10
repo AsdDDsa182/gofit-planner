@@ -125,6 +125,16 @@ ui.select = (list, add, raw) => {
 };
 ui.clearSel = () => { if (ui.sel.length) { ui.sel = []; GP.emit('selection'); } };
 ui.selItems = () => ui.sel.filter(s => s.k === 'item').map(s => GP.findItem(s.id)).filter(Boolean);
+/* colour options of strength equipment. own = the item whose own colours the row sets (else the project's) */
+const eqcSeg = (kind, cur, own) => { const T = kind === 'f' ? GP.EQ_FRAME : GP.EQ_SEAT; return `<div class="seg sm" data-eqc="${kind}"${own ? ' data-own="1"' : ''}>${own ? `<button data-v="" class="${cur ? '' : 'on'}" title="프로젝트의 기구 색을 따라요">기본</button>` : ''}${Object.entries(T).map(([k, o]) => `<button data-v="${k}" class="${cur === k ? 'on' : ''}"><i class="eqc-dot" style="background:${o.hex}"></i>${o.name}</button>`).join('')}</div>`; };
+ui.eqcRow = (it) => { const st = GP.P.settings, seat = !it || (GP.eqColor(it) || {}).hasSeat; return `<div class="eqc-row${it ? ' own' : ''}"><span class="eqc-l">프레임</span>${eqcSeg('f', it ? it.fcol || '' : GP.EQ_FRAME[st.frameColor] ? st.frameColor : 'black', !!it)}${seat ? `<span class="eqc-l">시트</span>${eqcSeg('s', it ? it.scol || '' : GP.EQ_SEAT[st.seatColor] ? st.seatColor : 'black', !!it)}` : ''}</div>`; };
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-eqc] button'); if (!b || GP.viewOnly) return; const seg = b.parentElement, kind = seg.dataset.eqc, v = b.dataset.v;
+  if (seg.dataset.own) { const its = ui.selItems().filter(it => GP.eqColor(it)); if (!its.length) return; its.forEach(it => { const k = kind === 'f' ? 'fcol' : 'scol'; if (v) it[k] = v; else delete it[k]; }); GP.changed('items'); ui.renderInspector(); return; }
+  GP.P.settings[kind === 'f' ? 'frameColor' : 'seatColor'] = v; GP.changed('settings'); [...seg.children].forEach(c => c.classList.toggle('on', c === b));
+  const n = GP.L().items.filter(it => GP.eqColor(it)).length, own = GP.L().items.filter(it => (it.fcol || it.scol) && GP.eqColor(it)).length;
+  GP.toast(n ? `근력 기구 ${n}대의 ${kind === 'f' ? '프레임' : '시트'} 색을 ${b.textContent.trim()}(으)로 바꿨어요${own ? ` · 따로 색을 정한 ${own}대는 그대로예요` : ''}` : `앞으로 놓는 근력 기구가 이 색으로 나와요`, { ms: 3200 });
+});
 ui.selObj = () => { if (ui.sel.length !== 1) return null; const s = ui.sel[0]; if (s.k === 'wall') return s.id < GP.L().room.pts.length ? { k: 'wall', id: s.id, obj: s.id } : null; const o = GP.findBy(s.k, s.id); return o ? { k: s.k, id: s.id, obj: o } : null; };
 
 /* ---------------- change pipeline ---------------- */
@@ -374,6 +384,7 @@ function inspItem(it) {
     + (bad ? `<div class="insp-warn">${[bad.has('wall') ? '벽 밖으로 나갔어요' : '', bad.has('overlap') ? '다른 물건과 겹쳐요' : '', bad.has('part') ? '가벽과 겹쳐요' : ''].filter(Boolean).join(' · ')}</div>` : '')
     + `<button class="btn wide soft" data-act="model">${has3d ? IC.cube : IC.image}${has3d ? '3D 모델 보기' + (nph ? ` · 사진 ${nph}` : '') : nph ? `사진 ${nph}장 보기` : '사진·3D 파일 등록'}</button>`
     + (GP.R3.canLoad(it.type) ? `<div class="sec"><label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="iLoad" style="width:auto;flex:none" ${it.load ? 'checked' : ''}><span style="margin:0"><b>${U.esc(GP.R3.loads[it.type].label)}</b> <small class="note">(3D · 도면에 보여요)</small></span></label>${it.load ? '<small class="vat">보이기만 해요. 견적에는 「견적에만 넣는 품목」으로 따로 넣어 주세요.</small>' : ''}</div>` : '')
+    + (GP.eqColor(it) && !GP.viewOnly ? `<div class="sec eqc-own"><span class="lbl">색상 <small class="note">(이 기구만 다르게)</small></span>${ui.eqcRow(it)}</div>` : '')
     + (INFO.NO_QUOTE.has(it.type) ? '' : priceBox('type:' + it.type, GP.quote.priceOf('type:' + it.type)))
     + `<div class="sec"><span class="lbl">크기 <a data-act="resetSize">기본 크기로</a></span><div class="row3"><label class="fld"><span>가로</span>${num('iW', U.cm(d.w), 5, 'cm', 'min="5"')}</label><label class="fld"><span>세로</span>${num('iD', U.cm(d.d), 5, 'cm', 'min="2"')}</label><label class="fld"><span>높이</span>${num('iH', U.cm(d.h), 5, 'cm', 'min="1"')}</label></div></div>`
     + (params ? `<div class="sec"><span class="lbl">모양</span><div class="row2">${params}</div></div>` : '')

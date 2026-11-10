@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.11.3';
+GP.VERSION = '2.12.0';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
@@ -237,7 +237,7 @@ GP.newProject = (o) => {
   return {
     v: 2, id, name: o.name || '새 프로젝트', client: o.client || '', consultant: o.consultant || '',
     createdAt: Date.now(), updatedAt: Date.now(),
-    settings: { wallH: 2.8, wallColor: '#eeede8', floorBase: 'concrete', wallTex: 'paint', frameColor: 'black', accent: '#f08a1c', shroud: '#141517' },      // floorBase / wallTex: GP.TEX ids
+    settings: { wallH: 2.8, wallColor: '#eeede8', floorBase: 'concrete', wallTex: 'paint', frameColor: 'black', seatColor: 'black', accent: '#f08a1c', shroud: '#141517' },      // floorBase / wallTex: GP.TEX ids; frameColor / seatColor: GP.EQ_FRAME / GP.EQ_SEAT ids (strength equipment)
     variants: [{ id: U.uid('v'), name: 'A안', layout: GP.newLayout(o.pts) }], cur: 0,
     images: {},
   };
@@ -259,7 +259,7 @@ function sanitizeLayout(L) {
   L.room = { pts: sPts(L.room && L.room.pts, 3) || GP.DEFAULT_ROOM.map(q => q.slice()) };
   L.partitions = L.partitions.filter(q => q && sPts(q.pts, 2)).map(q => { q.pts = sPts(q.pts, 2); q.id = sWord(q.id) || U.uid('pt'); q.thick = U.clamp(sNum(q.thick, .1), .03, .6); q.kind = GP.PARTS[q.kind] ? q.kind : 'wall'; sKeys(q, ['color', 'frameC', 'glass']); sNums(q, ['height']); return q; });
   L.openings = L.openings.filter(o => o && sNum(o.t) !== undefined && sNum(o.w) !== undefined && Number.isInteger(+o.seg)).map(o => { o.id = sWord(o.id) || U.uid('o'); o.host = sWord(o.host) || 'room'; o.seg = +o.seg; o.t = +o.t; o.w = U.clamp(+o.w, .3, 8); o.kind = GP.OPENINGS[o.kind] ? o.kind : 'door'; sNums(o, ['h', 'sill']); sKeys(o, ['leafC', 'frameC', 'glass', 'hw', 'hinge', 'wtype']); return o; });
-  L.items = L.items.filter(it => sWord(String(it.type))).map(it => { it.type = GONE[it.type] || String(it.type); it.uid = sWord(String(it.uid)) || U.uid(); it.x = +it.x; it.z = +it.z; sNums(it, ['w', 'd', 'h', 'elev']); sKeys(it, ['grp', 'mount', 'img']); if (it.load != null) it.load = it.load === true || undefined; if (it.name != null) it.name = sTxt(it.name, 80) || undefined;
+  L.items = L.items.filter(it => sWord(String(it.type))).map(it => { it.type = GONE[it.type] || String(it.type); it.uid = sWord(String(it.uid)) || U.uid(); it.x = +it.x; it.z = +it.z; sNums(it, ['w', 'd', 'h', 'elev']); sKeys(it, ['grp', 'mount', 'img', 'fcol', 'scol']); if (it.load != null) it.load = it.load === true || undefined; if (it.name != null) it.name = sTxt(it.name, 80) || undefined;
     if (it.params && typeof it.params === 'object') { for (const k of Object.keys(it.params)) { const v = it.params[k]; if (!(typeof v === 'boolean' || (typeof v === 'number' && isFinite(v)) || sWord(v) !== undefined) || !WORD.test(k)) delete it.params[k]; } } else delete it.params; return it; });
   L.mats = L.mats.filter(m => m && sPts(m.pts, 3)).map(m => { m.pts = sPts(m.pts, 3); m.id = sWord(m.id) || U.uid('m'); if (!GP.TRIMS[m.trim]) m.trim = 'rubber'; return m; });
   L.zones = L.zones.filter(z => z && sPts(z.pts, 3)).map(z => { z.pts = sPts(z.pts, 3); z.id = sWord(z.id) || U.uid('z'); z.color = sHex(z.color, '#2f6bd8'); z.name = sTxt(z.name, 60); return z; });
@@ -276,7 +276,7 @@ function sanitizeLayout(L) {
 }
 function sanitizeProject(p) {
   const s = p.settings, d = GP.newProject().settings; s.wallColor = sHex(s.wallColor, d.wallColor); s.wallH = U.clamp(sNum(s.wallH, d.wallH), 2, 8); s.accent = sHex(s.accent, d.accent); s.shroud = sHex(s.shroud, d.shroud);
-  for (const k of ['floorBase', 'wallTex', 'frameColor']) s[k] = sWord(s[k]) || d[k]; if (s.baseboard != null && sWord(s.baseboard) === undefined) delete s.baseboard;
+  for (const k of ['floorBase', 'wallTex', 'frameColor', 'seatColor']) s[k] = sWord(s[k]) || d[k]; if (s.baseboard != null && sWord(s.baseboard) === undefined) delete s.baseboard;
   p.id = sWord(p.id) || U.uid('p'); p.name = sTxt(p.name, 120) || '새 프로젝트'; p.client = sTxt(p.client, 120); p.consultant = sTxt(p.consultant, 60); for (const k of ['createdAt', 'updatedAt']) p[k] = sNum(p[k], Date.now());
   for (const k of ['custName', 'custTel', 'siteAddr', 'consTel', 'consEmail']) if (p[k] != null) p[k] = sTxt(p[k], 160);
   for (const id of Object.keys(p.images)) { const im = p.images[id], ok = v => v && typeof v.src === 'string' && v.src.startsWith('data:image/'); if (!ok(im) || !WORD.test(id)) { delete p.images[id]; continue; } p.images[id] = { src: im.src, w: sNum(im.w, 1), h: sNum(im.h, 1), cut: im.cut === null ? null : ok(im.cut) ? { src: im.cut.src, w: sNum(im.cut.w, 1), h: sNum(im.cut.h, 1) } : undefined }; }

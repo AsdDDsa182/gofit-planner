@@ -59,6 +59,12 @@ GP.logoImage = (it) => {
 GP.texDef = id => GP.TEX.floor.find(t => t.id === id) || GP.TEX.wall.find(t => t.id === id) || null;
 GP.texUrl = (id, thumb) => `assets/tex/${thumb ? 'thumb/' : ''}${id}.jpg`;
 GP.EQUIP_CATS = new Set(['cardio', 'machine', 'plate', 'cable', 'rack', 'bench', 'storage', 'func', 'stretch', 'air']);
+/* Colour options of strength equipment: the paint (frame, brackets, the stack tower's shrouds) and the upholstery.
+   The first of each is how the 3D files are made (nothing is changed for it). The files name those parts F_… / S_…
+   (dev/blender/tag_parts.py); cardio machines have no colour options. To offer another colour, add a line here. */
+GP.EQ_FRAME = { black: { name: '블랙', hex: '#2a2b2d' }, white: { name: '화이트', hex: '#eceef0', metal: .1, rough: .5 } };
+GP.EQ_SEAT = { black: { name: '블랙', hex: '#141414' }, brown: { name: '브라운', hex: '#6f4528', metal: 0, rough: .62 } };
+GP.COLOR_CATS = new Set(['machine', 'plate', 'cable', 'rack', 'bench']);
 const CAT = GP.CAT = {};
 /* sizes follow the generic 3D models in models/basic (m). T(id, name, cat, w, d, h, clearance [front, back, left, right], opts) — w = width (local X), d = depth (local Z, +Z is the user/access side) */
 const T = (id, name, cat, w, d, h, cl, o) => { CAT[id] = Object.assign({ id, name, cat, w, d, h, kw: '', pw: 0, mount: 'floor', y: 0 }, o || {}, { cl: { f: cl[0], b: cl[1], l: cl[2], r: cl[3] } }); };

@@ -60,7 +60,7 @@ async function view3d(type, d, it) {
     [[0, 2.9, 0, 7, .1, 7, 3.4], [5.9, 1.6, 0, .1, 2, 5, 1.8], [-5.9, 1.6, 0, .1, 2, 5, 1.4], [0, 1.6, 5.9, 5, 2, .1, 1.3]].forEach(([x, y, z, w, h, dd, i]) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, dd), new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffffff').multiplyScalar(i) })); m.position.set(x, y, z); envS.add(m); });
     const env = pm.fromScene(envS, .04).texture; sc.environment = env; pm.dispose();
     sc.add(new THREE.HemisphereLight(0xffffff, 0x9aa0a6, .5));
-    const model = scene0; sc.add(model); model.position.set(0, 0, 0); model.rotation.set(0, 0, 0); model.scale.set(1, 1, 1); model.updateMatrixWorld(true);
+    const model = scene0; if (it) GP.R3.tint(model, GP.eqColor(it)); sc.add(model); model.position.set(0, 0, 0); model.rotation.set(0, 0, 0); model.scale.set(1, 1, 1); model.updateMatrixWorld(true);
     const mbox = (o) => (GP.R3 && GP.R3.box) ? GP.R3.box(o) : new THREE.Box3().setFromObject(o);
     const bb = mbox(model); const size = bb.getSize(new THREE.Vector3()), ctr = bb.getCenter(new THREE.Vector3());
     const k = 1 / Math.max(size.x, size.y, size.z, 1e-6) * Math.max(d.w, d.d, d.h, 1); model.scale.setScalar(k); model.position.set(-ctr.x * k, -bb.min.y * k, -ctr.z * k); model.updateMatrixWorld(true);

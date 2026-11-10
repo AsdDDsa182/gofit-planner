@@ -151,6 +151,7 @@ R.equip = {
     b.innerHTML = head('어떤 기구가 필요하세요?', '개수만 정하면 다음 단계에서 알아서 놓아 드려요.') +
       `<div class="wz-sum"><div><b>${n}대</b><small>고른 기구</small></div><div><b class="${pct > 55 ? 'bad' : pct > 42 ? 'warn' : ''}">${pct}%</b><small>공간 차지 (사용 공간 포함)</small></div><div><b>${price ? '약 ' + U.won(Math.round(price * 1.1 / 10000)) + '만원' : '-'}</b><small>${missing ? `단가 미입력 ${missing}종` : '부가세 포함'}</small></div></div>
       ${pct > 55 ? '<p class="wz-warn">기구가 공간에 비해 많아요. 통로가 좁아지거나 못 놓는 기구가 생길 수 있어요.</p>' : ''}
+      <div class="eqc-box"><b>근력 기구 색</b>${GP.ui.eqcRow()}</div>
       <div class="fld"><span>빠르게 고르기 (묶음)</span><div class="chips">${GP.SETS.map(sv => `<button class="chip" data-set="${sv.id}" title="${U.esc(sv.desc || '')}">＋ ${U.esc(sv.name)}</button>`).join('')}</div></div>
       <div class="search">${IC.search}<input id="wzQ" type="search" placeholder="기구 이름으로 찾기" value="${U.esc(eqQ)}"></div>
       <div id="wzEqList" class="wz-eqlist">${eqList()}</div>

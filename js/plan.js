@@ -14,6 +14,15 @@ GP.getDef = (type) => {
 };
 GP.typeName = (type) => GP.lib.names[type] || (GP.getDef(type) || {}).name || type;
 GP.itemName = (it) => it.name || GP.typeName(it.type);
+/* the colours of a strength machine: its own (it.fcol / it.scol) or the project's (settings.frameColor / seatColor).
+   null for what has no colour options: other categories, own items, a 3D file the user registered (its parts are not named) */
+GP.eqColor = (it) => {
+  const d = GP.getDef(it.type), pt = GP.R3 && GP.R3.parts[it.type]; if (!d || d.custom || !pt || !GP.COLOR_CATS.has(d.cat) || (GP.media && GP.media.model(it.type))) return null;
+  const st = GP.P ? GP.P.settings : {}, f = GP.EQ_FRAME[it.fcol] ? it.fcol : GP.EQ_FRAME[st.frameColor] ? st.frameColor : 'black';
+  const hasSeat = pt.includes('s'), s = !hasSeat ? 'black' : GP.EQ_SEAT[it.scol] ? it.scol : GP.EQ_SEAT[st.seatColor] ? st.seatColor : 'black';      // (a rack has no upholstery)
+  return { f, s, hasSeat, key: f + '|' + s, plain: f === 'black' && s === 'black' };
+};
+GP.eqColorText = (it) => { const c = GP.eqColor(it); return !c || c.plain ? '' : [c.f !== 'black' ? '프레임 ' + GP.EQ_FRAME[c.f].name : '', c.s !== 'black' ? '시트 ' + GP.EQ_SEAT[c.s].name : ''].filter(Boolean).join(' · '); };
 GP.dims = (it) => { const d = GP.getDef(it.type) || { w: 1, d: 1, h: 1 }; const H = d.hFromWall ? (it.h ?? GP.P.settings.wallH) : (it.h ?? d.h); return { w: it.w ?? d.w, d: it.d ?? d.d, h: H }; };
 GP.mountOf = (it) => it.mount || (GP.getDef(it.type) || {}).mount || 'floor';
 GP.surfaceAt = (x, z, it) => {

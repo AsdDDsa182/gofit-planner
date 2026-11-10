@@ -25,7 +25,10 @@ SYM.clearThumbs = () => GP.R3.clear();
 SYM.draw = (x, it, def, dm, px, state, style) => {
   let src = null, ext = null; const line = style === 'line';
   const pre = def && !def.custom && !def.params && SYM.man[it.type], map = line ? lines : imgs, im = pre && map.get(it.type);
-  if (im) { src = im; ext = SYM.man[it.type].ext; }
+  if (im) {
+    src = im; ext = SYM.man[it.type].ext;
+    const col = !line && GP.eqColor(it); if (col && !col.plain) { const tv = GP.R3.tintTop(it, col); if (tv) { src = tv.canvas; ext = tv.ext; } }      // (the black picture until its own is ready)
+  }
   else if (pre && !map.has(it.type)) { x.fillStyle = 'rgba(200,205,210,.35)'; x.fillRect(-dm.w / 2, -dm.d / 2, dm.w, dm.d); }
   else { const fz = GP.R3.freeze, tv = fz && fz.uid === it.uid && fz.line === line ? fz.tv : GP.R3.topView(it, null, line); if (tv) { src = tv.canvas; ext = tv.ext; } }
   if (src) x.drawImage(src, ext[0] * dm.w, ext[2] * dm.d, (ext[1] - ext[0]) * dm.w, (ext[3] - ext[2]) * dm.d);

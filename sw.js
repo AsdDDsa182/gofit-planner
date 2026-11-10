@@ -4,11 +4,11 @@
                       not have yet (about 20 MB stayed put instead of being fetched again each time). They are still asked for
                       from the site first, so a changed picture or model arrives when online.
    MODELS (kept)      3D libraries and files that never change under the same address: cache first. */
-const CACHE = 'gofit-planner-v3.13.3', ASSETS = 'gofit-assets-v1', MODELS = 'gofit-models-v2';
+const CACHE = 'gofit-planner-v3.14.0', ASSETS = 'gofit-assets-v1', MODELS = 'gofit-models-v2';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/core.js', 'js/catalog.js', 'js/media.js', 'vendor/three.min.js', 'vendor/OrbitControls.js', 'js/m3-parts.js', 'js/m3-models-a.js', 'js/m3-models-b.js', 'js/render3d.js', 'js/symbols.js', 'js/plan.js', 'js/checks.js', 'js/ui.js', 'js/overlay.js', 'js/tools.js', 'js/panels.js', 'js/export.js', 'js/viewer3d.js', 'js/view3d.js', 'js/backup.js', 'js/wizard.js', 'js/app.js',
-  'assets/plan/manifest.json', 'models/basic/index.json', 'models/load/index.json',
+  'assets/plan/manifest.json', 'models/basic/index.json', 'models/basic/colors.json', 'models/load/index.json',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ];
 const LIBS = ['vendor/GLTFLoader.js', 'vendor/DRACOLoader.js', 'vendor/draco/draco_decoder.wasm', 'vendor/draco/draco_wasm_wrapper.js', 'vendor/draco/draco_decoder.js', 'models/arch/parts.glb?v=1'];      // without these no 3D model opens offline

@@ -42,7 +42,9 @@ const glbCache = new Map(); // key -> Promise<scene>
 R3.basic = {}; // type -> 'category/type.glb'
 R3.loads = {}; // rack type -> { file, label, sx, sz }: the rack's size in its own model (the load is scaled exactly like the rack)
 R3.loadBasic = () => Promise.all([fetch(R3.base() + 'models/basic/index.json').then(r => r.ok ? r.json() : {}).then(j => { R3.basic = j || {}; }).catch(() => { }),
-  fetch(R3.base() + 'models/load/index.json').then(r => r.ok ? r.json() : {}).then(j => { R3.loads = j || {}; }).catch(() => { })]);
+  fetch(R3.base() + 'models/load/index.json').then(r => r.ok ? r.json() : {}).then(j => { R3.loads = j || {}; }).catch(() => { }),
+  fetch(R3.base() + 'models/basic/colors.json').then(r => r.ok ? r.json() : {}).then(j => { R3.parts = j || {}; }).catch(() => { })]);
+R3.parts = {};      // type -> 'fs' | 'f': the model has a named frame paint (f) / upholstery (s) that can be recoloured
 R3.pending = 0;      // load files on their way (pictures wait for them)
 const loadCache = new Map();
 R3.loadGlb = (type) => {
@@ -92,6 +94,21 @@ R3.box = (obj) => {
   });
   return box;
 };
+/* colour options (GP.eqColor): on a clone, the paint (materials named F_…) and the upholstery (S_…) are swapped for tinted
+   copies; one copy per material and colour, shared by every machine that wears it */
+const tints = new Map();
+R3.tint = (obj, col) => {
+  if (!obj || !col || col.plain) return obj;
+  const F = col.f !== 'black' ? GP.EQ_FRAME[col.f] : null, S = col.s !== 'black' ? GP.EQ_SEAT[col.s] : null;
+  const swap = (m) => {
+    const n = (m && m.name) || '', o = n.startsWith('F_') ? F : n.startsWith('S_') ? S : null; if (!o) return m;
+    const k = m.uuid + '|' + o.hex; let t = tints.get(k);
+    if (!t) { t = m.clone(); t.color.set(o.hex).convertSRGBToLinear(); if ('metalness' in t) { t.metalness = o.metal; t.roughness = o.rough; } t.userData.keep = true; tints.set(k, t); }
+    return t;
+  };
+  obj.traverse(n => { if (n.isMesh && !n.userData.load) n.material = Array.isArray(n.material) ? n.material.map(swap) : swap(n.material); });
+  return obj;
+};
 /* place a GLB inside an item's footprint: plan orientation from the manifest, bottom on the floor, uniform scale that fits w × d */
 R3.fitGlb = (type, scene, dm, basic, it, onLoad) => {
   const holder = new THREE.Group(), inner = new THREE.Group(); const m = R3.cloneRig(scene); inner.add(m);
@@ -127,6 +144,12 @@ function outline(c) {
   for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) { const k = (j * W + i) * 4; if (a[k + 3] < 40) continue; if (A(i - 1, j) < 40 || A(i + 1, j) < 40 || A(i, j - 1) < 40 || A(i, j + 1) < 40) { o[k] = o[k + 1] = o[k + 2] = 27; o[k + 3] = 255; } }
   x.putImageData(new ImageData(o, W, H), 0, 0);
 }
+/* a soft grey line where the picture meets the empty floor */
+function edge(c) {
+  const W = c.width, H = c.height, x = c.getContext('2d'), d = x.getImageData(0, 0, W, H), a = d.data, o = new Uint8ClampedArray(a); const A = (i, j) => (i < 0 || j < 0 || i >= W || j >= H) ? 0 : a[(j * W + i) * 4 + 3];
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) { const k = (j * W + i) * 4; if (a[k + 3] < 40) continue; if (A(i - 1, j) < 40 || A(i + 1, j) < 40 || A(i, j - 1) < 40 || A(i, j + 1) < 40) { o[k] = 122; o[k + 1] = 128; o[k + 2] = 134; o[k + 3] = 255; } }
+  x.putImageData(new ImageData(o, W, H), 0, 0);
+}
 R3.topView = (it, defOverride, line) => {
   if (!R3.ok) return null; const sig = defOverride ? null : R3.sig(it) + (line ? '|L' : ''); if (sig && topCache.has(sig)) return topCache.get(sig);
   let res = null;
@@ -142,6 +165,24 @@ R3.topView = (it, defOverride, line) => {
   } catch (e) { console.warn('topView', it.type, e); }
   if (sig) { topCache.set(sig, res); if (topCache.size > 400) topCache.delete(topCache.keys().next().value); }
   return res;
+};
+/* the plan picture of a machine in its colours (the stored pictures are the black ones): rendered once per type, size and colour */
+const tintTops = new Map();
+R3.tintTop = (it, col) => {
+  const type = it.type, dm = GP.dims(it), key = [type, col.key, Math.round(dm.w * 100), Math.round(dm.d * 100)].join('|'); if (tintTops.has(key)) return tintTops.get(key);
+  if (!R3.ok || !R3.hasBasic(type)) return null;
+  tintTops.set(key, null);
+  R3.glb(type, null, true).then(scene => {
+    const { r, sc } = offscreen(), obj = R3.tint(R3.fitGlb(type, scene, dm, true), col); obj.updateMatrixWorld(true);
+    const bb = R3.box(obj), x0 = Math.min(bb.min.x, -dm.w / 2), x1 = Math.max(bb.max.x, dm.w / 2), z0 = Math.min(bb.min.z, -dm.d / 2), z1 = Math.max(bb.max.z, dm.d / 2);
+    let W = Math.round((x1 - x0) * 220), H = Math.round((z1 - z0) * 220); const k = Math.min(1, 640 / Math.max(W, H, 1)); W = Math.max(8, Math.round(W * k)); H = Math.max(8, Math.round(H * k));
+    const cam = new THREE.OrthographicCamera(x0, x1, -z0, -z1, .1, 60); cam.up.set(0, 0, -1); cam.position.set(0, 30, 0); cam.lookAt(0, 0, 0); cam.updateProjectionMatrix();
+    r.setSize(W, H, false); r.setClearColor(0x000000, 0); sc.add(obj); r.render(sc, cam); sc.remove(obj);
+    const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').drawImage(r.domElement, 0, 0);
+    if (col.f !== 'black') edge(c);      // a light frame on a light floor: a thin grey line round it
+    tintTops.set(key, { canvas: c, ext: [x0 / dm.w, x1 / dm.w, z0 / dm.d, z1 / dm.d] }); if (GP.S && GP.S.invalidate) GP.S.invalidate();
+  }).catch(() => tintTops.delete(key));
+  return null;
 };
 const loadTops = new Map();
 R3.loadTop = (type, line) => {

@@ -168,6 +168,7 @@ panels.renderPlace = () => {
   const el = $('#panel-place'), grp = plGroupOf(pl.cat);
   el.innerHTML = `<p class="pl-lead">${IC.select}<span>기구를 누르고 도면을 클릭하면 놓여요 · 끌어다 놓아도 돼요</span></p>
   <div class="search">${IC.search}<input id="plQ" type="search" placeholder="기구 검색 (예: 랫풀다운, 벤치)" value="${U.esc(pl.q)}"></div>
+  ${GP.viewOnly ? '' : `<div class="eqc-box"><b>근력 기구 색</b>${ui.eqcRow()}</div>`}
   <div class="seg full pl-groups" id="plGroups">${PL_GROUPS.map(g => `<button data-grp="${g.id}" class="${g === grp ? 'on' : ''}">${g.id === 'mine' ? IC.star : ''}${g.name}</button>`).join('')}</div>
   <div class="pl-subs" id="plCats">${grp.cats.map(c => `<button class="pl-sub${pl.cat === c ? ' on' : ''}" data-cat="${c}">${U.esc(plCatName(c))}<em>${plCount(c)}</em></button>`).join('')}</div>
   <div class="grid" id="plGrid"></div>`;
@@ -244,7 +245,7 @@ flEl.addEventListener('change', e => { if (e.target.id === 'bpp') { GP.lib.defau
 
 /* ======================= QUOTE (full sheet) ======================= */
 const Q = GP.quote = {};
-Q.itemKey = it => { const d = GP.dims(it); return [it.type, U.cm(d.w), U.cm(d.d), U.cm(d.h), JSON.stringify(it.params || null)].join('|'); };
+Q.itemKey = it => { const d = GP.dims(it), c = GP.eqColor(it); return [it.type, U.cm(d.w), U.cm(d.d), U.cm(d.h), JSON.stringify(it.params || null), c && !c.plain ? c.key : ''].join('|'); };
 /* A price: this project's own (typed in this project, or fixed when its quote was sent), else this device's price list.
    So an old project keeps the prices it was quoted at when the price list changes later, and a project file carries its prices. */
 Q.libPrice = pk => { const lib = GP.lib, i = pk.indexOf(':'), kind = pk.slice(0, i), key = pk.slice(i + 1); return (kind === 'type' ? lib.prices[key] : kind === 'mat' ? lib.matPrices[key] : kind === 'trim' ? lib.trimPrices[key] : kind === 'part' ? lib.partPrices[key] : 0) || 0; };
@@ -259,7 +260,7 @@ Q.compute = () => {
   const eq = new Map();
   for (const it of L.items) { if (GP.info.NO_QUOTE.has(it.type)) continue; const k = Q.itemKey(it); const g = eq.get(k) || { type: it.type, it, n: 0 }; g.n++; eq.set(k, g); }
   const order = GP.CATS.map(c => c.id);
-  const eqRows = [...eq.values()].sort((a, b) => order.indexOf(GP.getDef(a.type).cat) - order.indexOf(GP.getDef(b.type).cat) || GP.typeName(a.type).localeCompare(GP.typeName(b.type), 'ko')).map(g => { const d = GP.dims(g.it); const pk = 'type:' + g.type; return { name: GP.typeName(g.type), spec: `${U.cm(d.w)}×${U.cm(d.d)}×${U.cm(d.h)}cm`, qty: g.n, unit: '대', price: Q.priceOf(pk), pk }; });
+  const eqRows = [...eq.values()].sort((a, b) => order.indexOf(GP.getDef(a.type).cat) - order.indexOf(GP.getDef(b.type).cat) || GP.typeName(a.type).localeCompare(GP.typeName(b.type), 'ko')).map(g => { const d = GP.dims(g.it); const pk = 'type:' + g.type; const ct = GP.eqColorText(g.it); return { name: GP.typeName(g.type), spec: `${U.cm(d.w)}×${U.cm(d.d)}×${U.cm(d.h)}cm${ct ? ' · ' + ct : ''}`, qty: g.n, unit: '대', price: Q.priceOf(pk), pk }; });
   if (eqRows.length) groups.push({ name: '운동기구·물품', rows: eqRows });
   const ms = GP.calc.matSummary(); const flRows = [];
   ms.blocks.forEach(b => flRows.push({ name: `${(GP.BLOCKS[b.block] || GP.BLOCKS.coat).name} 25T`, spec: '500×500mm', qty: b.count, unit: '장', price: Q.priceOf(`mat:${b.block}|25`), pk: `mat:${b.block}|25` }));
