@@ -168,8 +168,8 @@ T('dbrack3', '덤벨랙 (3단)', 'storage', 2.19, 0.71, 1.03, [1.5, 0, 0.3, 0.3]
 T('platetree', '원판 거치대', 'storage', 0.78, 0.6, 0.93, [0.6, 0.6, 0.6, 0.6], {heavy:true,kw:'원판 웨이트트리 plate tree'});
 T('barbellrack', '바벨 거치대', 'storage', 1.02, 0.86, 1.4, [0.6, 0.6, 0.3, 0.3], {heavy:true,kw:'바벨랙 바 거치대 barbell rack'});
 T('fixedbarbell', '고정식 바벨 랙', 'storage', 1.24, 0.94, 1.58, [1.2, 0, 0.3, 0.3], {heavy:true,kw:'고정식 바벨 fixed barbell'});
-T('kettlebell', '케틀벨 랙', 'storage', 1.4, 0.78, 1.01, [1, 0, 0.3, 0.3], {heavy:true,kw:'케틀벨 kettlebell'});
-T('medball', '메디신볼 랙', 'storage', 0.58, 0.38, 1.52, [0.8, 0, 0.3, 0.3], {heavy:true,kw:'메디신볼 월볼 medicine ball'});
+T('kettlebell', '케틀벨 랙', 'storage', 1.37, 0.76, 1.11, [1, 0, 0.3, 0.3], {heavy:true,kw:'케틀벨 kettlebell'});
+T('medball', '메디신볼 랙', 'storage', 0.43, 0.6, 1.5, [0.8, 0, 0.3, 0.3], {heavy:true,kw:'메디신볼 월볼 medicine ball'});
 T('platform', '데드리프트 플랫폼', 'storage', 2.4, 2.4, 0.05, [0.6, 0.6, 0.6, 0.6], {heavy:true,flat:true,surface:true,fit:'actual',kw:'플랫폼 데드리프트 역도 platform'});
 T('turf', '인조잔디 트랙', 'func', 8, 1.8, 0.02, [0, 0, 0, 0], {flat:true,fit:'actual',kw:'터프 썰매 잔디 turf'});
 T('sled', '슬레드', 'func', 0.66, 0.94, 0.78, [2, 0.5, 0.2, 0.2], {heavy:true,kw:'썰매 푸시 슬레드 sled'});
