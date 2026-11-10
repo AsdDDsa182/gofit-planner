@@ -268,7 +268,7 @@ checks.full = () => {
   // emergency exit: every machine reachable from a door through a passage of the minimum width; the longest way out
   const E = checks.egress = calc.egress(lib.defaults.aisleMin || .9);
   if (E) {
-    if (!E.doors) push('warn', 'exit', '출입문이 없어요. 문·창문 도구로 출입문을 넣으면 비상 동선을 점검해요');
+    if (!E.doors) push('warn', 'exit', GP.wiz && GP.wiz.on ? '출입문이 없어요. 4단계(문·천장)에서 출입문을 놓으면 비상 동선을 점검해요' : '출입문이 없어요. 공간 단계의 문·창문 도구로 출입문을 넣으면 비상 동선을 점검해요');
     else {
       if (E.blocked.length) push('err', 'exit', `출입문 앞을 막고 있어요: ${E.blocked.map(nameOf).join(', ')}`, E.blocked.map(it => it.uid), [E.blocked[0].x, E.blocked[0].z]);
       if (E.open && E.cut.length) push('warn', 'exit', `${E.cut.length}대는 출입문까지 ${Math.round((lib.defaults.aisleMin || .9) * 100)}cm 이상 통로가 이어지지 않아요: ${E.cut.slice(0, 4).map(nameOf).join(', ')}${E.cut.length > 4 ? ' 등' : ''}`, E.cut.map(it => it.uid), [E.cut[0].x, E.cut[0].z]);

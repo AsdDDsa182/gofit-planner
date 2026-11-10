@@ -20,7 +20,7 @@ M3.open = (it, tab) => {
   const type = it.type, def = GP.getDef(type) || {}, d = GP.dims(it), MD = GP.media;
   const has3d = GP.R3.ok && GP.R3.hasModel(type), photos = MD.photos(type), reg = MD.model(type), edit = !GP.viewOnly;
   if (!tab) tab = has3d ? '3d' : 'photo';
-  const info = `<div class="m3-info"><b>${U.esc(GP.itemName(it))}</b><small>${U.esc((GP.CATS.find(c => c.id === def.cat) || {}).name || '')} · ${U.cm(d.w)}×${U.cm(d.d)}×${U.cm(d.h)} cm${reg && !MD.remote ? ' · 직접 등록한 3D' : ''}</small>${GP.info.NO_QUOTE.has(type) ? '' : GP.info.priceLines(GP.lib.prices[type] || 0, 1)}</div>`;
+  const info = `<div class="m3-info"><b>${U.esc(GP.itemName(it))}</b><small>${U.esc((GP.CATS.find(c => c.id === def.cat) || {}).name || '')} · ${U.cm(d.w)}×${U.cm(d.d)}×${U.cm(d.h)} cm${reg && !MD.remote ? ' · 직접 등록한 3D' : ''}</small>${GP.info.NO_QUOTE.has(type) ? '' : GP.info.priceLines(GP.quote.priceOf('type:' + type), 1)}</div>`;
   const tabs = (has3d && photos.length) ? `<div class="m3tabs"><button data-m3tab="3d" class="${tab === '3d' ? 'on' : ''}">${GP.IC.cube} 3D 모델</button><button data-m3tab="photo" class="${tab === 'photo' ? 'on' : ''}">${GP.IC.image} 사진 ${photos.length}</button></div>` : '';
   let stageHtml;
   if (tab === '3d' && has3d) stageHtml = `<div class="m3"><canvas id="m3cv"></canvas><div class="m3-load" id="m3load"><div class="spinner"></div><span id="m3txt">3D 모델 불러오는 중…</span></div><p class="m3-cap">드래그로 돌려보기 · 휠·두 손가락으로 확대</p></div>`;

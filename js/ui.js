@@ -91,14 +91,14 @@ INFO.item = (it) => {
   const has3d = GP.R3.ok && GP.R3.hasModel(it.type), nph = GP.media.photos(it.type).length;
   const act = GP.viewOnly ? '눌러서' : '더블클릭하면';
   return `<div class="tip-h"><b>${U.esc(GP.itemName(it))}</b><small>${U.esc(cat)} · ${U.cm(d.w)}×${U.cm(d.d)}${def.hFromWall ? '' : '×' + U.cm(d.h)}cm${where}</small></div>`
-    + (INFO.NO_QUOTE.has(it.type) ? '' : INFO.priceLines(GP.lib.prices[it.type] || 0, 1))
+    + (INFO.NO_QUOTE.has(it.type) ? '' : INFO.priceLines(GP.quote.priceOf('type:' + it.type), 1))
     + `<div class="tip-f">${has3d ? `${IC.cube}<span>${act} 3D 모델 보기${nph ? ` · 사진 ${nph}장` : ''}</span>` : nph ? `${IC.image}<span>${act} 사진 ${nph}장 보기</span>` : GP.viewOnly ? '<span class="muted">3D 모델 준비 중</span>' : `<span class="muted">더블클릭해서 사진·3D 등록</span>`}</div>`;
 };
 INFO.mat = (m) => {
   const B = GP.BLOCKS[m.block] || GP.BLOCKS.coat, A = GP.calc.matArea(m), n = GP.calc.matBlocks(m), t = GP.calc.matTrims(m);
   const trimTxt = m.trim && m.trim !== 'none' ? `${GP.TRIMS[m.trim].replace('경사형 ', '')} · 일자 ${t.straight} · 모서리 ${t.outC} · 역모서리 ${t.inC}` : '마감재 없음';
   return `<div class="tip-h"><b>${U.esc(B.name)} 25T</b><small>${A.toFixed(1)}㎡ (${(A / U.PY).toFixed(1)}평) · 500×500 · ${n}장</small></div>`
-    + INFO.priceLines(GP.lib.matPrices[`${m.block}|25`] || 0, n, '장')
+    + INFO.priceLines(GP.quote.priceOf(`mat:${m.block}|25`), n, '장')
     + `<div class="tip-s">${trimTxt}</div>`;
 };
 INFO.opening = (o) => `<div class="tip-h"><b>${U.esc(GP.OPENINGS[o.kind] || '문')}</b><small>폭 ${U.cm(o.w)}cm${o.kind === 'window' ? ` · 높이 ${U.cm(o.h ?? 1.2)}cm` : ` · 높이 ${U.cm(o.h ?? 2.1)}cm`}</small></div>`;
@@ -217,8 +217,9 @@ $('#viewBtn').addEventListener('click', () => {
 /* help: shortcuts and the guide */
 $('#helpBtn').addEventListener('click', () => {
   const k = (keys, t) => `<div class="hk"><span>${keys.map(x => `<kbd>${x}</kbd>`).join(' ')}</span><em>${t}</em></div>`;
-  GP.popover($('#helpBtn'), `<div class="ph">마우스</div><div class="hks">${k(['끌기'], '기구 옮기기 · 빈 곳은 여러 개 선택')}${k(['오른쪽 버튼 끌기'], '화면 이동')}${k(['Space', '끌기'], '화면 이동')}${k(['휠'], '확대 · 축소')}${k(['더블클릭'], '기구 3D 모델 보기')}</div>
-    <div class="ph">키보드</div><div class="hks">${k(['R'], '90° 회전')}${k(['Q', 'E'], '15° 회전')}${k(['Del'], '삭제')}${k(['Ctrl', 'D'], '복제')}${k(['Ctrl', 'Z'], '되돌리기')}${k(['방향키'], '5cm 이동 (Shift 50cm)')}${k(['Esc'], '취소 · 선택 해제')}</div>
+  GP.popover($('#helpBtn'), `<div class="ph">마우스</div><div class="hks">${k(['끌기'], '기구 옮기기 · 빈 곳은 여러 개 선택')}${k(['Alt', '끌기'], '복제해서 옮기기')}${k(['Shift', '클릭'], '여러 개 골라 담기')}${k(['Ctrl', '클릭'], '그룹 안의 하나만 고르기')}${k(['오른쪽 버튼 끌기'], '화면 이동')}${k(['Space', '끌기'], '화면 이동')}${k(['휠'], '확대 · 축소')}${k(['더블클릭'], '기구 3D 모델 보기')}</div>
+    <div class="ph">키보드</div><div class="hks">${k(['R'], '90° 회전 (Shift: 반대로)')}${k(['Q', 'E'], '15° 회전 (Shift: 1°)')}${k(['W'], '가까운 벽에 붙이기')}${k(['Del'], '삭제')}${k(['Ctrl', 'D'], '복제')}${k(['Shift', 'D'], '같은 간격으로 하나 더')}${k(['Ctrl', 'C'], '복사')}${k(['Ctrl', 'V'], '붙여넣기')}${k(['Ctrl', 'A'], '모두 선택')}${k(['Ctrl', 'G'], '그룹으로 묶기 (Shift: 풀기)')}${k(['Ctrl', 'Z'], '되돌리기')}${k(['Ctrl', 'Y'], '다시 실행')}${k(['방향키'], '5cm 이동 (Shift 50cm)')}${k(['Esc'], '취소 · 선택 해제')}</div>
+    <div class="ph">터치 화면</div><div class="hks">${k(['한 손가락'], '끌어서 화면 이동 · 기구는 눌러서 끌기')}${k(['두 손가락'], '확대 · 축소')}</div>
     <hr><button class="mi" data-act="guide">${IC.help}<div><b>사용 가이드 다시 보기</b><small>3단계로 둘러보기</small></div></button>`, a => { if (a === 'guide') GP.panels.guide(); });
 });
 
@@ -228,7 +229,7 @@ const HINTS = {
   selectSpace: '벽·문·가벽을 <b>눌러서</b> 고쳐요',
   selectFloor: '고무블럭 구역을 <b>눌러서</b> 종류·마감재를 바꿔요',
   emptyPlace: '왼쪽 목록에서 기구를 <b>누른 뒤</b> 도면을 클릭해 놓아 보세요',
-  emptyFloor: '왼쪽 <b>방 전체</b>를 누르거나 <b>사각형</b>으로 구역을 그려 고무블럭을 깔아요',
+  emptyFloor: '왼쪽 <b>공간 전체</b>를 누르거나 <b>사각형</b>으로 구역을 그려 고무블럭을 깔아요',
   vertex: '꼭짓점·벽을 <b>끌어</b> 모양 바꾸기 · 길이·각도 숫자를 <b>눌러</b> 입력',
   part: '<b>클릭</b>으로 가벽 시작 · 계속 클릭해 꺾기 · <b>더블클릭</b>이나 <kbd>Enter</kbd>로 끝 · 숫자 입력 후 <kbd>Enter</kbd>로 길이 지정',
   opening: '벽이나 가벽 위를 <b>클릭</b>해서 놓기',
@@ -327,7 +328,7 @@ ui.renderSummary = () => {
   box.classList.toggle('mini', !open);
   box.innerHTML = open ? `<div class="sm-h"><b>견적 요약</b><span class="sm-acts"><button class="btn xs" id="smOpen">${IC.doc}견적서</button><button class="icon-btn ghost sm" id="smFold" title="접기" aria-label="접기">${IC.up}</button></span></div>
     <div class="kv"><span>부가세 별도</span><b>${U.won(R.supply)}원</b><span>부가세 포함</span><b class="big">${U.won(R.total)}원</b></div>
-    ${R.missing ? `<p class="sm-miss">가격 미입력 ${R.missing}개 · 견적서에서 입력</p>` : ''}
+    ${R.missing ? `<p class="sm-miss">단가 미입력 ${R.missing}개 · 견적서에서 입력</p>` : ''}
     <button class="sm-chk ${st}" id="checkBtn"><i></i>${errs + warns ? `확인할 점 ${errs + warns}개` : '배치 점검 이상 없음'}</button>`
     : `<button class="sm-mini" id="smFold" title="견적 요약 펼치기"><span>견적</span><b>${U.won(R.total)}원</b>${R.missing ? `<em>미입력 ${R.missing}</em>` : ''}${IC.down}</button><button class="sm-chk mini ${st}" id="checkBtn" title="배치 점검"><i></i>${errs + warns ? `확인 ${errs + warns}` : '이상 없음'}</button>`;
   const so = $('#smOpen'); if (so) so.onclick = () => ui.openQuote();
@@ -364,7 +365,7 @@ ui.renderInspector = () => {
   GP.fillIcons(insp); ui.renderSummary();
 };
 function head(title, sub, color, editable) { return `<div class="insp-h"><span class="dot" style="--c:${color || 'var(--muted)'}"></span><div class="insp-t">${editable ? `<input class="name" id="iName" value="${U.esc(title)}" title="이름 바꾸기">` : `<b style="font-size:15px">${U.esc(title)}</b>`}<small>${sub || ''}</small></div><button class="icon-btn ghost sm" data-act="close" aria-label="선택 해제">${IC.x}</button></div>`; }
-function priceBox(pk, price, label) { return `<div class="sec"><span class="lbl">${label || '단가 (부가세 별도)'}</span>${num('iPrice', price || '', 1000, '원', `min="0" placeholder="가격 미입력" data-pk="${pk}"`)}<small class="vat">${price ? `부가세 포함 ${U.won(Math.round(price * 1.1))}원` : '입력하면 이 기구 모두에 적용돼요'}</small></div>`; }
+function priceBox(pk, price, label) { return `<div class="sec"><span class="lbl">${label || '단가 (부가세 별도)'}</span>${num('iPrice', price || '', 1000, '원', `min="0" placeholder="단가 미입력" data-pk="${pk}"`)}<small class="vat">${price ? `부가세 포함 ${U.won(Math.round(price * 1.1))}원` : '입력하면 이 기구 모두에 적용돼요'}</small></div>`; }
 function inspItem(it) {
   const def = GP.getDef(it.type) || {}, d = GP.dims(it), mount = GP.mountOf(it), c = def.cl || {}, bad = GP.checks.conflicts.get(it.uid);
   const params = (def.params || []).map(q => { const v = (it.params || {})[q.k] ?? q.def; if (q.type === 'select') return `<label class="fld"><span>${q.label}</span><select data-param="${q.k}">${q.options.map(([k, l]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`; if (q.type === 'color') return `<label class="fld"><span>${q.label}</span><input type="color" data-param="${q.k}" value="${U.esc(String(v))}"></label>`; return `<label class="fld"><span>${q.label}</span><input type="number" data-param="${q.k}" min="${q.min}" max="${q.max}" step="${q.step}" value="${U.esc(String(v))}"></label>`; }).join('');
@@ -372,7 +373,7 @@ function inspItem(it) {
   insp.innerHTML = head(GP.itemName(it), `${U.esc(GP.typeName(it.type))} · ${U.cm(d.w)}×${U.cm(d.d)} cm`, `var(--cat-${def.cat || 'facility'})`, true)
     + (bad ? `<div class="insp-warn">${[bad.has('wall') ? '벽 밖으로 나갔어요' : '', bad.has('overlap') ? '다른 물건과 겹쳐요' : '', bad.has('part') ? '가벽과 겹쳐요' : ''].filter(Boolean).join(' · ')}</div>` : '')
     + `<button class="btn wide soft" data-act="model">${has3d ? IC.cube : IC.image}${has3d ? '3D 모델 보기' + (nph ? ` · 사진 ${nph}` : '') : nph ? `사진 ${nph}장 보기` : '사진·3D 파일 등록'}</button>`
-    + (INFO.NO_QUOTE.has(it.type) ? '' : priceBox('type:' + it.type, GP.lib.prices[it.type]))
+    + (INFO.NO_QUOTE.has(it.type) ? '' : priceBox('type:' + it.type, GP.quote.priceOf('type:' + it.type)))
     + `<div class="sec"><span class="lbl">크기 <a data-act="resetSize">기본 크기로</a></span><div class="row3"><label class="fld"><span>가로</span>${num('iW', U.cm(d.w), 5, 'cm', 'min="5"')}</label><label class="fld"><span>세로</span>${num('iD', U.cm(d.d), 5, 'cm', 'min="2"')}</label><label class="fld"><span>높이</span>${num('iH', U.cm(d.h), 5, 'cm', 'min="1"')}</label></div></div>`
     + (params ? `<div class="sec"><span class="lbl">모양</span><div class="row2">${params}</div></div>` : '')
     + `<div class="sec"><span class="lbl">방향</span><div class="rot-row"><button class="icon-btn" data-act="rotL" title="반시계 90° (Shift+R)">${IC.rotL}</button>${num('iRot', Math.round(it.rot * 10) / 10, 1, '°')}<button class="icon-btn" data-act="rotR" title="시계 90° (R)">${IC.rotR}</button></div></div>`
@@ -434,7 +435,7 @@ function inspMat(m) {
     + sizeBox(m)
     + `<div class="sec"><span class="lbl">고무블럭 종류</span><select id="mB">${Object.entries(GP.BLOCKS).map(([k, v]) => `<option value="${k}" ${m.block === k ? 'selected' : ''}>${v.name}</option>`).join('')}</select></div>`
     + `<div class="sec"><span class="lbl">마감재 (드러난 변에만)</span><div class="mount">${[['rubber', '고무'], ['alu', '알루미늄'], ['none', '없음']].map(([k, v]) => `<button class="${m.trim === k ? 'on' : ''}" data-act="mtrim" data-v="${k}">${v}</button>`).join('')}</div></div>`
-    + priceBox(`mat:${m.block}|25`, GP.lib.matPrices[`${m.block}|25`], '장당 단가 (부가세 별도)')
+    + priceBox(`mat:${m.block}|25`, GP.quote.priceOf(`mat:${m.block}|25`), '장당 단가 (부가세 별도)')
     + (GP.L().openings.some(o => GP.calc.doorMats(o).includes(m)) ? '<div class="sec"><p class="insp-warn" style="margin:0">문이 열리는 자리에 깔려 있어요. 문이 블럭에 걸릴 수 있어요.</p><button class="btn sm primary" data-act="mdoor">문 열리는 자리 비우기</button></div>' : '')
     + `<p class="note">벽에 붙은 변은 마감재가 빠지고, 드러난 변에만 자동으로 둘러요.</p><div class="acts"><button class="btn sm" data-act="msnap">벽에 딱 붙이기</button><button class="btn sm danger" data-act="odel">삭제</button></div>`;
 }
@@ -455,12 +456,16 @@ insp.addEventListener('change', e => GP.act.inspChange(e.target));
 insp.addEventListener('input', e => { if (['nT', 'rN', 'zN', 'iName'].includes(e.target.id)) GP.act.inspChange(e.target, true); });
 
 /* ---------------- checks popover ---------------- */
-function openChecks(refresh) {
+/* small screens hide the summary card: the top bar shows the number of things to check instead */
+function renderChkChip() { const c = $('#chkChip'); if (!c) return; const list = GP.checks.list || [], errs = list.filter(x => x.sev === 'err').length, warns = list.filter(x => x.sev === 'warn').length; c.hidden = GP.viewOnly || !(errs + warns); c.className = 'chkchip ' + (errs ? 'err' : 'warn'); c.textContent = `확인 ${errs + warns}`; }
+GP.on('checks', renderChkChip);
+$('#chkChip').addEventListener('click', () => { GP.checks.full(); openChecks(false, $('#chkChip')); });
+function openChecks(refresh, anchor) {
   const list = GP.checks.list || []; const order = { err: 0, warn: 1, info: 2 };
   const rows = list.slice().sort((a, b) => order[a.sev] - order[b.sev]).map(c => `<button class="chk ${c.sev}" data-act="chk" data-i="${list.indexOf(c)}"><i></i><span>${U.esc(c.msg)}</span></button>`).join('') || `<div class="chk ok"><i></i><span>확인할 문제가 없어요.</span></div>`;
   const html = `<div class="ph">배치 점검</div><div class="chk-list">${rows}</div><hr><div style="display:grid;grid-template-columns:1fr;gap:8px;padding:4px 8px 8px"><label class="fld"><span>통로 최소 폭</span><div class="unit"><input type="number" id="ckAisle" step="5" value="${Math.round((GP.lib.defaults.aisleMin || .9) * 100)}"><em>cm</em></div></label></div><button class="mi" data-act="aisleLayer"><div><b>${GP.S.layers.aisle ? '좁은 통로 표시 끄기' : '좁은 통로를 도면에 표시'}</b><small>통로 기준보다 좁은 곳을 빨갛게 칠해요</small></div></button>`;
   if (refresh) { pop.innerHTML = html; bindCk(); return; }
-  GP.popover($('#checkBtn'), html, (act, b) => {
+  GP.popover(anchor || $('#checkBtn'), html, (act, b) => {
     if (act === 'chk') { const c = list[+b.dataset.i]; if (c) { if (c.uids.length) ui.select(c.uids.map(u => ({ k: 'item', id: u }))); if (c.at) GP.S.focus(c.at); } return false; }
     if (act === 'aisleLayer') { GP.S.layers.aisle = !GP.S.layers.aisle; GP.checks.full(); GP.S.invalidate(); ui.renderLayers(); return false; }
     return true;

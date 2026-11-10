@@ -80,7 +80,7 @@ GH.connect = async (owner, repo, token) => {
     await api(repoPath());
     try { await api(repoPath() + '/git/ref/heads/main'); }
     catch (e) { if (e.status !== 409 && e.status !== 404) throw e; await api(repoPath() + '/contents/.nojekyll', { method: 'PUT', body: JSON.stringify({ message: '고핏 플래너 사진 저장소', content: '', branch: 'main' }) }); }
-    let pages = true; try { await api(repoPath() + '/pages'); } catch (e) { if (e.status !== 404) throw e; try { await api(repoPath() + '/pages', { method: 'POST', body: JSON.stringify({ source: { branch: 'main', path: '/' } }) }); } catch (e2) { pages = false; } }
+    let pages = true; try { await api(repoPath() + '/pages'); } catch (e) { if (e.status !== 404 && e.status !== 403) throw e; try { await api(repoPath() + '/pages', { method: 'POST', body: JSON.stringify({ source: { branch: 'main', path: '/' } }) }); } catch (e2) { pages = false; } }
     return { ok: true, pages };
   } catch (e) { GH.save(null); throw e; }
 };

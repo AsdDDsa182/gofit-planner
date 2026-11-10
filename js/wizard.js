@@ -45,13 +45,15 @@ W.go = (i, quiet) => {
 function render() {
   parkSpace(); const el = $('#wiz'), i = W.step, s = st(), last = i === STEPS.length - 1;
   el.innerHTML = `<div class="wz-head"><div class="wz-steps">${STEPS.map((x, k) => `<button class="wz-st${k === i ? ' on' : k <= (s.max || 0) ? ' done' : ''}" data-wgo="${k}" title="${x.t}"${k > (s.max || 0) + 1 ? ' disabled' : ''}>${k < i || (k <= (s.max || 0) && k !== i) ? '✓' : k + 1}</button>`).join('<i></i>')}</div>
-    <div class="wz-where"><b>${i + 1}. ${STEPS[i].t}</b><span>${i + 1} / ${STEPS.length}</span></div></div>
+    <div class="wz-where"><b>${i + 1}. ${STEPS[i].t}</b><span>${i + 1} / ${STEPS.length}</span></div>
+    ${GP.P.variants.length > 1 ? `<div class="seg sm full wz-vars" title="안(배치 대안) 바꾸기">${GP.P.variants.map((v, k) => `<button data-wvar="${k}" class="${k === GP.P.cur ? 'on' : ''}">${U.esc(v.name)}</button>`).join('')}</div>` : ''}</div>
     <div class="wz-body" id="wzBody"></div>
-    <div class="wz-foot">${i > 0 ? '<button class="btn" data-wnav="prev">← 이전</button>' : '<span></span>'}<button class="btn primary" data-wnav="next">${last ? '처음부터 다시 보기' : `다음: ${STEPS[i + 1].t} →`}</button></div>`;
+    <div class="wz-foot">${i > 0 ? '<button class="btn" data-wnav="prev">← 이전</button>' : '<span></span>'}${last ? '<button class="btn ghost" data-wnav="next">1단계부터 다시 보기</button>' : `<button class="btn primary" data-wnav="next">다음: ${STEPS[i + 1].t} →</button>`}</div>`;
   cur = R[STEPS[i].id]; cur.render($('#wzBody'));
 }
 $('#wiz').addEventListener('click', e => {
   const g = e.target.closest('[data-wgo]'); if (g && !g.disabled) { W.go(+g.dataset.wgo); return; }
+  const wv = e.target.closest('[data-wvar]'); if (wv) { W.lastAuto = null; ui.varPick(+wv.dataset.wvar); render(); return; }
   const n = e.target.closest('[data-wnav]'); if (!n) return;
   if (n.dataset.wnav === 'prev') W.go(W.step - 1);
   else if (cur && cur.next && cur.next() === false) return;
@@ -71,6 +73,7 @@ R.name = {
       <label class="fld"><span>고객사 <small class="note">(선택)</small></span><input id="wzC" value="${U.esc(P.client || '')}"></label>
       <label class="fld"><span>담당자 <small class="note">(선택)</small></span><input id="wzK" value="${U.esc(P.consultant || '')}"></label>`;
     b.oninput = () => { P.name = $('#wzN').value.trim() || '새 프로젝트'; P.client = $('#wzC').value.trim(); P.consultant = $('#wzK').value.trim(); ui.renderTop(); GP.emit('dirty'); };
+    b.onchange = () => GP.rememberMe();
   },
 };
 R.space = {
@@ -140,7 +143,7 @@ R.equip = {
   render(b) {
     const pk = picks(), types = Object.keys(GP.CAT).filter(k => GP.EQUIP_CATS.has(cat(k)) && !GP.lib.hidden.includes(k) && !(GP.getDef(k) || {}).flat);
     const n = Object.values(pk).reduce((a, v) => a + v, 0), A = Math.abs(G.area(GP.L().room.pts)) || 1;
-    let foot = 0, price = 0, missing = 0; for (const [k, v] of Object.entries(pk)) { const d = GP.getDef(k); if (!d || !v) continue; const c = d.cl || {}; foot += (d.w + (c.l || 0) / 2 + (c.r || 0) / 2) * (d.d + (c.f || 0) + (c.b || 0) / 2) * v; const p = GP.lib.prices[k] || 0; if (p) price += p * v; else missing++; }
+    let foot = 0, price = 0, missing = 0; for (const [k, v] of Object.entries(pk)) { const d = GP.getDef(k); if (!d || !v) continue; const c = d.cl || {}; foot += (d.w + (c.l || 0) / 2 + (c.r || 0) / 2) * (d.d + (c.f || 0) + (c.b || 0) / 2) * v; const p = GP.quote.priceOf('type:' + k); if (p) price += p * v; else missing++; }
     const pct = Math.round(foot / A * 100);
     const row = k => { const d = GP.getDef(k), v = pk[k] || 0; return `<div class="wz-eq${v ? ' on' : ''}"><img src="${GP.SYM.thumbUrl(k)}" alt="" loading="lazy"><span class="wz-eqn"><b>${U.esc(GP.typeName(k))}</b><small>${U.cm(d.w)}×${U.cm(d.d)}cm</small></span><button class="wz-pm" data-dec="${k}" aria-label="빼기"${v ? '' : ' disabled'}>−</button><b class="wz-cnt">${v}</b><button class="wz-pm" data-inc="${k}" aria-label="더하기">+</button></div>`; };
     const eqList = () => { const q = eqQ.trim().replace(/\s+/g, '').toLowerCase(); return q ? `<div class="wz-eqs">${types.filter(k => (GP.typeName(k) + (GP.getDef(k).kw || '')).replace(/\s+/g, '').toLowerCase().includes(q)).map(row).join('') || '<p class="note">찾는 기구가 없어요.</p>'}</div>`
@@ -164,7 +167,7 @@ R.equip = {
     b.oninput = e => { if (e.target.id === 'wzQ') { eqQ = e.target.value; const l = $('#wzEqList'); if (l) l.innerHTML = eqList(); } };
     if (!b._tg) { b._tg = true; b.addEventListener('toggle', e => { const g = e.target.dataset && e.target.dataset.eg; if (!g) return; if (e.target.open) eqOpen.add(g); else eqOpen.delete(g); }, true); }
   },
-  next() { const n = Object.values(picks()).reduce((a, v) => a + v, 0); if (!n) { GP.toast('기구를 하나 이상 골라 주세요. 기구 없이 넘어가려면 위쪽 단계 번호를 누르세요', { bad: true }); return false; } },
+  next() { const n = Object.values(picks()).reduce((a, v) => a + v, 0); if (!n) { GP.toast('기구 없이 바닥 단계로 넘어가요 (바닥 공사만 하는 경우)', { ms: 3500 }); W.go(6); return false; } },
 };
 
 /* ---------------- automatic layout ---------------- */
@@ -172,7 +175,7 @@ R.auto = {
   render(b) {
     const L = GP.L(), placed = L.items.filter(eqOnly), pk = picks(), want = Object.values(pk).reduce((a, v) => a + v, 0), res = W.lastAuto, df = diff();
     const list = (GP.checks.list || []).filter(c => c.sev !== 'info');
-    b.innerHTML = head('자동으로 놓아 볼게요', '고른 기구를 종류별로 모아서 벽을 따라 놓아요. 기구마다 필요한 운동 공간과 출입문 앞 통로를 비워 둬요.') +
+    b.innerHTML = head('자동으로 놓아 볼게요', '고른 기구를 종류별로 모아서 벽을 따라 놓아요. 기구마다 필요한 사용 공간과 출입문 앞 통로를 비워 둬요.') +
       `${placed.length && (df.more || df.extra) && !(res && res.failed.length >= df.more && !df.extra) ? `<div class="wz-res warn"><b>고른 기구와 도면이 달라요</b>${df.more && !(res && res.failed.length >= df.more) ? `<span>더 놓을 기구 ${df.more}대 · 지금 배치는 그대로 두고 빈자리에 놓을 수 있어요.</span>` : ''}${df.extra ? `<span>고른 개수보다 도면에 더 놓인 기구 ${df.extra}대 · 지우지 않고 그대로 둬요.</span>` : ''}<div class="row2">${df.more ? '<button class="btn sm primary" id="wzAdd">새로 고른 기구만 놓기</button>' : ''}<button class="btn sm" id="wzSync">고르기 목록을 도면에 맞추기</button></div></div>` : ''}
       <button class="btn ${placed.length ? '' : 'primary '}wide big" id="wzAuto">${placed.length ? '처음부터 다시 자동 배치하기' : `기구 ${want}대 자동 배치하기`}</button>
       ${res ? `<div class="wz-res${res.failed.length ? ' warn' : ''}"><b>${res.placed}대를 ${res.add ? '더 ' : ''}놓았어요</b>${res.failed.length ? `<span>공간이 부족해서 ${res.failed.length}대는 못 놓았어요: ${[...new Set(res.failed)].map(t => U.esc(GP.typeName(t))).join(', ')}</span><span>기구 수를 줄이거나, 전문가 모드에서 직접 놓아 보세요.</span>` : ''}</div>` : ''}
@@ -330,12 +333,17 @@ R.done = {
       <div class="wz-res${R0.missing ? ' warn' : ''}"><b>견적 ${U.won(R0.total)}원 <small>(부가세 포함)</small></b>${R0.missing ? `<span>단가가 없는 품목이 ${R0.missing}개 있어요.</span>` : ''}<button class="btn sm" id="wzQuote">${IC.doc}${R0.missing ? '단가 입력하기' : '견적서 보기'}</button></div>
       ${list.length ? `<div class="wz-list"><div class="wz-lh">확인할 점 ${list.length}개 <small>눌러서 위치 보기</small></div>${list.slice(0, 8).map((c, k) => `<button class="wz-li chk ${c.sev}" data-ck="${k}"><i></i><span>${U.esc(c.msg)}</span></button>`).join('')}</div>` : '<p class="wz-ok">배치 점검 결과 확인할 점이 없어요.</p>'}
       <div class="wz-send"><button class="btn primary" data-sd="link">${IC.link}고객용 링크 보내기</button><button class="btn" data-sd="proposal">${IC.pdf}제안서 PDF</button><button class="btn" data-sd="quote">${IC.pdf}견적서 PDF</button><button class="btn" data-sd="3d">${IC.cube}3D로 보기</button></div>
+      <div class="wz-more"><button class="btn sm" id="wzMore">${IC.share}다른 방법으로 보내기 ▾</button><button class="btn sm" data-sd="addvar">${IC.plus}다른 안(${String.fromCharCode(65 + GP.P.variants.length)}안) 만들기</button>${GP.P.variants.length > 1 ? `<button class="btn sm" data-sd="compare">안 비교</button>` : ''}<label class="btn sm file" style="position:relative;overflow:hidden">${IC.image}벽에 로고 붙이기<input type="file" id="wzLogo" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label></div>
+      <p class="note" style="margin:0">가격 없는 제안서 · 도면 이미지 · 인쇄용 PDF · 캐드 파일은 「다른 방법으로 보내기」에 있어요. 「다른 안 만들기」는 지금 배치를 복사해 비교할 안을 하나 더 만들어요.</p>
       <button class="btn ghost wide" data-sd="expert">${IC.gear}전문가 모드에서 더 다듬기</button>`;
+    b.onchange = e => { if (e.target.id === 'wzLogo') { const f = e.target.files[0]; e.target.value = ''; if (f) GP.panels.addLogo(f); } };
     b.onclick = e => {
       if (e.target.closest('#wzQuote')) { ui.openQuote(); return; }
+      const mo = e.target.closest('#wzMore'); if (mo) { GP.exp.menu(mo); return; }
       const c = e.target.closest('[data-ck]'); if (c) { const it = list[+c.dataset.ck]; if (it.uids.length) ui.select(it.uids.map(u => ({ k: 'item', id: u }))); if (it.at) GP.S.focus(it.at); return; }
       const s = e.target.closest('[data-sd]'); if (!s) return; const a = s.dataset.sd;
       if (a === 'link') GP.exp.shareDialog('link'); else if (a === 'proposal') GP.exp.proposalPdf(true); else if (a === 'quote') GP.exp.quotePdf(); else if (a === '3d') GP.V3.show(!GP.V3.on); else if (a === 'expert') W.setMode('expert');
+      else if (a === 'compare') GP.panels.compare(); else if (a === 'addvar') { ui.varPick('add'); W.lastAuto = null; render(); GP.toast(`${GP.P.variants[GP.P.cur].name}을 만들었어요 (지금 배치를 복사). 왼쪽 위에서 안을 오가며 고치고 비교해요`, { ms: 5000 }); }
     };
   },
   refresh() { R.done.render($('#wzBody')); },

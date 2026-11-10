@@ -56,7 +56,7 @@ app.newProject = async (w) => {
   else {
     let pts = GP.DEFAULT_ROOM.map(q => q.slice());
     if (w.mode === 'py') { const A = (w.py || 60) * U.PY, r = w.ratio || 1.5, d = U.snap(Math.sqrt(A / r), .05), wd = U.snap(d * r, .05); pts = [[0, 0], [wd, 0], [wd, d], [0, d]]; }
-    p = GP.newProject({ name: w.name || '새 프로젝트', pts }); p.client = w.client || ''; p.consultant = w.consultant || '';
+    p = GP.newProject({ name: w.name || '새 프로젝트', pts }); p.client = w.client || ''; p.consultant = w.consultant || ''; GP.fillMe(p);
   }
   if (w.name) p.name = w.name; if (w.client) p.client = w.client; if (w.consultant) p.consultant = w.consultant;
   const easy = GP.wiz && GP.wiz.mode() === 'easy' && !GP.viewOnly;
@@ -130,7 +130,7 @@ $('#menuBtn').addEventListener('click', () => {
     if (a === 'projects') GP.panels.projects(); else if (a === 'new') GP.panels.wizard(); else if (a === 'sample') app.openSample(); else if (a === 'info') GP.panels.editProjectInfo(); else if (a === 'versions') GP.panels.versions(); else if (a === 'compare') GP.panels.compare();
     else if (a === 'save') GP.backup.sendProject(); else if (a === 'open') $('#fileOpen').click(); else if (a === 'settings') GP.panels.settings(); else if (a === 'guide') GP.panels.guide();
     else if (a === 'install') { app.installEvt.prompt(); app.installEvt.userChoice.finally(() => { app.installEvt = null; }); }
-    else if (a === 'installHelp') GP.modal('앱으로 설치하기', `<p class="note" style="font-size:13.5px;line-height:1.7"><b>PC (크롬·엣지)</b>: 주소창 오른쪽의 설치 아이콘(모니터에 화살표)을 누르거나, 메뉴 ⋮ → <b>앱 설치</b>를 누르세요.<br><b>아이패드·아이폰 (사파리)</b>: 공유 버튼 → <b>홈 화면에 추가</b>.<br><b>안드로이드 (크롬)</b>: 메뉴 ⋮ → <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>.<br><br>설치한 뒤에는 인터넷이 없는 현장에서도 그대로 쓸 수 있어요. 3D 모델은 <b>설정 → 3D 모델·오프라인</b>에서 미리 받아 두세요.</p>`, '<button class="btn primary" data-close>확인</button>', { size: 'narrow' });
+    else if (a === 'installHelp') GP.modal('앱으로 설치하기', `<p class="note" style="font-size:13.5px;line-height:1.7"><b>PC (크롬·엣지)</b>: 주소창 오른쪽의 설치 아이콘(모니터에 화살표)을 누르거나, 메뉴 ⋮ → <b>앱 설치</b>를 누르세요.<br><b>아이패드·아이폰 (사파리)</b>: 공유 버튼 → <b>홈 화면에 추가</b>.<br><b>안드로이드 (크롬)</b>: 메뉴 ⋮ → <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>.<br><br>설치한 뒤에는 인터넷이 없는 현장에서도 그대로 쓸 수 있어요. 3D 모델은 <b>설정 → 사진·3D 저장소</b>에서 미리 받아 두세요.</p>`, '<button class="btn primary" data-close>확인</button>', { size: 'narrow' });
   });
 });
 $('#fileOpen').addEventListener('change', e => { const f = e.target.files[0]; e.target.value = ''; if (f) GP.backup.openFile(f); });
@@ -148,8 +148,8 @@ app.welcome = () => {
   let done = false;
   const start = async () => {
     if (done) return; done = true;
-    const nm = ($('#wcName') || {}).value, cl = ($('#wcClient') || {}).value;
-    GP.P.name = (nm || '').trim() || '새 프로젝트'; GP.P.client = (cl || '').trim(); delete GP.P.unnamed;
+    const nm = ($('#wcName') || {}).value, cl = ($('#wcClient') || {}).value, me = ($('#wcMe') || {}).value;
+    GP.P.name = (nm || '').trim() || '새 프로젝트'; GP.P.client = (cl || '').trim(); if (me != null) GP.P.consultant = me.trim(); GP.rememberMe(); delete GP.P.unnamed;
     GP.modalOnClose = null; GP.closeModal();
     await GP.saveProject(); await GP.DB.put('kv', 'lastProject', GP.P.id);
     ui.renderTop();
@@ -161,6 +161,7 @@ app.welcome = () => {
   GP.modal('고핏 플래너 시작하기', `<div class="wiz"><p class="note">프로젝트 이름을 정하면 기본 공간(가로 10m × 세로 8m)이 깔린 상태로 시작해요. 공간의 크기와 모양은 바로 다음 화면에서 바꿀 수 있어요.</p>
     <label class="fld"><span>프로젝트 이름</span><input id="wcName" placeholder="예: 강남 ○○피트니스" maxlength="60" autofocus></label>
     <label class="fld"><span>고객사 <small class="note">(선택)</small></span><input id="wcClient" maxlength="60"></label>
+    <label class="fld"><span>담당자 (내 이름) <small class="note">(선택 · 견적서에 들어가요)</small></span><input id="wcMe" maxlength="40" value="${U.esc((GP.lib.me || {}).name || '')}"></label>
     <button class="btn ghost sm" id="wcSample" type="button">${IC.folder}<span>먼저 예시 프로젝트 둘러보기</span></button></div>`,
     `<button class="btn primary" id="wcGo">시작하기</button>`, { size: 'narrow', onClose: start });
   $('#wcGo').onclick = start;
@@ -175,7 +176,7 @@ async function viewerPayload() {
   return null;
 }
 function projectFromPayload(pl) {
-  const p = GP.newProject({ name: pl.n || '공간 배치안' }); p.client = pl.c || ''; p.consultant = pl.k || ''; p.settings = Object.assign(p.settings, pl.s || {});
+  const p = GP.newProject({ name: pl.n || '공간 배치안' }); p.client = pl.c || ''; p.consultant = pl.k || ''; p.consTel = pl.kt || ''; p.consEmail = pl.ke || ''; p.settings = Object.assign(p.settings, pl.s || {});
   p.variants = [{ id: 'v1', name: pl.var || 'A안', layout: Object.assign(GP.newLayout(), pl.L || {}) }];
   Object.assign(GP.lib.customTypes, pl.ct || {}); Object.assign(GP.lib.names, pl.nm || {}); if (pl.co) GP.lib.company.name = pl.co;
   GP.lib.prices = Object.assign({}, pl.pr || {}); GP.lib.matPrices = Object.assign({}, pl.mp || {}); GP.media.remote = pl.md || {};
@@ -184,7 +185,7 @@ function projectFromPayload(pl) {
 function viewerQuote(q) {
   const rows = q.g.map(g => `<tr class="grp"><td colspan="5">${U.esc(g.n)}</td></tr>` + g.r.map(r => `<tr><td>${U.esc(r[0])}</td><td class="c">${U.esc(r[1])}</td><td class="n">${U.esc(String(r[2]))} ${U.esc(r[3])}</td><td class="n">${r[4] ? U.won(r[4]) : '-'}</td><td class="n">${r[4] ? U.won(r[5]) : '-'}</td></tr>`).join('')).join('');
   const meta = [q.no ? `견적 번호 ${q.no}` : '', q.d ? `견적일 ${q.d}` : '', q.vd ? `${q.vd}까지 유효` : ''].filter(Boolean).map(U.esc).join(' · ');
-  const who = [GP.lib.company.name, GP.P.consultant ? `담당 ${GP.P.consultant}` : '', q.tel, q.em].filter(Boolean).map(U.esc).join(' · '), tel = String(q.tel || '').replace(/[^\d+]/g, '');
+  const who = [GP.lib.company.name, GP.P.consultant ? `담당자 ${GP.P.consultant}` : '', GP.P.consTel || q.tel, GP.P.consEmail || q.em].filter(Boolean).map(U.esc).join(' · '), tel = String(GP.P.consTel || q.tel || '').replace(/[^\d+]/g, '');
   GP.modal('견적', `<div class="qdoc" style="padding:20px;box-shadow:none">${meta ? `<div class="qmeta">${meta}</div>` : ''}<div class="qsum"><span>합계 (부가세 포함)</span><b>₩ ${U.won(q.total)}</b></div><table class="qtbl"><thead><tr><th>품목</th><th>규격</th><th>수량</th><th>단가</th><th>금액</th></tr></thead><tbody>${rows}</tbody></table>
     <div class="qtot">${q.disc ? `<span>소계</span><b>${U.won(q.sub)}원</b><span>할인</span><b>-${U.won(q.disc)}원</b>` : ''}<span>부가세 별도</span><b>${U.won(q.supply)}원</b><span>부가세</span><b>${U.won(q.vat)}원</b><span class="big">부가세 포함</span><b class="big">${U.won(q.total)}원</b></div>${q.note ? `<div class="qnote">${U.esc(q.note)}</div>` : ''}${who ? `<div class="qmeta" style="margin-top:14px">${who}</div>` : ''}</div>`,
     `${tel ? `<a class="btn" href="tel:${tel}">담당자에게 전화</a>` : ''}<button class="btn primary" data-close>닫기</button>`, { size: 'wide' });
@@ -212,7 +213,7 @@ app.boot = async () => {
   ui.step = 'place';
   /* first visit (or only the sample so far): a plain room under the name dialog; it is saved once named */
   const fresh = !p || (app.isSample(p) && !(await GP.listProjects()).some(r => !app.isSample(r.data)));
-  if (fresh) { p = GP.newProject({ name: '새 프로젝트' }); Object.defineProperty(p, 'unnamed', { value: true, writable: true, configurable: true }); ui.step = 'space'; }
+  if (fresh) { p = GP.fillMe(GP.newProject({ name: '새 프로젝트' })); Object.defineProperty(p, 'unnamed', { value: true, writable: true, configurable: true }); ui.step = 'space'; }
   await app.loadProject(p);
   S.frame(); GP.emit('booted');
   if (fresh) app.welcome();

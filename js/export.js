@@ -91,8 +91,8 @@ function quotePages(R, opt) {
   const first = () => {
     x.fillStyle = '#1B2024'; x.textAlign = 'center'; x.font = `800 ${mm(9)}px ${FONT}`; x.fillText('견   적   서', W / 2, mm(24));
     const box = (bx, by, bw, rows) => { x.strokeStyle = '#cfd4d1'; x.lineWidth = mm(.3); rr(x, bx, by, bw, mm(7) * rows.length + mm(4), mm(1.5)); x.stroke(); rows.forEach(([k, v], i) => { x.textAlign = 'left'; x.fillStyle = '#6b747c'; x.font = `500 ${mm(3.1)}px ${FONT}`; x.fillText(k, bx + mm(3), by + mm(7) * (i + 1)); x.fillStyle = '#1B2024'; x.font = `700 ${mm(3.2)}px ${FONT}`; x.fillText(fit(x, v, bw - mm(28)), bx + mm(24), by + mm(7) * (i + 1)); }); };
-    const recv = [['수신', P.client ? `${P.client} 귀하` : '귀하'], ['프로젝트', P.name], ['견적 번호', GP.quote.no()], ['견적일', GP.quote.issued()], ['유효기간', `${GP.quote.validUntil()}까지`]];
-    const sup = [['공급자', co.name || 'GOFIT KOREA'], ['대표', co.ceo || '-'], ['사업자번호', co.bizNo || '-']].concat(co.addr ? [['주소', co.addr]] : [], [['연락처', co.tel || '-']], co.email ? [['이메일', co.email]] : [], [['담당', P.consultant || '-']]);
+    const recv = [['수신', P.client ? `${P.client} 귀하` : '귀하']].concat(P.custName || P.custTel ? [['고객 담당', [P.custName, P.custTel].filter(Boolean).join(' · ')]] : [], P.siteAddr ? [['현장', P.siteAddr]] : [], [['프로젝트', P.name], ['견적 번호', GP.quote.no()], ['견적일', GP.quote.issued()], ['유효기간', `${GP.quote.validUntil()}까지`]]);
+    const sup = [['공급자', co.name || 'GOFIT KOREA'], ['대표', co.ceo || '-'], ['사업자번호', co.bizNo || '-']].concat(co.addr ? [['주소', co.addr]] : [], [['연락처', co.tel || '-']], co.email ? [['이메일', co.email]] : [], [['담당자', [P.consultant, P.consTel].filter(Boolean).join(' · ') || '-']]);
     box(mm(12), mm(32), mm(90), recv); box(mm(108), mm(32), mm(90), sup);
     y = mm(32) + mm(7) * Math.max(recv.length, sup.length) + mm(9); x.strokeStyle = '#1B2024'; x.lineWidth = mm(.6); x.beginPath(); x.moveTo(mm(12), y); x.lineTo(W - mm(12), y); x.stroke();
     x.textAlign = 'left'; x.font = `600 ${mm(3.6)}px ${FONT}`; x.fillStyle = '#1B2024'; x.fillText('합계 금액 (부가세 포함)', mm(14), y + mm(8)); x.textAlign = 'right'; x.font = `800 ${mm(6)}px ${FONT}`; x.fillText(`₩ ${U.won(R.total)}`, W - mm(14), y + mm(9)); y += mm(13); x.lineWidth = mm(.3); x.beginPath(); x.moveTo(mm(12), y); x.lineTo(W - mm(12), y); x.stroke(); y += mm(4);
@@ -122,14 +122,21 @@ function quotePages(R, opt) {
   if (!opt.noFooter) footer(pg, pages.length + 1, 0); pages.push(pg);
   return pages;
 }
-exp.quotePdf = async () => { GP.busy(true, '견적서 PDF 만드는 중…'); await new Promise(r => setTimeout(r, 30)); try { const pages = quotePages(GP.quote.compute()); const blob = await exp.pdf(pages); U.download(blob, U.fileSafe(GP.P.name) + '_견적서.pdf'); GP.toast('견적서 PDF를 저장했어요'); } catch (e) { console.error(e); GP.toast('PDF를 만들지 못했어요', { bad: true }); } finally { GP.busy(false); } };
+/* asks once when prices are missing or the plan has errors; resolves false when the user would rather fix them first */
+exp.preflight = async (withPrice) => {
+  if (GP.viewOnly) return true; GP.checks.full(); const miss = withPrice ? GP.quote.compute().missing : 0, errs = (GP.checks.list || []).filter(c => c.sev === 'err').length; if (!miss && !errs) return true;
+  const say = []; if (miss) say.push(`단가를 넣지 않은 품목이 ${miss}개 있어요 (0원으로 나가요)`); if (errs) say.push(`도면에 고칠 점이 ${errs}개 있어요 (겹침 · 벽 밖 등)`);
+  return GP.confirm(`${say.join(' · ')}. 그래도 만들까요?`, '그대로 만들기');
+};
+exp.quotePdf = async () => { if (!(await exp.preflight(true))) return; GP.busy(true, '견적서 PDF 만드는 중…'); await new Promise(r => setTimeout(r, 30)); try { GP.quote.issue('견적서 PDF'); const pages = quotePages(GP.quote.compute()); const blob = await exp.pdf(pages); U.download(blob, U.fileSafe(GP.P.name) + '_견적서.pdf'); GP.toast('견적서 PDF를 저장했어요'); } catch (e) { console.error(e); GP.toast('PDF를 만들지 못했어요', { bad: true }); } finally { GP.busy(false); } };
 exp.planPdf = async (size, o) => {
   o = o || {}; GP.busy(true, '인쇄용 도면 만드는 중…'); await GP.SYM.ready; await new Promise(r => setTimeout(r, 30));
   try { const dims = size === 'A3' ? [420, 297] : [297, 210]; const pg = page(dims[0], dims[1], size === 'A3' ? 150 : 200); const img = exp.planImage(pg.W, pg.H, o); pg.x.drawImage(img, 0, 0); titleBlock(pg.x, pg.W, pg.H, pg.H / 900, { sub: `평면도 · ${size}` }); const blob = await exp.pdf([pg]); U.download(blob, `${U.fileSafe(GP.P.name)}_도면_${size}.pdf`); GP.toast('인쇄용 도면 PDF를 저장했어요'); }
   catch (e) { console.error(e); GP.toast('PDF를 만들지 못했어요', { bad: true }); } finally { GP.busy(false); }
 };
 exp.proposalPdf = async (withPrice) => {
-  if (withPrice == null) withPrice = true;
+  if (withPrice == null) withPrice = true; if (!(await exp.preflight(withPrice))) return;
+  if (withPrice) GP.quote.issue('제안서 PDF'); else if (!GP.viewOnly) GP.addVersion('보냄 · 제안서 PDF (가격 없이)');
   GP.busy(true, '제안서 만드는 중…', 0); await GP.SYM.ready; await new Promise(r => setTimeout(r, 30));
   try {
     const pages = [], L = GP.L(), P = GP.P;
@@ -157,7 +164,7 @@ exp.proposalPdf = async (withPrice) => {
     pg = page(297, 210, 150); header(pg, '기구 목록 · 면적 요약', U.today()); const { x, mm } = pg; let y = mm(34);
     const occ = GP.calc.occupancy(), A = Math.abs(G.area(L.room.pts)); const pc = v => Math.round(v / (occ.room || 1) * 100);
     x.textAlign = 'left'; x.fillStyle = '#1B2024'; x.font = `700 ${mm(4)}px ${FONT}`; x.fillText('면적', mm(14), y); y += mm(7);
-    [[`전체 면적`, `${A.toFixed(1)}㎡ · ${(A / U.PY).toFixed(1)}평`], ['기구가 차지하는 면적', `${occ.foot.toFixed(1)}㎡ · ${pc(occ.foot)}%`], ['운동 존 · 안전 여유공간', `${Math.max(0, occ.used - occ.foot).toFixed(1)}㎡ · ${pc(occ.used - occ.foot)}%`], ['남는 동선 · 빈 공간', `${Math.max(0, occ.room - occ.used).toFixed(1)}㎡ · ${pc(occ.room - occ.used)}%`]].forEach(([k, v]) => { x.font = `500 ${mm(3.3)}px ${FONT}`; x.fillStyle = '#48515a'; x.fillText(k, mm(14), y); x.fillStyle = '#1B2024'; x.font = `600 ${mm(3.3)}px ${MONO}`; x.fillText(v, mm(80), y); y += mm(6.5); });
+    [[`전체 면적`, `${A.toFixed(1)}㎡ · ${(A / U.PY).toFixed(1)}평`], ['기구가 차지하는 면적', `${occ.foot.toFixed(1)}㎡ · ${pc(occ.foot)}%`], ['기구 사용 공간', `${Math.max(0, occ.used - occ.foot).toFixed(1)}㎡ · ${pc(occ.used - occ.foot)}%`], ['남는 동선 · 빈 공간', `${Math.max(0, occ.room - occ.used).toFixed(1)}㎡ · ${pc(occ.room - occ.used)}%`]].forEach(([k, v]) => { x.font = `500 ${mm(3.3)}px ${FONT}`; x.fillStyle = '#48515a'; x.fillText(k, mm(14), y); x.fillStyle = '#1B2024'; x.font = `600 ${mm(3.3)}px ${MONO}`; x.fillText(v, mm(80), y); y += mm(6.5); });
     y += mm(4); const ms = GP.calc.matSummary(); if (ms.blocks.length) { x.font = `700 ${mm(4)}px ${FONT}`; x.fillStyle = '#1B2024'; x.fillText('바닥 (고무블럭 · 마감재)', mm(14), y); y += mm(7); ms.blocks.forEach(b => { x.font = `500 ${mm(3.2)}px ${FONT}`; x.fillStyle = '#48515a'; x.fillText(`${GP.BLOCKS[b.block].name} 25T`, mm(14), y); x.fillStyle = '#1B2024'; x.font = `600 ${mm(3.2)}px ${MONO}`; x.fillText(`${b.count}장 (${b.area.toFixed(1)}㎡)`, mm(80), y); y += mm(6); }); ms.trims.forEach(t => { x.font = `500 ${mm(3.2)}px ${FONT}`; x.fillStyle = '#48515a'; x.fillText(`${GP.TRIMS[t.trim]} 25T`, mm(14), y); x.fillStyle = '#1B2024'; x.font = `600 ${mm(3.2)}px ${MONO}`; x.fillText(`일자 ${t.straight} · 모서리 ${t.outC} · 역모서리 ${t.inC}`, mm(80), y); y += mm(6); }); }
     // equipment table (right column)
     const R = GP.quote.compute(); const eqG = R.groups.find(g => g.name === '운동기구·물품'); let yy = mm(34); const X0 = mm(160);
@@ -181,10 +188,10 @@ exp.payload = (o) => {
   const ct = {}; L.items.forEach(it => { if (String(it.type).startsWith('c_') && GP.lib.customTypes[it.type]) ct[it.type] = GP.lib.customTypes[it.type]; });
   const names = {}; L.items.forEach(it => { if (GP.lib.names[it.type]) names[it.type] = GP.lib.names[it.type]; });
   const md = GP.media.forPayload([...new Set(L.items.map(i => i.type))]);
-  const out = { v: 2, md, n: P.name, c: P.client, k: P.consultant, s: P.settings, L, ct, nm: names, co: GP.lib.company.name, d: U.today(), var: P.variants.length > 1 ? P.variants[P.cur].name : '' };
+  const out = { v: 2, md, n: P.name, c: P.client, k: P.consultant, kt: P.consTel || '', ke: P.consEmail || '', s: P.settings, L, ct, nm: names, co: GP.lib.company.name, d: U.today(), var: P.variants.length > 1 ? P.variants[P.cur].name : '' };
   if (o.price) {
-    const pr = {}; L.items.forEach(it => { if (GP.lib.prices[it.type]) pr[it.type] = GP.lib.prices[it.type]; });
-    const mp = {}; L.mats.forEach(m => { const k = m.block + '|25'; if (GP.lib.matPrices[k]) mp[k] = GP.lib.matPrices[k]; });
+    const pr = {}; L.items.forEach(it => { const v = GP.quote.priceOf('type:' + it.type); if (v) pr[it.type] = v; });
+    const mp = {}; L.mats.forEach(m => { const k = m.block + '|25', v = GP.quote.priceOf('mat:' + k); if (v) mp[k] = v; });
     const R = GP.quote.compute(); out.pr = pr; out.mp = mp;
     out.q = { g: R.groups.map(g => ({ n: g.name, r: g.rows.map(r => [r.name, r.spec, r.qty, r.unit, r.price, r.amount]) })), sub: R.sub, disc: R.disc, supply: R.supply, vat: R.vat, total: R.total, no: GP.quote.no(), note: GP.L().quote.note || '', d: GP.quote.issued(), vd: GP.quote.validUntil(), tel: GP.lib.company.tel || '', em: GP.lib.company.email || '' };
   }
@@ -219,7 +226,7 @@ exp.htmlFile = async (o) => {
 };
 
 /* ---------------- share menu ---------------- */
-exp.menu = () => {
+exp.menu = (anchor) => {
   const html = `<div class="ph">고객에게 보내기</div>
   <button class="mi" data-act="link">${IC.link}<div><b>고객용 링크</b><small>휴대폰·PC에서 도면 보기 · 누르면 3D 모델 · 가격 표시 선택</small></div></button>
   <button class="mi" data-act="proposal">${IC.pdf}<div><b>제안서 PDF</b><small>평면도 · 3D 이미지 · 기구 목록 · 견적서</small></div></button>
@@ -233,20 +240,20 @@ exp.menu = () => {
   <button class="mi" data-act="print">${IC.pdf}<div><b>인쇄용 도면 PDF</b><small>A3 · A4 · 흑백</small></div></button>
   <button class="mi" data-act="html">${IC.html}<div><b>HTML 파일</b><small>링크 대신 파일로 보낼 때 (예비용)</small></div></button>
   <button class="mi" data-act="dxf">${IC.cad}<div><b>캐드 파일 (DXF)</b><small>오토캐드에서 열기 · mm 단위</small></div></button>`;
-  GP.popover($('#shareBtn'), html, (a) => {
+  GP.popover(anchor || $('#shareBtn'), html, (a) => {
     if (a === 'png') exp.imageDialog(); else if (a === 'png3d') exp.image3dDialog(); else if (a === 'proposal') exp.proposalPdf(true); else if (a === 'proposalNP') exp.proposalPdf(false); else if (a === 'quote') exp.quotePdf(); else if (a === 'dxf') exp.dxfExport();
     else if (a === 'gofit') GP.backup.sendProject();
     else if (a === 'print') exp.printDialog(); else if (a === 'link' || a === 'html') exp.shareDialog(a);
   });
 };
 exp.printDialog = () => {
-  GP.modal('인쇄용 도면 PDF', `<div class="row2"><div class="fld"><span>용지</span><div class="seg full" id="prSize"><button data-v="A3" class="on">A3 가로</button><button data-v="A4">A4 가로</button></div></div><div class="fld"><span>표시</span><div class="seg full" id="prStyle"><button data-v="color" class="${GP.S.style === 'line' ? '' : 'on'}">컬러</button><button data-v="gray">흑백</button><button data-v="line" class="${GP.S.style === 'line' ? 'on' : ''}">선만(CAD)</button></div></div></div><label class="tg" style="justify-content:flex-start" id="prClear"><i></i>기구 사용 공간(여유공간) 표시</label><p class="note">치수·기구 이름·고무블럭 장수·도면 정보가 함께 들어가요.</p>`, `<button class="btn" data-close>취소</button><button class="btn primary" id="prGo">PDF 저장</button>`, { size: 'narrow' });
+  GP.modal('인쇄용 도면 PDF', `<div class="row2"><div class="fld"><span>용지</span><div class="seg full" id="prSize"><button data-v="A3" class="on">A3 가로</button><button data-v="A4">A4 가로</button></div></div><div class="fld"><span>표시</span><div class="seg full" id="prStyle"><button data-v="color" class="${GP.S.style === 'line' ? '' : 'on'}">컬러</button><button data-v="gray">흑백</button><button data-v="line" class="${GP.S.style === 'line' ? 'on' : ''}">선만(CAD)</button></div></div></div><label class="tg" style="justify-content:flex-start" id="prClear"><i></i>기구 사용 공간 표시</label><p class="note">치수·기구 이름·고무블럭 장수·도면 정보가 함께 들어가요.</p>`, `<button class="btn" data-close>취소</button><button class="btn primary" id="prGo">PDF 저장</button>`, { size: 'narrow' });
   const pick = id => { const el = $('#' + id); el.onclick = e => { const b = e.target.closest('[data-v]'); if (!b) return; [...el.children].forEach(c => c.classList.toggle('on', c === b)); }; }; pick('prSize'); pick('prStyle');
   let clear = false; $('#prClear').onclick = e => { e.preventDefault(); clear = !clear; $('#prClear').classList.toggle('on', clear); };
   $('#prGo').onclick = () => { const size = $('#prSize .on').dataset.v, sv = $('#prStyle .on').dataset.v; GP.closeModal(); exp.planPdf(size, { gray: sv === 'gray', style: sv === 'line' ? 'line' : 'color', clear }); };
 };
-exp.shareDialog = (kind) => {
-  const isLink = kind === 'link';
+exp.shareDialog = async (kind) => {
+  if (!(await exp.preflight(true))) return; const isLink = kind === 'link';
   GP.modal(isLink ? '고객용 링크' : 'HTML 파일', `<p class="note">${isLink ? '링크를 받은 고객은 휴대폰·PC에서 도면을 직접 확대해 보고, 기구에 마우스를 올리거나 누르면 이름·가격과 3D 모델을 볼 수 있어요. 편집은 할 수 없어요.' : '파일 하나로 도면 보기가 들어가요. 받은 사람은 더블클릭해서 열어요. 3D 모델은 인터넷이 될 때 보여요.'}</p>
    <label class="tg on" style="justify-content:flex-start" id="shPrice"><i></i><span><b>가격 표시</b> <small class="note">(끄면 가격 없이 보내요)</small></span></label>
    <label class="tg" style="justify-content:flex-start" id="shNotes"><i></i>메모 포함 (내부용 메모는 빼는 게 좋아요)</label>
@@ -256,6 +263,7 @@ exp.shareDialog = (kind) => {
   $('#shPrice').onclick = e => { e.preventDefault(); price = !price; $('#shPrice').classList.toggle('on', price); };
   $('#shNotes').onclick = e => { e.preventDefault(); notes = !notes; $('#shNotes').classList.toggle('on', notes); };
   $('#shGo').onclick = async () => {
+    if (price) GP.quote.issue(isLink ? '고객용 링크' : 'HTML 파일'); else GP.addVersion(`보냄 · ${isLink ? '고객용 링크' : 'HTML 파일'} (가격 없이)`);
     if (!isLink) { GP.closeModal(); await exp.syncMediaFirst(); exp.htmlFile({ price, notes }); return; }
     await exp.syncMediaFirst(); const url = await exp.shareLink({ price, notes }); $('#shOut').value = url; const ok = await U.copyText(url); GP.toast(ok ? `링크를 복사했어요 · ${price ? '가격 표시' : '가격 숨김'}` : '링크를 선택해서 복사해 주세요'); $('#shOut').select();
   };
@@ -316,7 +324,7 @@ exp.parseDxf = (txt) => {
 /* ---------------- project file (.gofit) ---------------- */
 exp.saveProjectFile = () => { const p = GP.projectPayload(); U.download(new Blob([JSON.stringify(p)], { type: 'application/json' }), U.fileSafe(p.name) + '.gofit'); GP.toast('프로젝트 파일을 저장했어요. 다른 PC에서 메뉴 → 프로젝트 파일 열기로 불러와요'); };
 exp.openProjectFile = async (f) => {
-  try { const o = JSON.parse(await U.readFile(f, 'text')); const p = GP.validateProject(o); if (!p) throw 0; const ex = await GP.DB.get('projects', p.id); if (ex) { p.id = U.uid('p'); p.name += ' (사본)'; } if (GP.P && !GP.viewOnly) await GP.app.saveNow(); await GP.app.loadProject(p); await GP.saveProject(); GP.toast(ex ? `같은 프로젝트가 이미 있어서 '${p.name}'(으)로 열었어요` : `'${p.name}' 프로젝트를 열었어요`); }
+  try { const o = JSON.parse(await U.readFile(f, 'text')); const p = GP.validateProject(o); if (!p) throw 0; GP.adoptHints(p); const ex = await GP.DB.get('projects', p.id); if (ex) { p.id = U.uid('p'); p.name += ' (사본)'; } if (GP.P && !GP.viewOnly) await GP.app.saveNow(); await GP.app.loadProject(p); await GP.saveProject(); GP.toast(ex ? `같은 프로젝트가 이미 있어서 '${p.name}'(으)로 열었어요` : `'${p.name}' 프로젝트를 열었어요`); }
   catch (e) { GP.toast('프로젝트 파일을 읽지 못했어요', { bad: true }); }
 };
 $('#shareBtn').addEventListener('click', () => exp.menu());

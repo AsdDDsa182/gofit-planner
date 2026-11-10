@@ -28,7 +28,7 @@ B.saveAll = async () => {
 B.importAll = async (o) => {
   let add = 0, upd = 0, same = 0;
   for (const raw of o.projects || []) {
-    const p = GP.validateProject(raw); if (!p) continue;
+    const p = GP.validateProject(raw); if (!p) continue; GP.adoptHints(p);
     const ex = await GP.DB.get('projects', p.id);
     if (ex && (ex.updatedAt || 0) >= (p.updatedAt || 0)) { same++; continue; }
     await GP.DB.put('projects', p.id, { id: p.id, name: p.name, client: p.client, updatedAt: p.updatedAt || Date.now(), thumb: ex ? ex.thumb : '', data: p }); ex ? upd++ : add++;

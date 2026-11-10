@@ -223,7 +223,7 @@ panels.renderFloor = () => {
   el.innerHTML = `<p class="lead">고무블럭(500×500 · 25T)을 깔 구역을 그리면 장수와 마감재 개수가 자동으로 계산돼요. 벽에 붙은 변에는 마감재가 빠져요.</p>
   <section class="blk"><h3>${selMat ? '선택한 구역 바꾸기' : '① 깔 고무블럭 고르기'}</h3><div class="blocks">${Object.entries(GP.BLOCKS).map(([k, b]) => `<button class="block${(selMat ? selMat.block : brush.block) === k ? ' on' : ''}" data-block="${k}"><span class="swatch" style="background-image:url(${blockSwatch(k)})"></span><b>${b.name}</b><small>${GP.lib.matPrices[k + '|25'] ? U.won(GP.lib.matPrices[k + '|25']) + '원/장' : '25T'}</small></button>`).join('')}</div>
     <div class="fld"><span>마감재 (벽에 안 붙은 변에만)</span><div class="seg full" id="trimSeg">${[['rubber', '경사형 고무'], ['alu', '알루미늄 몰딩'], ['none', '없음']].map(([k, v]) => `<button data-tr="${k}" class="${(selMat ? selMat.trim : brush.trim) === k ? 'on' : ''}">${v}</button>`).join('')}</div></div></section>
-  <section class="blk"><h3>② 구역 그리기</h3><div class="row3"><button class="btn sm" data-ft="matRect">${IC.matRect}사각형</button><button class="btn sm" data-ft="matPoly">${IC.matPoly}모양대로</button><button class="btn sm" data-ft="all">방 전체</button></div></section>
+  <section class="blk"><h3>② 구역 그리기</h3><div class="row3"><button class="btn sm" data-ft="matRect">${IC.matRect}사각형</button><button class="btn sm" data-ft="matPoly">${IC.matPoly}모양대로</button><button class="btn sm" data-ft="all">공간 전체</button></div></section>
   <section class="blk"><h3>깐 구역 (${L.mats.length})</h3><div class="list">${L.mats.map(m => { const A = GP.calc.matArea(m); return `<button class="li${selMat === m ? ' on' : ''}" data-mat="${m.id}"><span class="sw" style="background-image:url(${blockSwatch(m.block)})"></span><span class="t"><b>${U.esc(GP.BLOCKS[m.block].name)}</b><small>${A.toFixed(1)}㎡ · ${(A / U.PY).toFixed(1)}평 · ${GP.TRIMS[m.trim].replace('경사형 ', '')}</small></span><span class="r">${GP.calc.matBlocks(m)}장</span></button>`; }).join('') || '<p class="note">아직 깐 구역이 없어요. 위에서 종류를 고르고 사각형이나 모양대로 그려 보세요.</p>'}</div></section>
   <section class="blk"><h3>합계</h3><div class="kv">${sum.blocks.map(b => `<span>${U.esc(GP.BLOCKS[b.block].name)} <small>(${b.area.toFixed(1)}㎡)</small></span><b>${b.count}장</b>`).join('') || '<span>고무블럭</span><b>0장</b>'}
     ${sum.trims.map(t => `<span>${GP.TRIMS[t.trim].replace('경사형 ', '')} 일자 (2400)</span><b>${t.straight}개</b><span>　모서리 / 역모서리 (300)</span><b>${t.outC} / ${t.inC}개</b><span>　드러난 변 길이</span><b>${t.len.toFixed(1)} m</b>`).join('')}</div>
@@ -245,18 +245,27 @@ flEl.addEventListener('change', e => { if (e.target.id === 'bpp') { GP.lib.defau
 /* ======================= QUOTE (full sheet) ======================= */
 const Q = GP.quote = {};
 Q.itemKey = it => { const d = GP.dims(it); return [it.type, U.cm(d.w), U.cm(d.d), U.cm(d.h), JSON.stringify(it.params || null)].join('|'); };
+/* A price: this project's own (typed in this project, or fixed when its quote was sent), else this device's price list.
+   So an old project keeps the prices it was quoted at when the price list changes later, and a project file carries its prices. */
+Q.libPrice = pk => { const lib = GP.lib, i = pk.indexOf(':'), kind = pk.slice(0, i), key = pk.slice(i + 1); return (kind === 'type' ? lib.prices[key] : kind === 'mat' ? lib.matPrices[key] : kind === 'trim' ? lib.trimPrices[key] : kind === 'part' ? lib.partPrices[key] : 0) || 0; };
+Q.priceOf = (pk, L) => { const q = (L || GP.L()).quote, own = q && q.prices ? q.prices[pk] : null; return own != null ? own : Q.libPrice(pk); };
+/* the quote goes out (PDF / link): its prices and its date are fixed in the project, and the state is kept as a named version */
+Q.issue = (how) => {
+  if (GP.viewOnly) return; const q = GP.L().quote, R = Q.compute(); q.prices = q.prices || {}; R.groups.forEach(g => g.rows.forEach(r => { if (r.pk && r.price > 0) q.prices[r.pk] = r.price; }));
+  if (!q.issued) q.issued = U.today(); Q.no(); GP.H.commit(); GP.addVersion(`보냄 · ${how}`);
+};
 Q.compute = () => {
   const L = GP.L(), lib = GP.lib, groups = [];
   const eq = new Map();
   for (const it of L.items) { if (GP.info.NO_QUOTE.has(it.type)) continue; const k = Q.itemKey(it); const g = eq.get(k) || { type: it.type, it, n: 0 }; g.n++; eq.set(k, g); }
   const order = GP.CATS.map(c => c.id);
-  const eqRows = [...eq.values()].sort((a, b) => order.indexOf(GP.getDef(a.type).cat) - order.indexOf(GP.getDef(b.type).cat) || GP.typeName(a.type).localeCompare(GP.typeName(b.type), 'ko')).map(g => { const d = GP.dims(g.it); const pk = 'type:' + g.type; return { name: GP.typeName(g.type), spec: `${U.cm(d.w)}×${U.cm(d.d)}×${U.cm(d.h)}cm`, qty: g.n, unit: '대', price: lib.prices[g.type] || 0, pk }; });
+  const eqRows = [...eq.values()].sort((a, b) => order.indexOf(GP.getDef(a.type).cat) - order.indexOf(GP.getDef(b.type).cat) || GP.typeName(a.type).localeCompare(GP.typeName(b.type), 'ko')).map(g => { const d = GP.dims(g.it); const pk = 'type:' + g.type; return { name: GP.typeName(g.type), spec: `${U.cm(d.w)}×${U.cm(d.d)}×${U.cm(d.h)}cm`, qty: g.n, unit: '대', price: Q.priceOf(pk), pk }; });
   if (eqRows.length) groups.push({ name: '운동기구·물품', rows: eqRows });
   const ms = GP.calc.matSummary(); const flRows = [];
-  ms.blocks.forEach(b => flRows.push({ name: `${(GP.BLOCKS[b.block] || GP.BLOCKS.coat).name} 25T`, spec: '500×500mm', qty: b.count, unit: '장', price: lib.matPrices[`${b.block}|25`] || 0, pk: `mat:${b.block}|25` }));
-  ms.trims.forEach(t => { const nm = GP.TRIMS[t.trim]; [['straight', '일자', 2400, t.straight], ['out', '모서리', 300, t.outC], ['in', '역모서리', 300, t.inC]].forEach(([pc, pn, len, q]) => { if (q > 0) flRows.push({ name: `${nm} 25T ${pn}`, spec: `${len}mm`, qty: q, unit: '개', price: lib.trimPrices[`${t.trim}|25|${pc}`] || 0, pk: `trim:${t.trim}|25|${pc}` }); }); });
+  ms.blocks.forEach(b => flRows.push({ name: `${(GP.BLOCKS[b.block] || GP.BLOCKS.coat).name} 25T`, spec: '500×500mm', qty: b.count, unit: '장', price: Q.priceOf(`mat:${b.block}|25`), pk: `mat:${b.block}|25` }));
+  ms.trims.forEach(t => { const nm = GP.TRIMS[t.trim]; [['straight', '일자', 2400, t.straight], ['out', '모서리', 300, t.outC], ['in', '역모서리', 300, t.inC]].forEach(([pc, pn, len, q]) => { if (q > 0) flRows.push({ name: `${nm} 25T ${pn}`, spec: `${len}mm`, qty: q, unit: '개', price: Q.priceOf(`trim:${t.trim}|25|${pc}`), pk: `trim:${t.trim}|25|${pc}` }); }); });
   if (flRows.length) groups.push({ name: '바닥재·마감재', rows: flRows });
-  const pl2 = GP.calc.partLength(); const ptRows = Object.entries(pl2).filter(([, v]) => v > 0).map(([k, v]) => ({ name: GP.PARTS[k], spec: '시공', qty: U.r2(v), unit: 'm', price: lib.partPrices[k] || 0, pk: 'part:' + k }));
+  const pl2 = GP.calc.partLength(); const ptRows = Object.entries(pl2).filter(([, v]) => v > 0).map(([k, v]) => ({ name: GP.PARTS[k], spec: '시공', qty: U.r2(v), unit: 'm', price: Q.priceOf('part:' + k), pk: 'part:' + k }));
   if (ptRows.length) groups.push({ name: '가벽', rows: ptRows });
   const q = L.quote; const ex = (q.extras || []).map((x, i) => ({ name: x.name || '항목', spec: x.spec || '', qty: +x.qty || 0, unit: x.unit || '식', price: +x.price || 0, extra: i }));
   const ship = q.shipping ?? lib.defaults.shipping ?? 0, inst = q.install ?? lib.defaults.install ?? 0;
@@ -283,7 +292,7 @@ Q.finance = (R) => {
   const down = Math.round(amt * (+f.downPct || 0) / 100), rv = f.kind === 'lease' ? Math.round(amt * (+f.rvPct || 0) / 100) : 0;
   return { f, amt, lo, hi, mLo, mHi, down, rv, n: +f.months || 36, totLo: down + mLo * (+f.months || 36) + rv, totHi: down + mHi * (+f.months || 36) + rv };
 };
-Q.setPrice = (pk, v) => { const lib = GP.lib; const [kind, key] = [pk.slice(0, pk.indexOf(':')), pk.slice(pk.indexOf(':') + 1)]; if (kind === 'type') lib.prices[key] = v; else if (kind === 'mat') lib.matPrices[key] = v; else if (kind === 'trim') lib.trimPrices[key] = v; else if (kind === 'part') lib.partPrices[key] = v; GP.saveLib(); };
+Q.setPrice = (pk, v) => { const lib = GP.lib; const [kind, key] = [pk.slice(0, pk.indexOf(':')), pk.slice(pk.indexOf(':') + 1)]; if (kind === 'type') lib.prices[key] = v; else if (kind === 'mat') lib.matPrices[key] = v; else if (kind === 'trim') lib.trimPrices[key] = v; else if (kind === 'part') lib.partPrices[key] = v; GP.saveLib(); const q = GP.L().quote; (q.prices || (q.prices = {}))[pk] = v; GP.H.commit(); };
 const ymd = d => `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
 /* the quote's date: the day it was issued once it has been sent (q.issued), today until then */
 Q.issued = () => GP.L().quote.issued || U.today();
@@ -296,13 +305,13 @@ panels.renderQuote = () => {
   const qs = $('#quoteSheet'); if (qs.hidden) return; const R = Q.compute(), q = GP.L().quote, lib = GP.lib;
   qs.innerHTML = `<div class="qtool"><button class="btn" data-q="close">← 도면으로</button><b class="qt-title">견적서</b><div class="acts" style="flex:0"><button class="btn" data-q="prices">${IC.gear} 단가 한 번에</button><button class="btn primary" data-q="pdf">${IC.pdf} 견적서 PDF</button></div></div>
   <div class="qwrap"><aside class="qside">
-    <section class="blk"><div class="kv"><span>부가세 별도</span><b>${U.won(R.supply)}원</b><span>부가세 10%</span><b>${U.won(R.vat)}원</b><span class="big"><b>부가세 포함</b></span><b class="big">${U.won(R.total)}원</b></div>${R.missing ? `<p class="note" style="color:var(--amber)">가격 미입력 ${R.missing}개 — 노란 칸에 단가를 넣으면 다음부터 기억해요.</p>` : ''}</section>
+    <section class="blk"><div class="kv"><span>부가세 별도</span><b>${U.won(R.supply)}원</b><span>부가세 10%</span><b>${U.won(R.vat)}원</b><span class="big"><b>부가세 포함</b></span><b class="big">${U.won(R.total)}원</b></div>${R.missing ? `<p class="note" style="color:var(--amber)">단가 미입력 ${R.missing}개 — 노란 칸에 단가를 넣으면 다음부터 기억해요.</p>` : ''}</section>
     <section class="blk"><h3>추가 비용 · 할인</h3><div class="row2"><label class="fld"><span>운송비</span>${numI('qShip', q.shipping ?? lib.defaults.shipping ?? 0, 10000, '원')}</label><label class="fld"><span>설치비</span>${numI('qInst', q.install ?? lib.defaults.install ?? 0, 10000, '원')}</label></div><div class="row2"><label class="fld"><span>할인율</span>${numI('qDp', q.discountPct || 0, 1, '%', 'min="0" max="100"')}</label><label class="fld"><span>할인 금액</span>${numI('qDa', q.discountAmt || 0, 10000, '원', 'min="0"')}</label></div></section>
     <section class="blk"><div class="blk-h"><h3>견적에만 넣는 품목</h3><button class="btn xs" id="qAdd">＋ 직접 입력</button></div><p class="note">덤벨·원판처럼 도면에 놓기 애매한 소도구는 여기서 넣어요. 눌러서 바로 추가:</p>
       <div class="xchips">${extraChips().map(([n, sp, un]) => `<button class="chip" data-xadd="${U.esc(n)}" data-sp="${U.esc(sp)}" data-un="${U.esc(un)}">＋ ${U.esc(n)}${lib.extraPrices[n] ? ` <small>${U.won(lib.extraPrices[n])}원</small>` : ''}</button>`).join('')}</div>
       ${(q.extras || []).length ? `<div class="xrows">${q.extras.map((x, i) => `<div class="xrow"><input class="xn" data-x="${i}" data-f="name" value="${U.esc(x.name || '')}" placeholder="품목 이름"><input class="xs" data-x="${i}" data-f="spec" value="${U.esc(x.spec || '')}" placeholder="규격 (선택)"><div class="xq"><input data-x="${i}" data-f="qty" type="number" min="0" value="${+x.qty || 0}" aria-label="수량"><select data-x="${i}" data-f="unit" aria-label="단위">${['개', '세트', '식', 'm', '박스'].map(u => `<option${(x.unit || '식') === u ? ' selected' : ''}>${u}</option>`).join('')}</select></div><div class="unit xp"><input data-x="${i}" data-f="price" type="number" step="1000" min="0" value="${+x.price || ''}" placeholder="단가"><em>원</em></div><button class="x" data-xdel="${i}" aria-label="삭제">×</button></div>`).join('')}</div>` : ''}</section>
     ${finBlock(R, q)}
-    <section class="blk"><h3>견적 정보</h3><div class="row2"><label class="fld"><span>견적 번호</span><input id="qNo" value="${U.esc(Q.no())}"></label><label class="fld"><span>유효기간</span>${numI('qValid', q.validDays ?? lib.defaults.validDays ?? 30, 1, '일')}</label></div><label class="fld"><span>비고 (견적서 아래에 들어가요)</span><textarea id="qNote" rows="3" placeholder="예: 설치 일정 협의, 배송 조건 등">${U.esc(q.note || '')}</textarea></label></section>
+    <section class="blk"><h3>견적 정보</h3><div class="row2"><label class="fld"><span>견적 번호</span><input id="qNo" value="${U.esc(Q.no())}"></label><label class="fld"><span>유효기간</span>${numI('qValid', q.validDays ?? lib.defaults.validDays ?? 30, 1, '일')}</label></div><div class="row2"><label class="fld"><span>견적일</span><input id="qIssued" value="${U.esc(q.issued || '')}" placeholder="${U.today()} (오늘)" inputmode="numeric"></label><p class="note" style="margin:0;align-self:end">비워 두면 오늘 날짜예요. PDF나 링크로 보내면 그날로 고정되고, 단가도 이 프로젝트에 고정돼요.</p></div><label class="fld"><span>비고 (견적서 아래에 들어가요)</span><textarea id="qNote" rows="3" placeholder="예: 설치 일정 협의, 배송 조건 등">${U.esc(q.note || '')}</textarea></label></section>
   </aside><div class="qmain">${sheetHtml(R)}</div></div>`;
   GP.fillIcons(qs);
 };
@@ -318,10 +327,9 @@ function finBlock(R, q) {
 }
 function sheetHtml(R) {
   const P = GP.P, q = GP.L().quote, co = GP.lib.company;
-  const valid = q.validDays ?? GP.lib.defaults.validDays ?? 30; const vd = new Date(Date.now() + valid * 864e5);
   return `<div class="qdoc" id="qdoc"><h1>견 적 서</h1>
-   <div class="qhead"><div class="qbox"><span>수신</span><b>${U.esc(P.client || '고객사')} 귀하</b><span>프로젝트</span><b>${U.esc(P.name)}${P.variants.length > 1 ? ' · ' + U.esc(P.variants[P.cur].name) : ''}</b><span>견적 번호</span><b>${U.esc(Q.no())}</b><span>견적일</span><b>${U.today()}</b><span>유효기간</span><b>${vd.getFullYear()}.${String(vd.getMonth() + 1).padStart(2, '0')}.${String(vd.getDate()).padStart(2, '0')}까지</b></div>
-   <div class="qbox"><span>공급자</span><b>${U.esc(co.name || 'GOFIT KOREA')}</b>${co.ceo ? `<span>대표</span><b>${U.esc(co.ceo)}</b>` : ''}${co.bizNo ? `<span>사업자번호</span><b>${U.esc(co.bizNo)}</b>` : ''}${co.addr ? `<span>주소</span><b>${U.esc(co.addr)}</b>` : ''}${co.tel ? `<span>연락처</span><b>${U.esc(co.tel)}</b>` : ''}${P.consultant ? `<span>담당</span><b>${U.esc(P.consultant)}</b>` : ''}</div></div>
+   <div class="qhead"><div class="qbox"><span>수신</span><b>${P.client ? U.esc(P.client) + ' ' : ''}귀하</b>${P.custName || P.custTel ? `<span>고객 담당</span><b>${U.esc([P.custName, P.custTel].filter(Boolean).join(' · '))}</b>` : ''}${P.siteAddr ? `<span>현장</span><b>${U.esc(P.siteAddr)}</b>` : ''}<span>프로젝트</span><b>${U.esc(P.name)}${P.variants.length > 1 ? ' · ' + U.esc(P.variants[P.cur].name) : ''}</b><span>견적 번호</span><b>${U.esc(Q.no())}</b><span>견적일</span><b>${U.esc(Q.issued())}</b><span>유효기간</span><b>${Q.validUntil()}까지</b></div>
+   <div class="qbox"><span>공급자</span><b>${U.esc(co.name || 'GOFIT KOREA')}</b>${co.ceo ? `<span>대표</span><b>${U.esc(co.ceo)}</b>` : ''}${co.bizNo ? `<span>사업자번호</span><b>${U.esc(co.bizNo)}</b>` : ''}${co.addr ? `<span>주소</span><b>${U.esc(co.addr)}</b>` : ''}${co.tel ? `<span>연락처</span><b>${U.esc(co.tel)}</b>` : ''}${co.email ? `<span>이메일</span><b>${U.esc(co.email)}</b>` : ''}${P.consultant ? `<span>담당자</span><b>${U.esc([P.consultant, P.consTel].filter(Boolean).join(' · '))}</b>` : ''}</div></div>
    <div class="qsum"><span>합계 금액 (부가세 포함)</span><b>₩ ${U.won(R.total)}</b></div>
    <table class="qtbl"><thead><tr><th>품목</th><th>규격</th><th style="width:60px">수량</th><th style="width:130px">단가</th><th style="width:120px">금액</th></tr></thead><tbody>
    ${R.groups.map(g => `<tr class="grp"><td colspan="5">${U.esc(g.name)}</td></tr>` + g.rows.map(r => `<tr><td>${U.esc(r.name)}</td><td class="c">${U.esc(r.spec)}</td><td class="n">${r.qty} ${r.unit}</td><td class="n">${r.pk ? `<input class="price" data-pk="${r.pk}" type="number" step="1000" value="${r.price || ''}" placeholder="단가 입력">` : U.won(r.price)}</td><td class="n">${U.won(r.amount)}</td></tr>`).join('')).join('') || '<tr><td colspan="5" class="c">도면에 기구를 놓으면 품목이 자동으로 들어와요</td></tr>'}
@@ -345,7 +353,7 @@ qs.addEventListener('change', e => {
   if (fm) { setFin({ [fm]: U.clamp(v || 0, 0, fm === 'months' ? 120 : 100) }); return; }
   if (t.id === 'fOn') { setFin({ show: t.checked }); return; }
   if (t.id === 'qShip') q.shipping = v || 0; else if (t.id === 'qInst') q.install = v || 0; else if (t.id === 'qDp') q.discountPct = U.clamp(v || 0, 0, 100); else if (t.id === 'qDa') q.discountAmt = Math.max(0, v || 0);
-  else if (t.id === 'qNo') q.no = t.value; else if (t.id === 'qValid') q.validDays = Math.max(1, v || 30); else if (t.id === 'qNote') q.note = t.value;
+  else if (t.id === 'qNo') q.no = t.value; else if (t.id === 'qIssued') { const m = /^(\d{4})\D?(\d{1,2})\D?(\d{1,2})$/.exec(t.value.trim()); if (m) q.issued = `${m[1]}.${m[2].padStart(2, '0')}.${m[3].padStart(2, '0')}`; else { delete q.issued; if (t.value.trim()) GP.toast('날짜는 2026.11.10처럼 넣어 주세요', { bad: true }); } } else if (t.id === 'qValid') q.validDays = Math.max(1, v || 30); else if (t.id === 'qNote') q.note = t.value;
   else if (t.dataset.x != null) {
     const x = q.extras[+t.dataset.x], f = t.dataset.f; if (!x) return;
     x[f] = ['name', 'spec', 'unit'].includes(f) ? t.value.trim() : Math.max(0, +t.value || 0);
@@ -366,8 +374,13 @@ qs.addEventListener('keydown', e => { if (e.target.dataset.pk && e.key === 'Ente
 /* ======================= dialogs ======================= */
 panels.editProjectInfo = () => {
   const P = GP.P;
-  GP.modal('프로젝트 정보', `<label class="fld"><span>프로젝트 이름</span><input id="piName" value="${U.esc(P.name)}" autofocus></label><div class="row2"><label class="fld"><span>고객사</span><input id="piClient" value="${U.esc(P.client)}" placeholder="예: ○○피트니스 강남점"></label><label class="fld"><span>담당 컨설턴트</span><input id="piCons" value="${U.esc(P.consultant)}"></label></div>`, `<button class="btn" data-close>취소</button><button class="btn primary" id="piOk">저장</button>`, { size: 'narrow' });
-  $('#piOk').onclick = () => { P.name = $('#piName').value.trim() || P.name; P.client = $('#piClient').value.trim(); P.consultant = $('#piCons').value.trim(); GP.closeModal(); P.updatedAt = Date.now(); GP.emit('dirty'); GP.emit('project'); };
+  const f = (id, label, v, ph) => `<label class="fld"><span>${label}</span><input id="${id}" value="${U.esc(v || '')}" placeholder="${ph || ''}"></label>`;
+  GP.modal('프로젝트 정보', `${f('piName', '프로젝트 이름', P.name)}
+    <div class="row2">${f('piClient', '고객사', P.client, '예: ○○피트니스 강남점')}${f('piCust', '고객 담당자', P.custName, '예: 김○○ 대표')}</div>
+    <div class="row2">${f('piCustTel', '고객 연락처', P.custTel)}${f('piSite', '현장 주소', P.siteAddr)}</div>
+    <div class="ph" style="margin-top:6px">우리 담당자 <small class="note">(견적서·고객 링크에 들어가요 · 다음 프로젝트에도 기억해요)</small></div>
+    <div class="row3">${f('piCons', '담당자', P.consultant)}${f('piConsTel', '연락처', P.consTel)}${f('piConsEm', '이메일', P.consEmail)}</div>`, `<button class="btn" data-close>취소</button><button class="btn primary" id="piOk">저장</button>`, { size: 'narrow' });
+  $('#piOk').onclick = () => { const g = id => $('#' + id).value.trim(); P.name = g('piName') || P.name; P.client = g('piClient'); P.custName = g('piCust'); P.custTel = g('piCustTel'); P.siteAddr = g('piSite'); P.consultant = g('piCons'); P.consTel = g('piConsTel'); P.consEmail = g('piConsEm'); GP.rememberMe(); GP.closeModal(); P.updatedAt = Date.now(); GP.emit('dirty'); GP.emit('project'); };
 };
 panels.projects = async () => {
   const list = await GP.listProjects();
@@ -386,7 +399,7 @@ panels.wizard = () => {
   const w = { step: 1, mode: 'py', py: 60, ratio: 1.5, name: '', client: '', consultant: GP.lib.lastConsultant || '' };
   const render = () => {
     let body = '';
-    if (w.step === 1) body = `<div class="wiz"><p class="note">새 프로젝트를 시작해요. 이름과 고객사만 넣으면 돼요.</p><label class="fld"><span>프로젝트 이름</span><input id="wzName" value="${U.esc(w.name)}" placeholder="예: 강남 PT 스튜디오 리뉴얼" autofocus></label><div class="row2"><label class="fld"><span>고객사</span><input id="wzClient" value="${U.esc(w.client)}"></label><label class="fld"><span>담당 컨설턴트</span><input id="wzCons" value="${U.esc(w.consultant)}"></label></div></div>`;
+    if (w.step === 1) body = `<div class="wiz"><p class="note">새 프로젝트를 시작해요. 이름과 고객사만 넣으면 돼요.</p><label class="fld"><span>프로젝트 이름</span><input id="wzName" value="${U.esc(w.name)}" placeholder="예: 강남 PT 스튜디오 리뉴얼" autofocus></label><div class="row2"><label class="fld"><span>고객사</span><input id="wzClient" value="${U.esc(w.client)}"></label><label class="fld"><span>담당자</span><input id="wzCons" value="${U.esc(w.consultant)}"></label></div></div>`;
     else body = `<div class="wiz"><p class="note">공간을 어떻게 시작할까요?</p><div class="wiz-opts">${[['py', '평수로', '평수와 가로·세로 비율만 넣으면 직사각형으로 시작해요'], ['shape', '모양 템플릿', 'L자형, 사선 모서리, 사다리꼴'], ['walk', '실측 입력', '현장에서 잰 벽 길이를 차례로 입력'], ['trace', '도면 대고 그리기', '받은 평면도 사진이나 DXF를 깔고 따라 그려요'], ['sample', '예시 도면', '60평 샘플로 기능을 둘러봐요']].map(([k, t, s]) => `<button class="wiz-opt${w.mode === k ? ' on' : ''}" data-wm="${k}"><b>${t}</b><small>${s}</small></button>`).join('')}</div>${w.mode === 'py' ? `<div class="row2"><label class="fld"><span>평수</span>${numI('wzPy', w.py, 1, '평', 'min="3"')}</label><label class="fld"><span>가로 : 세로</span><select id="wzRatio">${[[1, '1 : 1'], [1.3333, '4 : 3'], [1.5, '3 : 2'], [2, '2 : 1']].map(([v, l]) => `<option value="${v}" ${w.ratio === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>` : ''}</div>`;
     GP.modal('새 프로젝트', body, w.step === 1 ? `<button class="btn" data-close>취소</button><button class="btn primary" id="wzNext">다음</button>` : `<button class="btn" id="wzBack">이전</button><button class="btn primary" id="wzGo">시작하기</button>`, { size: 'narrow' });
     const mb = $('#modalBody');
@@ -400,7 +413,7 @@ panels.wizard = () => {
 };
 /* ---------- A안·B안 비교: every variant computed in turn (plan picture, equipment, space, floor, quote, checks) ---------- */
 panels.compare = () => {
-  const P = GP.P, keep = P.cur; if (P.variants.length < 2) { GP.toast('안이 하나뿐이에요. 위쪽 ＋로 B안을 만들면 비교할 수 있어요'); return; }
+  const P = GP.P, keep = P.cur; if (P.variants.length < 2) { GP.toast(GP.wiz && GP.wiz.on ? '안이 하나뿐이에요. 마지막 단계의 「다른 안 만들기」로 B안을 만들면 비교할 수 있어요' : '안이 하나뿐이에요. 위쪽 「A안 ▾」 → 「지금 배치를 복사해 새 안 만들기」로 B안을 만들면 비교할 수 있어요', { ms: 5000 }); return; }
   const catName = c => GP.lib.catNames[c] || (GP.CATS.find(x => x.id === c) || {}).name || c;
   const V = P.variants.map((v, i) => {
     P.cur = i; GP.S.dataChanged();
@@ -422,7 +435,7 @@ panels.compare = () => {
     ${row('사용 공간 포함', v => `${U.r2(v.used)}㎡ <small>(${pct(v.used, v.room)}%)</small>`, Object.assign(v => v.used, { fmt: x => U.r2(x), unit: '㎡' }))}
     ${row('고무블럭', v => v.blocks ? `${v.blocks}장` : '-', Object.assign(v => v.blocks, { fmt: x => x, unit: '장' }))}
     ${row('가벽', v => v.part ? `${U.r2(v.part)}m` : '-', Object.assign(v => v.part, { fmt: x => U.r2(x), unit: 'm' }))}
-    ${row('견적 합계 (부가세 포함)', v => `<b>${U.won(v.total)}원</b>${v.missing ? `<br><small class="cmp-miss">가격 미입력 ${v.missing}개</small>` : ''}`, won)}
+    ${row('견적 합계 (부가세 포함)', v => `<b>${U.won(v.total)}원</b>${v.missing ? `<br><small class="cmp-miss">단가 미입력 ${v.missing}개</small>` : ''}`, won)}
     ${row('배치 점검', v => v.err + v.warn ? `<span class="cmp-bad">확인할 점 ${v.err + v.warn}개</span>${v.aisle ? ` <small>(좁은 통로 ${v.aisle}곳)</small>` : ''}` : '<span class="cmp-ok">이상 없음</span>')}
     <tr><th></th>${V.map((v, i) => `<td>${i === keep ? '' : `<button class="btn sm" data-cmpgo="${i}">${U.esc(v.name)} 보기</button>`}</td>`).join('')}</tr>
   </tbody></table></div><p class="note">숫자 옆 작은 글씨는 ${U.esc(V[0].name)}과의 차이예요. 사용 공간은 기구 앞뒤로 운동할 때 필요한 공간까지 포함한 면적이에요.</p>`;
@@ -442,7 +455,7 @@ panels.settings = (tab) => {
     let body = `<div class="tabs">${tabs.map(([k, v]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}">${v}</button>`).join('')}</div>`;
     if (tab === 'prices') {
       const types = Object.keys(GP.CAT).concat(Object.keys(lib.customTypes)).filter(k => { const d = GP.getDef(k); return !q || (GP.typeName(k) + d.name + d.kw).toLowerCase().includes(q.toLowerCase()); });
-      body += `<div class="search">${IC.search}<input id="stQ" placeholder="찾기" value="${U.esc(q)}"></div><p class="note">이름을 바꾸면 목록·도면·견적서 모두에 적용돼요. 단가는 공급가(부가세 별도) 기준이에요. 비워 두면 도면과 링크에 '가격 미입력'으로 나와요.</p>
+      body += `<div class="search">${IC.search}<input id="stQ" placeholder="찾기" value="${U.esc(q)}"></div><p class="note">이름을 바꾸면 목록·도면·견적서 모두에 적용돼요. 단가는 공급가(부가세 별도) 기준이에요. 비워 두면 도면과 링크에 '단가 미입력'으로 나와요.</p>
       <table class="tbl"><thead><tr><th>종류</th><th>이름</th><th style="width:130px">단가(원)</th><th style="width:44px">3D</th><th style="width:44px">숨김</th></tr></thead><tbody>${types.map(k => { const d = GP.getDef(k); return `<tr><td><span class="dot" style="--c:var(--cat-${d.cat})"></span> <small>${U.esc(GP.lib.catNames[d.cat] || (GP.CATS.find(c => c.id === d.cat) || {}).name || '')}</small></td><td><input data-name="${k}" value="${U.esc(GP.typeName(k))}" placeholder="${U.esc(d.name)}"></td><td><input data-price="${k}" type="number" step="1000" value="${lib.prices[k] || ''}"></td><td style="text-align:center;color:var(--ok)">${GP.R3.hasModel(k) ? '●' : ''}</td><td style="text-align:center"><input type="checkbox" data-hide="${k}" ${lib.hidden.includes(k) ? 'checked' : ''}></td></tr>`; }).join('')}</tbody></table>`;
     } else if (tab === 'floor') {
       body += `<p class="note">고무블럭은 장당, 마감재는 개당, 가벽은 m당 단가예요.</p><table class="tbl"><thead><tr><th>품목</th><th style="width:140px">단가(원)</th></tr></thead><tbody>
@@ -467,8 +480,8 @@ panels.settings = (tab) => {
         <details class="blk" open><summary>연결 방법 (10분)</summary><ol class="steps-ol">
           <li><a href="https://github.com/signup" target="_blank" rel="noopener">github.com</a>에 무료로 가입해요.</li>
           <li>오른쪽 위 <b>＋ → New repository</b> → 이름 <b>gofit-media</b> → <b>Public</b> 선택 → <b>Create repository</b>.</li>
-          <li>오른쪽 위 프로필 사진 → <b>Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)</b>.</li>
-          <li>Note에 <b>gofit</b>, Expiration은 <b>No expiration</b>, 권한은 <b>public_repo</b> 하나만 체크 → <b>Generate token</b> → 나온 열쇠를 복사해요.</li>
+          <li>오른쪽 위 프로필 사진 → <b>Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token</b>.</li>
+          <li>Repository access는 <b>Only select repositories → gofit-media</b> 하나만, Permissions는 <b>Contents: Read and write</b>와 <b>Pages: Read and write</b> → <b>Generate token</b> → 나온 열쇠를 복사해요. <small>(이 열쇠는 사진 저장소만 고칠 수 있어서 안전해요. 예전의 classic · public_repo 열쇠도 되지만 계정의 모든 공개 저장소를 고칠 수 있어요.)</small></li>
           <li>아래에 GitHub 아이디, 저장소 이름, 열쇠를 넣고 <b>연결하기</b>를 눌러요.</li></ol></details>
         <div class="row3"><label class="fld"><span>GitHub 아이디</span><input id="ghOwner" autocomplete="off"></label><label class="fld"><span>저장소 이름</span><input id="ghRepo" value="gofit-media" autocomplete="off"></label><label class="fld"><span>열쇠 (토큰)</span><input id="ghToken" type="password" autocomplete="off"></label></div>
         <div class="acts"><button class="btn sm primary" id="ghOn">연결하기</button></div><span class="note" id="ghStat"></span>`) + `</section>
@@ -487,14 +500,15 @@ panels.settings = (tab) => {
       if (e.target.id === 'ghUsage') { st('확인 중…'); GP.media.cleanup().then(() => render()).catch(() => st('확인하지 못했어요')); }
       if (e.target.id === 'ghOff') { GP.confirm('GitHub 연결을 끊을까요? 이미 올라간 사진은 그대로 남아요.', '연결 끊기', true).then(ok => { if (ok) { GP.media.gh.disconnect(); render(); } }); } if (e.target.id === 'libExport') U.download(new Blob([JSON.stringify(GP.lib, null, 1)], { type: 'application/json' }), 'gofit-설정.json'); };
     mb.oninput = e => { if (e.target.id === 'stQ') { q = e.target.value; const pos = e.target.selectionStart; render(); const i = $('#stQ'); i.focus(); i.setSelectionRange(pos, pos); } };
+    const own = (pk, v) => { const q = GP.L().quote; if (q.prices && pk in q.prices) { q.prices[pk] = Math.max(0, v || 0); GP.H.commit(); } };
     mb.onchange = async e => {
       const t = e.target, v = +t.value;
       if (t.dataset.name) { const k = t.dataset.name; if (t.value.trim() && t.value.trim() !== GP.getDef(k).name) lib.names[k] = t.value.trim(); else delete lib.names[k]; }
-      else if (t.dataset.price) lib.prices[t.dataset.price] = Math.max(0, v || 0);
+      else if (t.dataset.price) { lib.prices[t.dataset.price] = Math.max(0, v || 0); own('type:' + t.dataset.price, v); }
       else if (t.dataset.hide) { const k = t.dataset.hide; lib.hidden = lib.hidden.filter(x => x !== k); if (t.checked) lib.hidden.push(k); }
-      else if (t.dataset.mp) lib.matPrices[t.dataset.mp] = Math.max(0, v || 0);
-      else if (t.dataset.tp) lib.trimPrices[t.dataset.tp] = Math.max(0, v || 0);
-      else if (t.dataset.pp) lib.partPrices[t.dataset.pp] = Math.max(0, v || 0);
+      else if (t.dataset.mp) { lib.matPrices[t.dataset.mp] = Math.max(0, v || 0); own('mat:' + t.dataset.mp, v); }
+      else if (t.dataset.tp) { lib.trimPrices[t.dataset.tp] = Math.max(0, v || 0); own('trim:' + t.dataset.tp, v); }
+      else if (t.dataset.pp) { lib.partPrices[t.dataset.pp] = Math.max(0, v || 0); own('part:' + t.dataset.pp, v); }
       else if (t.dataset.co) lib.company[t.dataset.co] = t.value.trim();
       else if (t.id === 'dfBpp') lib.defaults.blocksPerPyeong = U.clamp(v || 13, 4, 30); else if (t.id === 'dfAisle') lib.defaults.aisleMin = U.clamp(v || 90, 30, 300) / 100; else if (t.id === 'dfValid') lib.defaults.validDays = Math.max(1, v || 30); else if (t.id === 'dfShip') lib.defaults.shipping = Math.max(0, v || 0); else if (t.id === 'dfInst') lib.defaults.install = Math.max(0, v || 0);
       else if (t.id === 'libImport') { const f = t.files[0]; if (!f) return; try { const o = JSON.parse(await U.readFile(f, 'text')); if (!o || typeof o !== 'object' || !o.prices) throw 0; Object.assign(GP.lib, o); GP.saveLib(); GP.toast('설정을 불러왔어요'); render(); } catch (err) { GP.toast('설정 파일을 읽지 못했어요', { bad: true }); } return; }
@@ -577,7 +591,7 @@ panels.builder = (editId) => {
 panels.guide = () => {
   const slides = [
     ['1', '공간을 만들어요', '평수만 넣거나, 모양 템플릿·실측 입력으로 고객 매장 모양을 만들어요. 꼭짓점을 끌면 사선 벽도 자유롭게 만들어져요. 가벽·문·창문도 여기서 넣어요.', IC.vertex],
-    ['2', '기구를 놓아요', '왼쪽 목록에서 기구를 누르고 도면을 클릭하면 놓여요. 벽 가까이 가져가면 벽에 붙어요. 기구 위에 마우스를 올리면 이름과 가격이 나오고, 더블클릭하면 3D 모델을 볼 수 있어요.', IC.select],
+    ['2', '기구를 놓아요', '왼쪽 목록에서 기구를 누르고 도면을 클릭하면 놓여요. 도면 오른쪽 아래 「벽 자석」을 켜면 벽 가까이에서 벽에 붙어요. 기구 위에 마우스를 올리면 이름과 가격이 나오고, 더블클릭하면 3D 모델을 볼 수 있어요.', IC.select],
     ['3', '바닥 · 견적 · 보내기', '고무블럭 구역을 그리면 장수와 마감재가 자동 계산돼요. 오른쪽 위 견적서에서 가격을 넣고, 보내기로 고객에게 링크·PDF를 보내요.', IC.share],
   ];
   let i = 0; const g = $('#guide');

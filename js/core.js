@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.5.0';
+GP.VERSION = '2.6.0';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
@@ -200,15 +200,18 @@ const LIB_DEFAULT = () => ({
   extraPrices: {}, extraRecent: [], mode: 'easy', magnet: false,   // magnet: items dragged near a wall snap onto it (off by default)      // mode: 'easy' (step-by-step wizard) or 'expert' (every tool)      // quote-only items (not on the plan): last price per name, recently used names
   defaults: { blocksPerPyeong: 13, aisleMin: .9, shipping: 0, install: 0, validDays: 30, cordLen: 3, finance: { kind: 'install', months: 36, downPct: 0, rateLo: 6, rateHi: 12, rvPct: 0 } },
   company: { name: 'GOFIT KOREA', ceo: '', tel: '', addr: '', bizNo: '', email: '' },
+  me: { name: '', tel: '', email: '' },      // the salesperson on this device: filled into new projects
   guideSeen: false,
 });
 GP.lib = LIB_DEFAULT();
 GP.loadLib = async () => {
   const v = await DB.get('kv', 'lib');
   const d = LIB_DEFAULT();
-  if (v && typeof v === 'object') { GP.lib = Object.assign(d, v); GP.lib.defaults = Object.assign(LIB_DEFAULT().defaults, v.defaults || {}); GP.lib.company = Object.assign(LIB_DEFAULT().company, v.company || {}); }
+  if (v && typeof v === 'object') { GP.lib = Object.assign(d, v); GP.lib.defaults = Object.assign(LIB_DEFAULT().defaults, v.defaults || {}); GP.lib.company = Object.assign(LIB_DEFAULT().company, v.company || {}); GP.lib.me = Object.assign(LIB_DEFAULT().me, v.me || {}); }
   else GP.lib = d;
 };
+GP.rememberMe = () => { const P = GP.P, me = GP.lib.me || (GP.lib.me = {}); if (!P || GP.viewOnly) return; if (P.consultant) me.name = P.consultant; if (P.consTel) me.tel = P.consTel; if (P.consEmail) me.email = P.consEmail; GP.saveLib(); };
+GP.fillMe = (p) => { const me = GP.lib.me || {}; if (!p.consultant) p.consultant = me.name || ''; if (!p.consTel) p.consTel = me.tel || ''; if (!p.consEmail) p.consEmail = me.email || ''; return p; };
 GP.saveLib = U.debounce(() => { DB.put('kv', 'lib', GP.lib); }, 300);
 
 /* ---------------- project model ---------------- */
@@ -279,6 +282,10 @@ function sanitizeProject(p) {
   for (const id of Object.keys(p.images)) { const im = p.images[id], ok = v => v && typeof v.src === 'string' && v.src.startsWith('data:image/'); if (!ok(im) || !WORD.test(id)) { delete p.images[id]; continue; } p.images[id] = { src: im.src, w: sNum(im.w, 1), h: sNum(im.h, 1), cut: im.cut === null ? null : ok(im.cut) ? { src: im.cut.src, w: sNum(im.cut.w, 1), h: sNum(im.cut.h, 1) } : undefined }; }
   p.variants.forEach(v => { v.id = sWord(v.id) || U.uid('v'); v.name = sTxt(v.name, 40) || 'A안'; });
   if (p.wiz && typeof p.wiz === 'object') { const w = p.wiz; sNums(w, ['step', 'max']); sKeys(w, ['space', 'partAns', 'floorHow', 'floorBlock']); if (w.picks && typeof w.picks === 'object') { for (const k of Object.keys(w.picks)) { const n = sNum(w.picks[k]); if (!WORD.test(k) || !(n > 0)) delete w.picks[k]; else w.picks[k] = Math.min(99, Math.round(n)); } } else w.picks = null; } else delete p.wiz;
+  if (p.hints && typeof p.hints === 'object') { const h = p.hints, hp = {}, hn = {};
+    if (h.prices && typeof h.prices === 'object') for (const vid of Object.keys(h.prices)) { const src = h.prices[vid]; if (!WORD.test(vid) || !src || typeof src !== 'object') continue; const o = hp[vid] = {}; for (const pk of Object.keys(src)) { const n = sNum(src[pk]); if (pk.length <= 80 && n > 0) o[pk] = n; } }
+    if (h.names && typeof h.names === 'object') for (const t of Object.keys(h.names)) if (WORD.test(t) && typeof h.names[t] === 'string') hn[t] = h.names[t].slice(0, 60);
+    p.hints = { prices: hp, names: hn }; } else delete p.hints;
   if (p.customTypes && typeof p.customTypes === 'object') { for (const k of Object.keys(p.customTypes)) { if (!WORD.test(k) || !p.customTypes[k] || typeof p.customTypes[k] !== 'object') delete p.customTypes[k]; else sDeep(p.customTypes[k], 0); } } else delete p.customTypes;
 }
 GP.validateProject = (o) => {
@@ -325,7 +332,17 @@ H.redo = () => { if (H.idx >= H.stack.length - 1) return; H.idx++; H.apply(H.sta
 H.canUndo = () => H.idx > 0; H.canRedo = () => H.idx < H.stack.length - 1;
 
 /* ---------------- project persistence ---------------- */
-GP.projectPayload = () => { const p = GP.P; const used = new Set(); p.variants.forEach(v => v.layout.items.forEach(it => { if (String(it.type).startsWith('c_')) used.add(it.type); })); const ct = {}; used.forEach(k => { if (GP.lib.customTypes[k]) ct[k] = GP.lib.customTypes[k]; }); return Object.assign({}, p, { customTypes: ct }); };
+GP.projectPayload = () => { const p = GP.P; const used = new Set(); p.variants.forEach(v => v.layout.items.forEach(it => { if (String(it.type).startsWith('c_')) used.add(it.type); })); const ct = {}; used.forEach(k => { if (GP.lib.customTypes[k]) ct[k] = GP.lib.customTypes[k]; }); 
+  // hints for whoever opens the file elsewhere: the prices in effect (per plan) and renamed equipment
+  const names = {}, hp = {}; if (GP.quote) p.variants.forEach(v => { const L = v.layout, o = hp[v.id] = {}, put = pk => { const pr = GP.quote.priceOf(pk, L); if (pr > 0) o[pk] = pr; };
+    L.items.forEach(it => { put('type:' + it.type); if (GP.lib.names[it.type]) names[it.type] = GP.lib.names[it.type]; }); L.mats.forEach(m => { put(`mat:${m.block}|25`); if (m.trim && m.trim !== 'none') ['straight', 'out', 'in'].forEach(pc => put(`trim:${m.trim}|25|${pc}`)); }); L.partitions.forEach(q => put('part:' + (q.kind || 'wall'))); });
+  return Object.assign({}, p, { customTypes: ct, hints: { prices: hp, names } }); };
+/* a project that came from a file: it keeps the sender's prices (as the project's own) and shows their equipment names where this device has none */
+GP.adoptHints = (p) => {
+  const h = p.hints; if (!h) return p;
+  p.variants.forEach(v => { const hp = h.prices && h.prices[v.id]; if (hp) v.layout.quote.prices = Object.assign({}, hp, v.layout.quote.prices || {}); });
+  let ch = false; for (const t in (h.names || {})) if (!GP.lib.names[t]) { GP.lib.names[t] = h.names[t]; ch = true; } if (ch) GP.saveLib(); return p;
+};
 GP.saveProject = async (thumb) => {
   if (!GP.P || GP.viewOnly || GP.P.unnamed) return;      // the first-run project is saved once it has a name
   const p = GP.projectPayload(); p.updatedAt = Date.now();
