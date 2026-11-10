@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.8.0';
+GP.VERSION = '2.8.1';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
