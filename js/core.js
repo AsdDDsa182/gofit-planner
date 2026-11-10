@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.3.1';
+GP.VERSION = '2.3.2';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
@@ -45,6 +45,23 @@ U.downscaleImage = async (dataURL, max) => {
   c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
   const png = /png|gif|webp/i.test(dataURL.slice(0, 30));
   return { src: c.toDataURL(png ? 'image/png' : 'image/jpeg', .9), w: c.width, h: c.height };
+};
+/* a logo's plain background made transparent: the border's colour (it must be one colour) fades out over the whole picture
+   (letter holes too), then the empty margin is cropped. null when the picture already has transparency or no plain background. */
+U.knockout = async (src) => {
+  const img = await U.loadImage(src), w = img.naturalWidth, h = img.naturalHeight, c = document.createElement('canvas'); c.width = w; c.height = h;
+  const x = c.getContext('2d'); x.drawImage(img, 0, 0); const D = x.getImageData(0, 0, w, h), p = D.data;
+  for (let i = 3; i < p.length; i += 4 * 31) if (p[i] < 240) return null;
+  const bd = []; const at = (X, Y) => (Y * w + X) * 4; for (let X = 0; X < w; X += 2) bd.push(at(X, 0), at(X, h - 1)); for (let Y = 0; Y < h; Y += 2) bd.push(at(0, Y), at(w - 1, Y));
+  const med = k => { const v = bd.map(i => p[i + k]).sort((a, b) => a - b); return v[v.length >> 1]; }, bg = [med(0), med(1), med(2)];
+  const dist = i => Math.hypot(p[i] - bg[0], p[i + 1] - bg[1], p[i + 2] - bg[2]);
+  if (bd.filter(i => dist(i) < 40).length < bd.length * .85) return null;
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let Y = 0; Y < h; Y++) for (let X = 0; X < w; X++) { const i = at(X, Y), d = dist(i), a = d < 38 ? 0 : d > 90 ? 255 : Math.round((d - 38) / 52 * 255); p[i + 3] = a; if (a > 40) { if (X < x0) x0 = X; if (X > x1) x1 = X; if (Y < y0) y0 = Y; if (Y > y1) y1 = Y; } }
+  if (x1 < 0) return null; x.putImageData(D, 0, 0);
+  const pad = Math.round(Math.max(x1 - x0, y1 - y0) * .03); x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(w - 1, x1 + pad); y1 = Math.min(h - 1, y1 + pad);
+  const o = document.createElement('canvas'); o.width = x1 - x0 + 1; o.height = y1 - y0 + 1; o.getContext('2d').drawImage(c, -x0, -y0);
+  return { src: o.toDataURL('image/png'), w: o.width, h: o.height };
 };
 U.copyText = async (txt) => {
   try { await navigator.clipboard.writeText(txt); return true; } catch (e) {

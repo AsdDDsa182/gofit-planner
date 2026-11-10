@@ -122,11 +122,11 @@ spEl.addEventListener('focusin', e => { if (e.target.id && e.target.id.startsWit
 spEl.addEventListener('focusout', e => { if (e.target.id && e.target.id.startsWith('shp_')) { GP.OV.hiWall = null; GP.emit('overlay'); } });
 spEl.addEventListener('toggle', e => { const f = e.target.dataset && e.target.dataset.fold; if (!f) return; if (e.target.open) sp.open.add(f); else sp.open.delete(f); }, true);
 panels.addLogo = async (f) => {
-  const src = await U.readFile(f); const im = await U.downscaleImage(src, 1024); const id = U.uid('img'); GP.P.images[id] = { src: im.src, w: im.w, h: im.h };
-  const L = GP.L(), P = L.room.pts, e = G.edge(P, 0); const ratio = im.h / im.w, w = 1.6, h = U.r3(Math.min(1.2, w * ratio));
+  const src = await U.readFile(f); const im = await U.downscaleImage(src, 1024); const id = U.uid('img'), cut = await U.knockout(im.src).catch(() => null); GP.P.images[id] = { src: im.src, w: im.w, h: im.h, cut };
+  const sh = cut || im, L = GP.L(), P = L.room.pts, e = G.edge(P, 0); const ratio = sh.h / sh.w, w = 1.6, h = U.r3(Math.min(1.2, w * ratio));
   const it = { uid: U.uid(), type: 'logo', x: U.r3((e.a[0] + e.b[0]) / 2 + e.nx * .03), z: U.r3((e.a[1] + e.b[1]) / 2 + e.nz * .03), rot: 0, w, h, d: .03, img: id, elev: 1.5 };
   const r = GP.tools.wallSnap(it.x, it.z, 0, w, .03, { force: true, relK: 0 }); if (r) { it.x = r.x; it.z = r.z; it.rot = r.rot; }
-  L.items.push(it); GP.changed('items'); ui.setStep('place'); ui.select([{ k: 'item', id: it.uid }]); GP.toast('로고를 벽에 붙였어요. 끌어서 다른 벽으로 옮길 수 있어요');
+  L.items.push(it); GP.changed('items'); ui.setStep('place'); ui.select([{ k: 'item', id: it.uid }]); GP.toast(cut ? '로고를 벽에 붙였어요. 배경은 지웠어요 (정보창에서 되돌릴 수 있어요)' : '로고를 벽에 붙였어요. 끌어서 다른 벽으로 옮길 수 있어요', { ms: 3500 });
 };
 panels.loadUnderlayImage = async (f) => {
   const src = await U.readFile(f); const im = await U.downscaleImage(src, 2400); const img = await U.loadImage(im.src); const b = G.bounds(GP.L().room.pts);

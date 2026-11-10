@@ -6,6 +6,56 @@ const calc = GP.calc = {};
 
 /* ---------- rubber mats: blocks & trims ---------- */
 calc.matArea = m => Math.abs(G.area(m.pts));
+/* where a swing door's leaves sweep, as a rectangle on the side it opens to (+ 5 cm), reaching `back` metres behind the wall line so a
+   cut never shares an edge with a mat that stops at the wall. null for sliding doors, openings and windows. */
+const SWING = new Set(['door', 'door2', 'glass2']);
+/* how much of polygon S lies inside convex K (mats can be any shape; the convex overlap test would see a cut mat as still covering) */
+calc.overlapArea = (S, K) => { const r = GP.tools.clipPoly(S, K); return r.length >= 3 ? Math.abs(G.area(r)) : 0; };
+/* mats a door's sweep runs over (a door marked as cut short at the bottom never catches) */
+calc.doorMats = o => { if (o.underCut) return []; const K = calc.doorSwing(o); return K ? GP.L().mats.filter(m => calc.overlapArea(m.pts, K) > .01) : []; };
+calc.doorSwing = (o, back) => {
+  if (!SWING.has(o.kind)) return null; const hs = GP.hostSeg(o); if (!hs) return null; const sp = GP.openingSpan(o, hs); if (!sp) return null;
+  const f = o.flip ? -1 : 1, lw = o.kind === 'door' ? sp.w : sp.w / 2, z0 = hs.mid + f * hs.thick / 2, b = back || 0;
+  const at = (u, v) => [hs.a[0] + hs.dx * (sp.c + u) + hs.nx * v, hs.a[1] + hs.dz * (sp.c + u) + hs.nz * v];
+  const u0 = -sp.w / 2 - .05, u1 = sp.w / 2 + .05, v0 = z0 - f * b, v1 = z0 + f * (lw + .05);
+  return [at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1)];
+};
+/* polygon S minus convex polygon K (Greiner-Hormann, K walked backwards between the crossings): [] when K covers S, several pieces
+   when K cuts S in two. Crossings only (a vertex lying exactly on K's outline is not expected: K comes from a door). */
+calc.cutPoly = (S0, K0) => {
+  const pos = P => G.area(P) > 0 ? P : P.slice().reverse(), S = pos(S0), K = pos(K0), n = S.length, m = K.length;
+  const inK = p => K.every((c, j) => G.crs(c, K[(j + 1) % m], p) > 1e-9);
+  const X = [];      // crossings: S edge i at t, K edge j at u
+  for (let i = 0; i < n; i++) { const p = S[i], q = S[(i + 1) % n];
+    for (let j = 0; j < m; j++) { const a = K[j], b = K[(j + 1) % m], d1 = G.crs(a, b, p), d2 = G.crs(a, b, q); if ((d1 > 0) === (d2 > 0) || d1 === d2) continue;
+      const t = d1 / (d1 - d2), pt = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t], e3 = G.crs(p, q, a), e4 = G.crs(p, q, b); if ((e3 > 0) === (e4 > 0)) continue;
+      const u = e3 / (e3 - e4); X.push({ i, t, j, cu: j + u, pt, enter: d1 < 0 && d2 > 0 }); } }
+  if (!X.length) return inK(S[0]) && inK(S[Math.floor(n / 2)]) ? [] : [S0];
+  // S walked forward with its crossings in place
+  const seq = []; for (let i = 0; i < n; i++) { seq.push({ v: S[i], out: !inK(S[i]) }); X.filter(x => x.i === i).sort((a, b) => a.t - b.t).forEach(x => seq.push({ x })); }
+  const byK = X.slice().sort((a, b) => a.cu - b.cu), out = [], seen = new Set(), N = seq.length;
+  const backAlongK = x => {      // from an entry, back along K to the previous crossing (an exit), with the K corners passed
+    const k = byK.indexOf(x), y = byK[(k - 1 + byK.length) % byK.length], D = ((x.cu - y.cu) % m + m) % m || m, pts = [];
+    for (let c = Math.floor(x.cu); x.cu - c < D; c--) if (x.cu - c > 1e-9) pts.push(K[((c % m) + m) % m]);
+    return { y, pts };
+  };
+  for (let s0 = 0; s0 < N; s0++) {
+    const st = seq[s0]; if (seen.has(st) || !(st.v ? st.out : !st.x.enter)) continue;
+    const poly = []; let k = s0, guard = 0;
+    while (guard++ < 4 * (N + m)) {
+      const nd = seq[k]; if (seen.has(nd) && poly.length) break; seen.add(nd);
+      if (nd.v) poly.push(nd.v);
+      else if (!nd.x.enter) poly.push(nd.x.pt);
+      else { poly.push(nd.x.pt); const r = backAlongK(nd.x); r.pts.forEach(p => poly.push(p)); k = seq.findIndex(q => q.x === r.y); if (seen.has(seq[k])) break; continue; }
+      k = (k + 1) % N;
+    }
+    const cl = []; poly.forEach(p => { const q = [U.r3(p[0]), U.r3(p[1])], l = cl[cl.length - 1]; if (!l || Math.hypot(l[0] - q[0], l[1] - q[1]) > .004) cl.push(q); });
+    if (cl.length > 2 && Math.hypot(cl[0][0] - cl[cl.length - 1][0], cl[0][1] - cl[cl.length - 1][1]) < .004) cl.pop();
+    const res = cl.filter((b, i) => Math.abs(G.crs(cl[(i - 1 + cl.length) % cl.length], b, cl[(i + 1) % cl.length])) > 1e-6);
+    if (res.length >= 3 && Math.abs(G.area(res)) > .01) out.push(res);
+  }
+  return out;
+};
 calc.matBlocks = m => Math.ceil(calc.matArea(m) / U.PY * (GP.lib.defaults.blocksPerPyeong || 13) - 1e-9);
 function coverSegs(m) {
   const L = GP.L(), out = []; const P = L.room.pts;
@@ -178,6 +228,8 @@ checks.full = () => {
     const zone = G.rectPts(f.it.x, f.it.z, f.it.rot, -d.w / 2 + .02, d.w / 2 - .02, -d.d / 2 - c.b, d.d / 2 + c.f); if (!(c.f + c.b)) continue;
     for (const g of F) { if (g === f || g.d.flat || g.mount !== 'floor' || g.d.wall || nested(f, g)) continue; if (conf.get(f.it.uid)?.has('overlap') && G.overlap(f.c, g.c)) continue; if (G.overlap(zone, g.c, .05)) { push('warn', 'clear', `${nameOf(f.it)} 앞뒤 사용 공간에 ${U.jo(nameOf(g.it), '이', '가')} 들어와 있어요`, [f.it.uid, g.it.uid], [g.it.x, g.it.z]); } }
   }
+  // a swing door over 25 mm rubber blocks catches on them
+  for (const o of L.openings) { const ms = calc.doorMats(o); if (!ms.length) continue; const K = calc.doorSwing(o), c = G.bounds(K); push('warn', 'doormat', `${U.jo(GP.OPENINGS[o.kind] || '문', '이', '가')} 열리는 자리에 고무블럭(25T)이 깔려 있어요. 문이 걸릴 수 있어요 (문을 누르고 「문 열리는 자리 비우기」)`, [], [c.cx, c.cz]); }
   // carry-in through doors
   const doors = L.openings.filter(o => o.kind !== 'window');
   if (doors.length) {

@@ -43,6 +43,11 @@ GP.TEX = {
     { id: 'wall_plaster_dark', name: '다크 미장', size: 2, rough: .85 },
   ],
 };
+GP.logoImage = (it) => {
+  const im = it && it.img && GP.P && GP.P.images[it.img]; if (!im) return null;
+  if (im.cut === undefined && !im._cutting) { im._cutting = true; U.knockout(im.src).then(r => { im.cut = r; delete im._cutting; GP.S.invalidate(); if (GP.V3 && GP.V3.on) GP.V3.rebuild(); GP.emit('dirty'); }).catch(() => { im.cut = null; delete im._cutting; }); }
+  return !it.bgKeep && im.cut ? im.cut : im;
+};
 GP.texDef = id => GP.TEX.floor.find(t => t.id === id) || GP.TEX.wall.find(t => t.id === id) || null;
 GP.texUrl = (id, thumb) => `assets/tex/${thumb ? 'thumb/' : ''}${id}.jpg`;
 GP.EQUIP_CATS = new Set(['cardio', 'machine', 'plate', 'cable', 'rack', 'bench', 'storage', 'func', 'stretch', 'air']);

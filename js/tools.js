@@ -662,6 +662,16 @@ act.dupAgain = () => {
   const copies = pairs.map(p => GP.findItem(p[1])), out = cloneItems(copies, dx, dz); act.lastDup = { pairs: copies.map((it, k) => [it.uid, out[k].uid]) };
   GP.changed('items'); ui.select(out.map(it => ({ k: 'item', id: it.uid })), false, true);
 };
+/* leave the sweep of swing doors free of rubber blocks: the mats are cut (pieces keep their block and trim, the new edges get trim) */
+act.clearDoorMats = (only) => {
+  const L = GP.L(); let n = 0;
+  for (const o of L.openings) {
+    if ((only && o !== only) || !GP.calc.doorMats(o).length) continue; const K = GP.calc.doorSwing(o, .4), next = [];
+    for (const m of L.mats) { if (GP.calc.overlapArea(m.pts, K) <= .01) { next.push(m); continue; } n++; GP.calc.cutPoly(m.pts, K).forEach((pts, k) => next.push(k ? Object.assign(U.clone(m), { id: U.uid('m'), pts }) : Object.assign(m, { pts }))); }
+    L.mats = next;
+  }
+  return n;
+};
 act.group = () => {
   const its = ui.selItems(); if (its.length < 2) { GP.toast('기구를 두 개 이상 함께 골라 주세요', { bad: true }); return; }
   const g = U.uid('g'); its.forEach(it => { it.grp = g; }); GP.changed('items'); ui.renderInspector(); GP.emit('overlay');
@@ -742,6 +752,8 @@ act.inspAction = async (a, b) => {
   if (a === 'group') return act.group(); if (a === 'ungroup') return act.ungroup();
   if (a === 'saveset') return GP.panels.saveSetDialog(ui.selItems());
   if (so && so.k === 'part' && a === 'pkind') { so.obj.kind = b.dataset.v; GP.changed('parts'); ui.renderInspector(); return; }
+  if (so && so.k === 'opening' && a === 'odoormat') { if (act.clearDoorMats(so.obj)) { GP.changed('mats'); GP.toast('문 열리는 자리의 고무블럭을 비웠어요. 잘린 변에는 경사 마감재가 둘러져요'); } ui.renderInspector(); return; }
+  if (so && so.k === 'mat' && a === 'mdoor') { if (act.clearDoorMats()) { GP.changed('mats'); GP.toast('문 열리는 자리의 고무블럭을 비웠어요'); } ui.renderInspector(); return; }
   if (so && so.k === 'opening') { if (a === 'oflip') so.obj.flip = !so.obj.flip; if (a === 'ohinge') so.obj.hinge = so.obj.hinge === 'R' ? 'L' : 'R'; GP.changed('openings'); return; }
   if (so && so.k === 'mat') { if (a === 'mtrim') { so.obj.trim = b.dataset.v; GP.changed('mats'); ui.renderInspector(); return; } if (a === 'msnap') { tools.snapMat(so.obj); GP.changed('mats'); ui.renderInspector(); GP.toast('벽에서 25cm 안쪽인 변을 벽에 붙였어요'); return; } }
   if (so && so.k === 'wall') {
@@ -756,6 +768,7 @@ act.inspChange = (el, live) => {
   if (id === 'iPrice' && el.dataset.pk) { GP.quote.setPrice(el.dataset.pk, Math.max(0, v || 0)); ui.renderInspector(); ui.renderSummary(); GP.emit('library'); return; }
   if (it && (ui.sel.length === 1)) {
     if (id === 'iName') { it.name = el.value.trim() || undefined; if (!live) GP.changed('items'); else GP.S.invalidate(); return; }
+    if (id === 'iLogoBg') { it.bgKeep = !el.checked || undefined; GP.changed('items'); ui.renderInspector(); return; }
     if (el.dataset.param) { it.params = Object.assign({}, it.params || {}); it.params[el.dataset.param] = el.type === 'number' ? v : el.value; if (it.type === 'desk' && el.dataset.param === 'shape') { const d = GP.dims(it); if ((el.value === 'L' || el.value === 'U') && d.d < 1.2) it.d = 1.6; if (el.value === 'round' && d.d < .9) it.d = 1.0; if (el.value === 'straight' || el.value === 'two') it.d = .7; } GP.changed('items'); ui.renderInspector(); return; }
     if (!isFinite(v)) return;
     if (id === 'iW') it.w = U.clamp(v, 5, 5000) / 100; else if (id === 'iD') it.d = U.clamp(v, 2, 5000) / 100; else if (id === 'iH') it.h = U.clamp(v, 1, 1000) / 100;
@@ -768,6 +781,7 @@ act.inspChange = (el, live) => {
   if (so.k === 'part') { if (id === 'pT' && isFinite(v)) o.thick = U.clamp(v, 3, 60) / 100; GP.changed('parts'); return; }
   if (so.k === 'opening') {
     const hs = GP.hostSeg(o);
+    if (id === 'oUnder') { o.underCut = el.checked || undefined; GP.changed('openings'); ui.renderInspector(); return; }
     if (id === 'oKind') o.kind = el.value;
     if (id === 'oW' && isFinite(v)) { const sp = GP.openingSpan(o, hs); o.w = U.clamp(v, 30, 800) / 100; if (hs) o.w = Math.min(o.w, hs.L - .02); o.t = U.clamp(sp.s0 + o.w / 2, o.w / 2, hs ? hs.L - o.w / 2 : 99); }
     if (id === 'oH' && isFinite(v)) o.h = U.clamp(v, 30, 600) / 100; if (id === 'oS' && isFinite(v)) o.sill = U.clamp(v, 0, 400) / 100;

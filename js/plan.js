@@ -220,13 +220,13 @@ function rrect(x, a, b, w, h, r) { x.beginPath(); x.moveTo(a + r, b); x.arcTo(a 
 S.rrect = rrect;
 
 const imgCache = new Map();
-function logoImg(id) { if (!id || !GP.P.images[id]) return null; let im = imgCache.get(id); if (!im) { im = new Image(); im.onload = () => S.invalidate(); im.src = GP.P.images[id].src; imgCache.set(id, im); } return im.complete && im.naturalWidth ? im : null; }
+function logoImg(it) { const lg = GP.logoImage(it); if (!lg) return null; const id = it.img + (lg === GP.P.images[it.img] ? '' : '|cut'); let im = imgCache.get(id); if (!im) { im = new Image(); im.onload = () => S.invalidate(); im.src = lg.src; imgCache.set(id, im); } return im.complete && im.naturalWidth ? im : null; }
 function drawItem(x, it, px, state, ghost) {
   const def = GP.getDef(it.type); if (!def) return; const d = GP.dims(it), m = GP.mountOf(it);
   x.save(); x.translate(it.x, it.z); x.rotate((it.rot || 0) * DEG);
   const faded = m === 'ceil' && !ghost; if (faded) x.globalAlpha *= .6;
   GP.SYM.draw(x, it, def, d, px, state, S._line ? 'line' : 'color');
-  if (it.type === 'logo') { const im = logoImg(it.img); if (im) { const hw = d.w / 2; x.drawImage(im, -hw, -Math.max(d.d, .03), d.w, Math.max(d.d * 2, .06)); } }
+  if (it.type === 'logo') { const im = logoImg(it); if (im) { const hw = d.w / 2; x.drawImage(im, -hw, -Math.max(d.d, .03), d.w, Math.max(d.d * 2, .06)); } }
   if (m === 'ceil' && !ghost) { x.setLineDash([4 * px, 3 * px]); x.strokeStyle = GP.SYM.PAL[state === 'normal' ? 'normal' : state].line; x.lineWidth = px; x.strokeRect(-d.w / 2, -d.d / 2, d.w, d.d); x.setLineDash([]); }
   x.restore();
 }

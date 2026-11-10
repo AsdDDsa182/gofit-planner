@@ -289,7 +289,7 @@ R.floor = {
       `<div class="wz-cards">${[['free', '프리웨이트 구역만', '랙·벤치·덤벨 주변 (추천)'], ['all', '공간 전체', '바닥 전체를 덮어요'], ['none', '깔지 않기', '고무블럭 없이']].map(([k, t, d]) => `<button class="wz-card${how === k ? ' on' : ''}" data-fh="${k}"><b>${t}</b><small>${d}</small></button>`).join('')}</div>
       ${how !== 'none' ? `<div class="fld"><span>고무블럭 종류</span><div class="wz-blocks">${Object.entries(GP.BLOCKS).map(([k, v]) => `<button class="wz-blk${blk === k ? ' on' : ''}" data-fb="${k}"><i style="background:${v.color}"></i>${U.esc(v.name.replace(' 고무블럭', ''))}</button>`).join('')}</div></div>` : ''}
       <button class="btn primary wide" id="wzMat">${how === 'none' ? '고무블럭 모두 치우기' : '이대로 깔기'}</button>
-      <p class="note">${L.mats.length ? `지금 고무블럭 ${L.mats.length}구역 · ${n}장이 깔려 있어요.` : '아직 깔린 고무블럭이 없어요.'}</p>
+      <p class="note">${L.mats.length ? `지금 고무블럭 ${L.mats.length}구역 · ${n}장이 깔려 있어요.` : '아직 깔린 고무블럭이 없어요.'} 안쪽으로 열리는 문 앞은 블럭에 문이 걸리지 않게 비워 둬요(문을 눌러 「문 아래를 잘라 내고 그대로 깔기」로 바꿀 수 있어요).</p>
       <div class="wz-fin"><div class="wz-lh">매장 바닥 · 벽 마감 <small>3D와 제안서에 보여요</small></div>
         <span class="lbl">바닥</span>${ui.texGrid('floor', GP.P.settings.floorBase)}
         <span class="lbl">벽</span>${ui.texGrid('wall', GP.P.settings.wallTex || 'paint')}
@@ -317,6 +317,7 @@ function layMats(how, block) {
     for (let i = 0; i < cl.length; i++) for (let j = i + 1; j < cl.length; j++) { const a = cl[i], b = cl[j]; if (a.x0 < b.x1 && b.x0 < a.x1 && a.z0 < b.z1 && b.z0 < a.z1) { cl[i] = box(a.pts.concat(b.pts)); cl.splice(j, 1); i = -1; break; } }
     for (const g of cl) { const r = GP.tools.clipPoly(P, [[g.x0, g.z0], [g.x1, g.z0], [g.x1, g.z1], [g.x0, g.z1]]); if (r.length >= 3) add(r.map(p => [U.r3(p[0]), U.r3(p[1])])); }
   }
+  if (how !== 'none' && GP.act.clearDoorMats()) GP.toast('안쪽으로 열리는 문 앞은 비워 뒀어요 (블럭 높이 2.5cm에 문이 걸리지 않게)', { ms: 4000 });
   GP.changed('mats');
 }
 

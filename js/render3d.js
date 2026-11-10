@@ -27,8 +27,12 @@ R3.procModel = (it, defOverride) => {
     } catch (e) { console.warn('model', it.type, e); }
     parts = GP.mergeGroup(g); if (sig) { procCache.set(sig, parts); if (procCache.size > 300) procCache.delete(procCache.keys().next().value); }
   }
-  const out = new THREE.Group(); parts.forEach(q => { const me = new THREE.Mesh(q.geometry, q.material); me.castShadow = true; me.receiveShadow = true; out.add(me); });
-  if (it.type === 'logo' && it.img && GP.P && GP.P.images[it.img]) { const tx = new THREE.TextureLoader().load(GP.P.images[it.img].src, () => GP.V3 && GP.V3.invalidate()); tx.encoding = THREE.sRGBEncoding; const pl = new THREE.Mesh(new THREE.PlaneGeometry(d.w - .02, d.h - .02), new THREE.MeshStandardMaterial({ map: tx, transparent: true, roughness: .6 })); pl.position.set(0, d.h / 2, d.d / 2 + .002); out.add(pl); }
+  const out = new THREE.Group(), lg = it.type === 'logo' && GP.logoImage(it);
+  if (lg) {      // a logo is only its picture, a few mm off the wall (no board, so no frame round it)
+    const k = Math.min(d.w / lg.w, d.h / lg.h), pw = lg.w * k, ph = lg.h * k, tx = new THREE.TextureLoader().load(lg.src, () => GP.V3 && GP.V3.invalidate()); tx.encoding = THREE.sRGBEncoding; tx.anisotropy = 8;
+    const pl = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), new THREE.MeshStandardMaterial({ map: tx, transparent: true, alphaTest: .03, roughness: .55 })); pl.position.set(0, d.h / 2, -d.d / 2 + .006); pl.receiveShadow = true; out.add(pl); return out;
+  }
+  parts.forEach(q => { const me = new THREE.Mesh(q.geometry, q.material); me.castShadow = true; me.receiveShadow = true; out.add(me); });
   return out;
 };
 
