@@ -392,15 +392,21 @@ function inspOpening(o) {
     + `<p class="note">도면에서 양 끝의 점을 끌면 폭이 바뀌고, 가운데를 끌면 벽을 따라 움직여요.</p><div class="acts"><button class="btn sm danger" data-act="odel">삭제</button></div>`;
 }
 function matInfo(m) { const A = GP.calc.matArea(m), t = GP.calc.matTrims(m); return `${A.toFixed(1)}㎡ · ${(A / U.PY).toFixed(1)}평 · ${GP.calc.matBlocks(m)}장` + (m.trim !== 'none' ? ` · 일자 ${t.straight} · 모서리 ${t.outC} · 역모서리 ${t.inC}` : ''); }
+// 가로 / 세로 of a rectangular mat or zone (a side next to a wall stays put); other shapes: the side lengths on the plan
+function sizeBox(o) {
+  if (!GP.tools.isAxisRect(o.pts)) return `<p class="note">변을 끌면 그 변이 움직여 크기가 바뀌어요. 도면의 변 길이 숫자를 눌러 직접 넣어도 돼요.</p>`;
+  const b = G.bounds(o.pts); return `<div class="sec"><span class="lbl">크기</span><div class="row2"><label class="fld"><span>가로</span>${num('mW', b.sx.toFixed(2), .05, 'm', 'min=".5"')}</label><label class="fld"><span>세로</span>${num('mD', b.sz.toFixed(2), .05, 'm', 'min=".5"')}</label></div><small class="vat">벽에 붙은 쪽은 그대로 두고 반대쪽이 늘거나 줄어요. 도면에서 변을 끌어도 돼요.</small></div>`;
+}
 function inspMat(m) {
   const B = GP.BLOCKS[m.block] || GP.BLOCKS.coat;
   insp.innerHTML = head(B.name + ' 25T', matInfo(m), GP.S.blockColor(m.block))
+    + sizeBox(m)
     + `<div class="sec"><span class="lbl">고무블럭 종류</span><select id="mB">${Object.entries(GP.BLOCKS).map(([k, v]) => `<option value="${k}" ${m.block === k ? 'selected' : ''}>${v.name}</option>`).join('')}</select></div>`
     + `<div class="sec"><span class="lbl">마감재 (드러난 변에만)</span><div class="mount">${[['rubber', '고무'], ['alu', '알루미늄'], ['none', '없음']].map(([k, v]) => `<button class="${m.trim === k ? 'on' : ''}" data-act="mtrim" data-v="${k}">${v}</button>`).join('')}</div></div>`
     + priceBox(`mat:${m.block}|25`, GP.lib.matPrices[`${m.block}|25`], '장당 단가 (부가세 별도)')
     + `<p class="note">벽에 붙은 변은 마감재가 빠지고, 드러난 변에만 자동으로 둘러요.</p><div class="acts"><button class="btn sm" data-act="msnap">벽에 딱 붙이기</button><button class="btn sm danger" data-act="odel">삭제</button></div>`;
 }
-function inspZone(z) { const A = Math.abs(G.area(z.pts)); insp.innerHTML = head(z.name || '존', `${A.toFixed(1)}㎡ · ${(A / U.PY).toFixed(1)}평`, z.color) + `<div class="row2"><label class="fld"><span>이름</span><input id="zN" value="${U.esc(z.name || '')}"></label><label class="fld"><span>색상</span><input type="color" id="zC" value="${z.color || '#2f6bd8'}"></label></div><div class="acts"><button class="btn sm danger" data-act="odel">삭제</button></div>`; }
+function inspZone(z) { const A = Math.abs(G.area(z.pts)); insp.innerHTML = head(z.name || '존', `${A.toFixed(1)}㎡ · ${(A / U.PY).toFixed(1)}평`, z.color) + `<div class="row2"><label class="fld"><span>이름</span><input id="zN" value="${U.esc(z.name || '')}"></label><label class="fld"><span>색상</span><input type="color" id="zC" value="${z.color || '#2f6bd8'}"></label></div>${sizeBox(z)}<div class="acts"><button class="btn sm danger" data-act="odel">삭제</button></div>`; }
 function inspRoom(r) { const A = GP.calc.regionArea(r.x, r.z); insp.innerHTML = head(r.name || '공간', `${A.toFixed(1)}㎡ · ${(A / U.PY).toFixed(1)}평 (벽·가벽으로 둘러싸인 면적)`, '#5b6570') + `<label class="fld"><span>이름</span><input id="rN" value="${U.esc(r.name || '')}" autofocus></label><div class="acts"><button class="btn sm danger" data-act="odel">삭제</button></div>`; setTimeout(() => { const i = $('#rN'); if (i && r._new) { i.select(); delete r._new; } }, 30); }
 function inspNote(n) { insp.innerHTML = head('메모', '도면에 표시돼요', '#E0622B') + `<label class="fld"><span>내용</span><textarea id="nT" rows="3">${U.esc(n.text || '')}</textarea></label><div class="acts"><button class="btn sm danger" data-act="odel">삭제</button></div>`; setTimeout(() => { const t = $('#nT'); if (t && n._new) { t.focus(); delete n._new; } }, 30); }
 function inspDim(d) { insp.innerHTML = head('치수', `${G.len(d.a, d.b).toFixed(2)} m`, '#1F2429') + `<div class="acts"><button class="btn sm danger" data-act="odel">삭제</button></div>`; }

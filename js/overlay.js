@@ -21,6 +21,11 @@ OV.sync = () => {
     // corner angles: press to type an angle
     for (let i = 0; i < P.length; i++) { const a = G.interior(P, i), q = angPos(P, i); if (!q) continue; const right = [90, 180, 270].some(v => Math.abs(a - v) < .3); spec('a' + i, 'ov ang edit' + (right ? ' right' : ''), (Math.round(a * 10) / 10) + '°', q, { data: { ang: i }, interactive: true }); }
   }
+  const pt = !GP.viewOnly && u.tool === 'select' && GP.tools.polyTarget();
+  if (pt && (pt.kind === 'mat' || pt.kind === 'zone')) {
+    const P = pt.pts;
+    for (let i = 0; i < P.length; i++) { const e = G.edge(P, i), off = Math.max(.28, GP.S.mpp() * 24); spec('s' + i, 'ov wl edit side', e.L.toFixed(2) + ' m', [(e.a[0] + e.b[0]) / 2 + e.nx * off, (e.a[1] + e.b[1]) / 2 + e.nz * off], { rotSeg: [e.a, e.b], minLen: 70, data: { side: i }, interactive: true }); }
+  }
   diff();
   OV.syncHandles();
   OV.place();
@@ -57,8 +62,13 @@ OV.syncHandles = () => {
   if (t) {
     const P = t.pts, n = P.length, room = t.kind === 'room';
     const segs = t.open ? n - 1 : n;
-    for (let i = 0; i < segs; i++) { const a = P[i], b = P[(i + 1) % n]; hspecs.push({ cls: 'ov hd mid', html: '+', pos: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], h: 'm', i, title: '끌어서 꺾기' }); }
-    for (let i = 0; i < n; i++) hspecs.push({ cls: 'ov hd' + (GP.tools.selV === i || GP.tools.selVs.has(i) ? ' sel' : ''), html: room ? i + 1 : '', pos: P[i], h: 'v', i, title: '끌어서 이동 · Shift+클릭 여러 개 선택 · 더블클릭 삭제' });
+    const sizable = t.kind === 'mat' || t.kind === 'zone';      // mats and zones: the middle of a side and the corners resize
+    for (let i = 0; i < segs; i++) {
+      const a = P[i], b = P[(i + 1) % n], mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      if (sizable) { const e = G.edge(P, i); let r = Math.atan2(b[1] - a[1], b[0] - a[0]) / U.DEG; if (r > 90) r -= 180; if (r <= -90) r += 180; hspecs.push({ cls: 'ov hd side', html: '', pos: mid, h: 'e', i, rot: r, cur: GP.tools.resizeCursor(-e.nx, -e.nz), title: '끌어서 크기 조절 · Alt+끌기: 변 꺾기' }); }
+      else hspecs.push({ cls: 'ov hd mid', html: '+', pos: mid, h: 'm', i, title: '끌어서 꺾기' });
+    }
+    for (let i = 0; i < n; i++) hspecs.push({ cls: 'ov hd' + (GP.tools.selV === i || GP.tools.selVs.has(i) ? ' sel' : ''), html: room ? i + 1 : '', pos: P[i], h: 'v', i, title: sizable ? '끌어서 크기 조절 (두 변 함께) · Alt+끌기: 이 점만 옮기기 · Shift+클릭 여러 개 선택 · 더블클릭 삭제' : '끌어서 이동 · Shift+클릭 여러 개 선택 · 더블클릭 삭제' });
   }
   const its = u.selItems();
   if (its.length === 1 && u.sel.length === 1 && u.tool === 'select') {
@@ -75,12 +85,12 @@ OV.syncHandles = () => {
   renderHandles();
 };
 function renderHandles() {
-  handles.innerHTML = hspecs.map((h, k) => `<div class="${h.cls}" data-k="${k}" ${h.h ? `data-h="${h.h}"` : ''} ${h.i != null ? `data-i="${h.i}"` : ''} ${h.side != null ? `data-side="${h.side}"` : ''} ${h.cx != null ? `data-cx="${h.cx}" data-cz="${h.cz}"` : ''} ${h.title ? `title="${h.title}"` : ''} style="${h.h ? 'pointer-events:auto' : ''}">${h.html}</div>`).join('') + '<svg id="ovSvg" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none"></svg>';
+  handles.innerHTML = hspecs.map((h, k) => `<div class="${h.cls}" data-k="${k}" ${h.h ? `data-h="${h.h}"` : ''} ${h.i != null ? `data-i="${h.i}"` : ''} ${h.side != null ? `data-side="${h.side}"` : ''} ${h.cx != null ? `data-cx="${h.cx}" data-cz="${h.cz}"` : ''} ${h.title ? `title="${h.title}"` : ''} style="${h.h ? 'pointer-events:auto;' : ''}${h.cur ? `cursor:${h.cur}` : ''}">${h.html}</div>`).join('') + '<svg id="ovSvg" style="position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none"></svg>';
   svg = handles.querySelector('#ovSvg');
 }
 function placeHandles() {
   const S = GP.S; const nodes = handles.children;
-  for (let k = 0; k < hspecs.length; k++) { const h = hspecs[k], el = nodes[k]; if (!el) continue; const [x, y] = S.toScreen(h.pos[0], 0, h.pos[1]); place(el, x, y); }
+  for (let k = 0; k < hspecs.length; k++) { const h = hspecs[k], el = nodes[k]; if (!el) continue; const [x, y] = S.toScreen(h.pos[0], 0, h.pos[1]); place(el, x, y, h.rot); }
 }
 function angPos(P, i) { const n = P.length, p = P[i], a = P[(i - 1 + n) % n], b = P[(i + 1) % n]; const la = G.len(a, p) || 1, lb = G.len(b, p) || 1; let bx = (a[0] - p[0]) / la + (b[0] - p[0]) / lb, bz = (a[1] - p[1]) / la + (b[1] - p[1]) / lb; const l = Math.hypot(bx, bz); if (l < 1e-3) return null; bx /= l; bz /= l; if (G.interior(P, i) > 180) { bx = -bx; bz = -bz; } return [p[0] + bx * .75, p[1] + bz * .75]; }
 handles.addEventListener('pointerdown', e => { const el = e.target.closest('[data-h]'); if (el) GP.tools.handleDown(e, el); });
@@ -88,9 +98,21 @@ handles.addEventListener('dblclick', e => { const el = e.target.closest('[data-h
 
 /* ---------------- wall length edit ---------------- */
 base.addEventListener('click', e => {
-  const t = e.target.closest('.wl.edit'); if (!t || t.classList.contains('editing')) return; const i = +t.dataset.wall, L0 = G.edge(GP.L().room.pts, i).L;
+  const t = e.target.closest('.wl.edit:not(.side)'); if (!t || t.classList.contains('editing')) return; const i = +t.dataset.wall, L0 = G.edge(GP.L().room.pts, i).L;
   t.classList.add('editing'); t.innerHTML = `<input type="number" step="0.01" min="0.3" value="${L0.toFixed(2)}" aria-label="벽 길이 (m)">`; const inp = t.firstChild; inp.focus(); inp.select(); let done = false;
   const fin = ok => { if (done) return; done = true; t.classList.remove('editing'); const v = parseFloat(inp.value); const rec = [...els.values()].find(r => r.el === t); if (rec) rec.html = ''; if (ok && v >= .3 && v < 500 && Math.abs(v - L0) > .0005) GP.tools.setWallLength(i, v); OV.sync(); };
+  inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') fin(true); else if (ev.key === 'Escape') fin(false); }); inp.addEventListener('blur', () => fin(true));
+});
+
+/* ---------------- mat / zone side length edit ---------------- */
+base.addEventListener('click', e => {
+  const t = e.target.closest('.wl.side'); if (!t || t.classList.contains('editing')) return; const tg = GP.tools.polyTarget(); if (!tg) return; const i = +t.dataset.side, L0 = G.edge(tg.pts, i).L;
+  t.classList.add('editing'); t.innerHTML = `<input type="number" step="0.05" min="0.3" value="${L0.toFixed(2)}" aria-label="변 길이 (m)">`; const inp = t.firstChild; inp.focus(); inp.select(); let done = false;
+  const fin = ok => {
+    if (done) return; done = true; t.classList.remove('editing'); const v = parseFloat(inp.value); const rec = [...els.values()].find(r => r.el === t); if (rec) rec.html = '';
+    if (ok && v >= .3 && v < 200 && Math.abs(v - L0) > .0005) { const cur = GP.tools.polyTarget(); if (cur && GP.tools.setSideLength(cur, i, v)) { if (cur.kind === 'mat') GP.tools.clipMat(cur.obj); GP.changed(cur.kind === 'mat' ? 'mats' : 'zones'); GP.ui.renderInspector(); } }
+    OV.sync();
+  };
   inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') fin(true); else if (ev.key === 'Escape') fin(false); }); inp.addEventListener('blur', () => fin(true));
 });
 

@@ -123,6 +123,51 @@ function snapPolyVerts(pts, exceptMat) {
 }
 function isAxisRect(pts) { if (pts.length !== 4) return false; const b = G.bounds(pts); return pts.every(p => (Math.abs(p[0] - b.minX) < 1e-4 || Math.abs(p[0] - b.maxX) < 1e-4) && (Math.abs(p[1] - b.minZ) < 1e-4 || Math.abs(p[1] - b.maxZ) < 1e-4)); }
 tools.snapMat = (m) => { if (isAxisRect(m.pts)) { const b = G.bounds(m.pts); m.pts = snapRect(b.minX, b.minZ, b.maxX, b.maxZ, m); } else m.pts = snapPolyVerts(m.pts, m); };
+tools.isAxisRect = isAxisRect;
+tools.clipMat = (m) => { if (isConvex(m.pts)) m.pts = clipToRoom(m.pts); };      // a mat never reaches past the walls
+
+/* ---------------- mat / zone size: one side moves straight out or in, the sides next to it keep their direction ---------------- */
+const lineX = (A, e, B, f) => { const den = e[0] * f[1] - e[1] * f[0]; if (Math.abs(den) < 1e-9) return null; const t = ((B[0] - A[0]) * f[1] - (B[1] - A[1]) * f[0]) / den; return [A[0] + e[0] * t, A[1] + e[1] * t]; };
+const okPoly = (Q, P) => { const a = G.area(Q); return Q.every(p => isFinite(p[0]) && isFinite(p[1])) && Math.sign(a) === Math.sign(G.area(P)) && Math.abs(a) > .04 && !G.selfX(Q); };
+function offsetSide(P, i, d) {      // side i (P[i] → P[i+1]) moved outward by d metres; null when the shape would fold over
+  const n = P.length, j = (i + 1) % n, E = G.edge(P, i), ox = -E.nx * d, oz = -E.nz * d, dir = [E.dx, E.dz];
+  const a = [P[i][0] + ox, P[i][1] + oz], b = [P[j][0] + ox, P[j][1] + oz], pv = P[(i - 1 + n) % n], nx = P[(i + 2) % n];
+  const na = lineX(a, dir, pv, [P[i][0] - pv[0], P[i][1] - pv[1]]) || a, nb = lineX(a, dir, nx, [P[j][0] - nx[0], P[j][1] - nx[1]]) || b;
+  const Q = P.map(p => p.slice()); Q[i] = [U.r3(na[0]), U.r3(na[1])]; Q[j] = [U.r3(nb[0]), U.r3(nb[1])];
+  return okPoly(Q, P) ? Q : null;
+}
+/* the resize cursor for a side whose outward normal is (nx, nz) on screen (plan x → right, z → down) */
+tools.resizeCursor = (nx, nz) => { let a = Math.atan2(nz, nx) / DEG; a = ((a % 180) + 180) % 180; return a < 22.5 || a >= 157.5 ? 'ew-resize' : a < 67.5 ? 'nwse-resize' : a < 112.5 ? 'ns-resize' : 'nesw-resize'; };
+const sizable = t => !!t && (t.kind === 'mat' || t.kind === 'zone');
+/* the side of the selected mat / zone under the pointer (not its ends: the corner handles are there) */
+function sideAt(cx, cy) {
+  if (ui.tool !== 'select' || GP.viewOnly || ui.placing) return null; const t = tools.polyTarget(); if (!sizable(t)) return null;
+  const S = GP.S, fp = S.floorAt(cx, cy), P = t.pts, n = P.length, tol = S.mpp() * 7; let best = null;
+  for (let i = 0; i < n; i++) { const c = G.closest(fp.x, fp.z, P[i], P[(i + 1) % n]); if (c.d < tol && Math.min(c.t, c.L - c.t) > Math.min(S.mpp() * 10, c.L * .2) && (!best || c.d < best.d)) best = { i, d: c.d }; }
+  if (!best) return null; const E = G.edge(P, best.i); return { t, i: best.i, cur: tools.resizeCursor(-E.nx, -E.nz), fp };
+}
+function startSide(t, i, fp) { const E = G.edge(t.pts, i); hd = { type: 'e', target: t, i, start: t.pts.map(p => p.slice()), fx: fp.x, fz: fp.z, nx: -E.nx, nz: -E.nz, moved: false }; tools.selVs.clear(); tools.selV = -1; canvas().style.cursor = tools.resizeCursor(-E.nx, -E.nz); }
+const setPts = (t, Q) => { t.obj.pts = Q; t.pts = Q; };
+const sizeHint = (t, extra) => { const P = t.pts, b = G.bounds(P); ui.setHint(`${isAxisRect(P) ? `크기 <b>${b.sx.toFixed(2)} × ${b.sz.toFixed(2)} m</b>` : `면적 <b>${Math.abs(G.area(P)).toFixed(1)}㎡</b>`}${t.kind === 'mat' ? ` · 약 ${GP.calc.matBlocks(t.obj)}장` : ''}${extra || ''}`); };
+/* how far a point is from the room walls and partitions */
+function wallDist(x, z) { const L = GP.L(), P = L.room.pts; let d = Infinity; for (let i = 0; i < P.length; i++) d = Math.min(d, G.closest(x, z, P[i], P[(i + 1) % P.length]).d); for (const p of L.partitions) for (let i = 0; i < p.pts.length - 1; i++) d = Math.min(d, G.closest(x, z, p.pts[i], p.pts[i + 1]).d - (p.thick || .1) / 2); return d; }
+/* type a side's length: the far end moves, unless the side there is against a wall (and the near one is not) or moving it would go through a wall */
+tools.setSideLength = (t, i, L1) => {
+  const P = t.pts, n = P.length, E = G.edge(P, i), dL = L1 - E.L; if (Math.abs(dL) < .0005) return true;
+  const flush = j => { const F = G.edge(P, j); return wallDist((F.a[0] + F.b[0]) / 2, (F.a[1] + F.b[1]) / 2) < .05; };
+  const nxt = (i + 1) % n, prv = (i - 1 + n) % n, order = flush(nxt) && !flush(prv) ? [prv, nxt] : [nxt, prv];
+  const tryEnd = j => { const F = G.edge(P, j), s = Math.abs(E.dx * F.dz - E.dz * F.dx) || 1; for (const sg of [1, -1]) { const Q = offsetSide(P, j, sg * dL * s); if (Q && Math.abs(G.edge(Q, i).L - L1) < .01) return Q; } return null; };
+  const room = GP.L().room.pts, fits = Q => G.rectInside(Q, room, .005), tries = order.map(tryEnd).filter(Boolean);
+  const Q = tries.find(fits) || tries[0]; if (Q) { setPts(t, Q); return true; }
+  GP.toast('이 길이로는 모양을 만들 수 없어요', { bad: true }); return false;
+};
+/* 가로 / 세로 of a rectangular mat or zone */
+tools.setRectSize = (obj, kind, axis, v) => {
+  const P = obj.pts; if (!isAxisRect(P) || !(v >= .1)) return; const i = P.findIndex((p, k) => { const E = G.edge(P, k); return axis === 'x' ? Math.abs(E.dx) > .99 : Math.abs(E.dz) > .99; });
+  const t = { kind, obj, pts: P }; if (i < 0 || !tools.setSideLength(t, i, v)) return;
+  if (kind === 'mat' && isConvex(obj.pts)) obj.pts = clipToRoom(obj.pts);
+  GP.changed(kind === 'mat' ? 'mats' : 'zones');
+};
 
 /* ---------------- plan-space hit tests for non-item objects ---------------- */
 function hitObject(x, z, cx, cy) {
@@ -188,6 +233,7 @@ tools.ghostAt = ghostAt; tools.placeGhost = placeGhost;
 /* ---------------- hover: highlight + price tooltip ---------------- */
 tools.hoverAt = (e) => {
   const S = GP.S; const fp = S.floorAt(e.clientX, e.clientY); let h = null, html = '';
+  const sd = sideAt(e.clientX, e.clientY); if (sd) { tools.clearHover(); canvas().style.cursor = sd.cur; return; }
   const uid = S.itemAt(fp.x, fp.z);
   if (uid) { const it = GP.findItem(uid); if (it) { h = { k: 'item', id: uid }; html = GP.info.item(it); } }
   if (!h) { const m = S.matAt(fp.x, fp.z); if (m && (GP.viewOnly || ui.step === 'floor' || true)) { h = { k: 'mat', id: m.id }; html = GP.info.mat(m); } }
@@ -229,6 +275,7 @@ function onDown(e) {
   const t = ui.tool;
   if (t !== 'select') { if (toolDown(t, e, fp)) return; }
   if (t !== 'select') { press = { x: e.clientX, y: e.clientY }; return; }
+  const sd = !e.shiftKey && sideAt(e.clientX, e.clientY); if (sd) { startSide(sd.t, sd.i, fp); GP.tip.hide(); return; }
   const uid = ui.step !== 'floor' ? S.itemAt(fp.x, fp.z) : null;
   const add = e.shiftKey || ui.multi;
   if (uid) {
@@ -447,6 +494,7 @@ tools.wallSel = (i) => { if (ui.tool !== 'vertex' || tools.selVs.size < 2) retur
 function startMulti(target, i, fp, wall, fromHandle) {
   const idx = [...tools.selVs]; hd = { type: 'vs', target, i, idx, start: idx.map(k => target.pts[k].slice()), fx: fp.x, fz: fp.z, moved: false, wall, fromHandle };
 }
+const ptrAng = (it, fp) => -Math.atan2(fp.x - it.x, fp.z - it.z) / DEG;      // the item rotation that would put its front towards the pointer
 tools.handleDown = (e, el) => {
   e.preventDefault(); e.stopPropagation(); const h = el.dataset.h;
   const target = tools.polyTarget();
@@ -455,13 +503,17 @@ tools.handleDown = (e, el) => {
     if (e.shiftKey) { if (S.has(i)) { S.delete(i); tools.selV = S.size ? [...S][S.size - 1] : -1; GP.emit('overlay'); GP.S.invalidate(); return; } S.add(i); }
     else if (!S.has(i)) selOnly(i);
     tools.selV = i; cap(el, e);
-    if (S.size > 1) startMulti(target, i, GP.S.floorAt(e.clientX, e.clientY), null, true); else hd = { type: 'v', target, i, moved: false };
+    const fp = GP.S.floorAt(e.clientX, e.clientY);
+    if (S.size > 1) startMulti(target, i, fp, null, true);
+    else if (sizable(target) && !e.altKey) hd = { type: 'c', target, i, start: target.pts.map(p => p.slice()), fx: fp.x, fz: fp.z, moved: false };
+    else hd = { type: 'v', target, i, moved: false };
     GP.emit('overlay'); GP.S.invalidate(); return;
   }
-  if (h === 'm' && target) { const i = +el.dataset.i, pts = target.pts, n = pts.length, a = pts[i], b = pts[(i + 1) % n]; pts.splice(i + 1, 0, [U.r3((a[0] + b[0]) / 2), U.r3((a[1] + b[1]) / 2)]); selOnly(i + 1); GP.S.dataChanged(); hd = { type: 'v', target, i: i + 1, moved: true }; GP.emit('overlay'); return; }
+  if (h === 'e' && target && !e.altKey) { startSide(target, +el.dataset.i, GP.S.floorAt(e.clientX, e.clientY)); cap(el, e); return; }
+  if ((h === 'm' || h === 'e') && target) { const i = +el.dataset.i, pts = target.pts, n = pts.length, a = pts[i], b = pts[(i + 1) % n]; pts.splice(i + 1, 0, [U.r3((a[0] + b[0]) / 2), U.r3((a[1] + b[1]) / 2)]); selOnly(i + 1); GP.S.dataChanged(); hd = { type: 'v', target, i: i + 1, moved: true }; GP.emit('overlay'); return; }
   const it = ui.selItems()[0];
   if (h === 'rs' && it) { const [cx, cz] = [+el.dataset.cx, +el.dataset.cz]; const d = GP.dims(it); const opp = G.l2w(it.x, it.z, it.rot, -cx * d.w / 2, -cz * d.d / 2); hd = { type: 'rs', it, cx, cz, opp }; cap(el, e); return; }
-  if (h === 'rot' && it) { hd = { type: 'rot', it }; cap(el, e); return; }
+  if (h === 'rot' && it) { const fp = GP.S.floorAt(e.clientX, e.clientY); hd = { type: 'rot', it, r0: it.rot, a0: ptrAng(it, fp) }; cap(el, e); return; }
   if (h === 'oe') { const so = ui.selObj(); if (!so || so.k !== 'opening') return; const o = so.obj, hs = GP.hostSeg(o), sp = GP.openingSpan(o, hs); hd = { type: 'oe', o, side: +el.dataset.side, fixed: +el.dataset.side > 0 ? sp.s0 : sp.s1 }; cap(el, e); return; }
 };
 tools.handleMove = (e) => {
@@ -470,6 +522,17 @@ tools.handleMove = (e) => {
     const P = hd.target.pts, n = P.length; let x = fp.x, z = fp.z;
     if (!e.altKey) { const nb = hd.target.open ? [hd.i - 1, hd.i + 1].filter(j => j >= 0 && j < n) : [(hd.i - 1 + n) % n, (hd.i + 1) % n]; const sp = snapPoint(x, z, { prev: nb.length ? P[nb[0]] : null }); x = sp[0]; z = sp[1]; const tol = S.mpp() * 10; for (const j of nb) { if (Math.abs(x - P[j][0]) < tol) x = P[j][0]; if (Math.abs(z - P[j][1]) < tol) z = P[j][1]; } }
     P[hd.i] = [U.r3(x), U.r3(z)]; hd.moved = true; S.dataChanged(); GP.emit('overlay'); return;
+  }
+  if (hd.type === 'e') {
+    let d = (fp.x - hd.fx) * hd.nx + (fp.z - hd.fz) * hd.nz; if (!e.altKey) d = U.snap(d, .05);
+    const Q = offsetSide(hd.start, hd.i, d); if (Q) { setPts(hd.target, Q); hd.moved = true; S.dataChanged(); GP.emit('overlay'); }
+    sizeHint(hd.target, ` · ${d >= 0 ? '늘림' : '줄임'} ${U.cm(Math.abs(d))}cm`); return;
+  }
+  if (hd.type === 'c') {
+    const P0 = hd.start, n = P0.length, i = hd.i, p = (i - 1 + n) % n, E1 = G.edge(P0, p), E2 = G.edge(P0, i), dx = fp.x - hd.fx, dz = fp.z - hd.fz;
+    let d1 = -(dx * E1.nx + dz * E1.nz), d2 = -(dx * E2.nx + dz * E2.nz); if (!e.altKey) { d1 = U.snap(d1, .05); d2 = U.snap(d2, .05); }
+    const Q1 = offsetSide(P0, p, d1), Q = Q1 && offsetSide(Q1, i, d2); if (Q) { setPts(hd.target, Q); hd.moved = true; S.dataChanged(); GP.emit('overlay'); }
+    sizeHint(hd.target, ' · <kbd>Alt</kbd>+끌기: 이 점만 옮기기'); return;
   }
   if (hd.type === 'vs') {
     let dx = fp.x - hd.fx, dz = fp.z - hd.fz;
@@ -483,7 +546,7 @@ tools.handleMove = (e) => {
     const it = hd.it; const [lx, lz] = G.w2l(hd.opp[0], hd.opp[1], it.rot, fp.x, fp.z); let w = Math.abs(lx), d = Math.abs(lz); if (!e.altKey) { w = U.snap(w, .05); d = U.snap(d, .05); } w = Math.max(.1, w); d = Math.max(.03, d);
     const c = G.l2w(hd.opp[0], hd.opp[1], it.rot, hd.cx * w / 2, hd.cz * d / 2); it.w = U.r3(w); it.d = U.r3(d); it.x = U.r3(c[0]); it.z = U.r3(c[1]); hd.moved = true; GP.checks.quick(); S.invalidate(); GP.emit('overlay'); return;
   }
-  if (hd.type === 'rot') { const it = hd.it; let a = Math.atan2(fp.x - it.x, fp.z - it.z) / DEG; a = U.normRot(-a + 180); if (!e.altKey) a = U.normRot(U.snap(a, 15)); it.rot = a; hd.moved = true; GP.checks.quick(); S.invalidate(); GP.emit('overlay'); return; }
+  if (hd.type === 'rot') { const it = hd.it; let a = U.normRot(hd.r0 + ptrAng(it, fp) - hd.a0); if (!e.altKey) a = U.normRot(U.snap(a, 15)); it.rot = a; hd.moved = true; GP.checks.quick(); S.invalidate(); GP.emit('overlay'); return; }
   if (hd.type === 'oe') {
     const o = hd.o, hs = GP.hostSeg(o); if (!hs) return; const c = G.closest(fp.x, fp.z, hs.a, hs.b); let t = e.altKey ? c.t : U.snap(c.t, .05);
     t = hd.side > 0 ? U.clamp(t, hd.fixed + .3, hs.L) : U.clamp(t, 0, hd.fixed - .3);
@@ -493,6 +556,11 @@ tools.handleMove = (e) => {
 };
 tools.handleUp = () => {
   if (!hd) return; const h = hd; hd = null;
+  if (h.type === 'e' || h.type === 'c') {
+    canvas().style.cursor = ''; ui.setHint();
+    if (h.moved) { const t = h.target; if (t.kind === 'mat') { if (isConvex(t.obj.pts)) t.obj.pts = clipToRoom(t.obj.pts); tools.snapMat(t.obj); } GP.changed(t.kind === 'mat' ? 'mats' : 'zones'); }
+    ui.renderInspector(); GP.emit('overlay'); return;
+  }
   if (h.moved) { if (h.type === 'v' || h.type === 'vs') { const k = h.target.kind; if (k === 'mat') tools.snapMat(h.target.obj); GP.changed(k === 'room' ? 'room' : k); if (h.type === 'vs') ui.setHint(); } else if (h.type === 'oe') { GP.changed('openings'); ui.setHint(); } else GP.changed('items'); }
   ui.renderInspector(); GP.emit('overlay');
 };
@@ -649,6 +717,7 @@ act.inspChange = (el, live) => {
     if (id === 'oR' && isFinite(v) && hs) o.t = U.r3(U.clamp(hs.L - v / 100 - o.w / 2, o.w / 2, hs.L - o.w / 2));
     GP.changed('openings'); ui.renderInspector(); return;
   }
+  if ((so.k === 'mat' || so.k === 'zone') && (id === 'mW' || id === 'mD')) { if (isFinite(v)) tools.setRectSize(o, so.k, id === 'mW' ? 'x' : 'z', U.clamp(v, .5, 200)); ui.renderInspector(); return; }
   if (so.k === 'mat') { if (id === 'mB') o.block = el.value; GP.changed('mats'); ui.renderInspector(); return; }
   if (so.k === 'zone') { if (id === 'zN') o.name = el.value; if (id === 'zC') o.color = el.value; if (live) { GP.S.invalidate(); return; } GP.changed('zones'); return; }
   if (so.k === 'room') { if (id === 'rN') o.name = el.value; if (live) { GP.S.invalidate(); return; } GP.changed('annot'); return; }
