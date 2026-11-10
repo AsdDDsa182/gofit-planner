@@ -193,7 +193,13 @@ function rbox(w, h, d, r) {
   if (rbCache.size > 600) rbCache.clear(); rbCache.set(k, g); return g;
 }
 const finC = (v, def) => { const f = GP.FINISH[v || def]; return f ? f.c : (v || GP.FINISH[def].c); };
-const finM = (v, def) => { const f = GP.FINISH[v || def], c = finC(v, def); return mat('fin:' + c, () => std(c, f && f.metal ? { metalness: f.metal, roughness: .32 } : { roughness: .55 })); };
+const finM = (v, def) => { const f = GP.FINISH[v || def], c = finC(v, def); if (f && f.tex && !LINE) return mat('fin:' + f.tex, () => std('#ffffff', { map: veneerTex(f.tex), roughness: .58 })); return mat('fin:' + c, () => std(c, f && f.metal ? { metalness: f.metal, roughness: .32 } : { roughness: .55 })); };
+/* a wood veneer: the rounded boxes' faces carry UVs in metres, the picture covers 1.1 m × 2.2 m (grain upright) */
+function veneerTex(id) {
+  if (texCache[id]) return texCache[id]; texLoading++;
+  const t = new THREE.TextureLoader().load(GP.texUrl(id), () => { texLoading--; dirty = true; }, undefined, () => { texLoading--; });
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; t.repeat.set(1 / 1.1, 1 / 2.2); t.offset.set(.5, .5); return (texCache[id] = t);
+}
 const glassMat = (v) => { const g = GP.GLASS[v] || GP.GLASS.clear; return mat('gl:' + (v || 'clear'), () => new THREE.MeshPhysicalMaterial({ color: g.c, transparent: true, opacity: g.o, roughness: g.r || .04, metalness: 0, reflectivity: .5, depthWrite: false, side: THREE.DoubleSide })); };
 const hwMat = (v) => { const h = GP.HW[v] || GP.HW.steel; return mat('hw:' + (v || 'steel'), () => std(h.c, { metalness: h.m, roughness: h.r })); };
 function buildOpenings(g, H) {

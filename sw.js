@@ -1,5 +1,5 @@
 /* GoFit Planner — offline cache. Bump CACHE when app files change. 3D models are cached separately on first view. */
-const CACHE = 'gofit-planner-v3.6.0';
+const CACHE = 'gofit-planner-v3.6.1';
 const MODELS = 'gofit-models-v2';   // v1 held the DRAX files (about 130 MB): dropped on activate
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
@@ -7,7 +7,7 @@ const FILES = [
   'assets/plan/manifest.json', 'models/basic/index.json',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png',
 ].concat(  /* wall & floor finishes (GP.TEX) and their swatches */
-  ['floor_oak', 'floor_walnut', 'floor_concrete', 'floor_epoxy', 'floor_porcelain', 'floor_marble', 'floor_carpet', 'floor_terrazzo', 'wall_concrete', 'wall_brick_red', 'wall_brick_white', 'wall_wood_slat', 'wall_subway_tile', 'wall_slate', 'wall_plaster_dark'].flatMap(t => ['assets/tex/' + t + '.jpg', 'assets/tex/thumb/' + t + '.jpg']));
+  ['floor_oak', 'floor_walnut', 'floor_concrete', 'floor_epoxy', 'floor_porcelain', 'floor_marble', 'floor_carpet', 'floor_terrazzo', 'wall_concrete', 'wall_brick_red', 'wall_brick_white', 'wall_wood_slat', 'wall_subway_tile', 'wall_slate', 'wall_plaster_dark', 'veneer_oak', 'veneer_walnut', 'veneer_ash', 'veneer_teak'].flatMap(t => ['assets/tex/' + t + '.jpg', 'assets/tex/thumb/' + t + '.jpg']));
 /* plan top views + catalog pictures are listed in the manifest; cache them all so the plan looks right offline */
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(async c => { await c.addAll(FILES); try { const m = await (await fetch('assets/plan/manifest.json')).json(); await c.addAll(Object.keys(m).flatMap(t => ['assets/plan/' + t + '.png', 'assets/plan-line/' + t + '.png', 'assets/thumb/' + t + '.png'])); } catch (err) { }
   try { const b = await (await fetch('models/basic/index.json')).json(); await c.addAll(Object.values(b).map(p => 'models/basic/' + p)); } catch (err) { } }).then(() => self.skipWaiting())); });

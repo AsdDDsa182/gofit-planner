@@ -46,7 +46,7 @@ GP.TEX = {
 /* colours for doors, windows, partitions (frame / leaf), glass and handles; a hex string works too */
 GP.FINISH = {
   white: { n: '화이트', c: '#f1f1ee' }, ivory: { n: '아이보리', c: '#e8e2d2' }, grey: { n: '그레이', c: '#a7abaf' }, charcoal: { n: '차콜', c: '#4a4e53' }, black: { n: '블랙', c: '#232528' },
-  silver: { n: '실버', c: '#c4c8cc', metal: .75 }, bronze: { n: '브론즈', c: '#6b5646', metal: .6 }, oak: { n: '오크', c: '#b98a5c' }, walnut: { n: '월넛', c: '#5e3f2c' },
+  silver: { n: '실버', c: '#c4c8cc', metal: .75 }, bronze: { n: '브론즈', c: '#6b5646', metal: .6 }, oak: { n: '오크', c: '#ddad70', tex: 'veneer_oak' }, walnut: { n: '월넛', c: '#5a3726', tex: 'veneer_walnut' }, ash: { n: '애쉬', c: '#eedec6', tex: 'veneer_ash' }, teak: { n: '티크', c: '#bb752e', tex: 'veneer_teak' },
 };
 GP.GLASS = { clear: { n: '투명', c: '#cfe3ee', o: .22 }, smoke: { n: '스모크', c: '#4f555b', o: .55 }, bronze: { n: '브론즈', c: '#7a5b40', o: .5 }, frost: { n: '불투명', c: '#f1f4f5', o: .86, r: .7 } };
 GP.HW = { steel: { n: '스테인리스', c: '#c3c7cc', m: .9, r: .28 }, black: { n: '블랙', c: '#25272a', m: .5, r: .45 }, gold: { n: '골드', c: '#c9a45c', m: .9, r: .3 } };
