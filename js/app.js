@@ -80,6 +80,27 @@ GP.on('saved', t => saveSt('ok', t)); GP.on('project', () => saveSt('ok'));
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') app.saveNow(); });
 window.addEventListener('beforeunload', () => { app.saveNow(); });
 
+/* ---------------- a newer version on the site ----------------
+   An open window keeps running the code it loaded, so a window left open for days never sees a release. Every 20 minutes (and when
+   the window comes back to the front) the site's core.js is read for its version; a newer one shows a chip that saves, refreshes the
+   browser's copies of the app files and reloads. */
+const newer = (a, b) => { const x = a.split('.').map(Number), y = b.split('.').map(Number); for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0); return false; };
+app.checkUpdate = async () => {
+  if (GP.viewOnly || !navigator.onLine) return;
+  try {
+    const t = await (await fetch('js/core.js?ver=check', { cache: 'no-store' })).text(), v = (t.match(/GP\.VERSION = '([\d.]+)'/) || [])[1], c = $('#updChip');
+    if (v && newer(v, GP.VERSION) && c.hidden) { c.hidden = false; c.textContent = `새 버전 ${v} · 눌러서 바꾸기`; GP.toast(`새 버전(${v})이 나왔어요. 위쪽 파란 버튼을 누르면 저장하고 바꿔요`, { ms: 6000 }); }
+  } catch (e) { }
+};
+$('#updChip').addEventListener('click', async () => {
+  const c = $('#updChip'); c.disabled = true; c.textContent = '새 버전 받는 중…';
+  try { await app.saveNow(); } catch (e) { }
+  const urls = [location.pathname].concat([...document.scripts].map(s => s.src), [...document.querySelectorAll('link[rel="stylesheet"]')].map(l => l.href)).filter(u => u && new URL(u, location.href).origin === location.origin);
+  await Promise.all(urls.map(u => fetch(u, { cache: 'reload' }).catch(() => { })));      // the browser's own copies too (the site lets them be kept 10 minutes)
+  try { const r = await navigator.serviceWorker.getRegistration(); if (r) await Promise.race([r.update(), new Promise(ok => setTimeout(ok, 2000))]); } catch (e) { }      // the new offline copy finishes in the background
+  location.reload();
+});
+
 /* ---------------- global refresh hooks ---------------- */
 GP.on('restore', () => { ui.sel = ui.sel.filter(s => s.k === 'wall' || GP.findBy(s.k, s.id)); GP.tools.cancel(); S.dataChanged(); GP.checks.quick(); ui.renderVariants(); ui.renderTop(); GP.panels.refresh(); ui.renderInspector(); ui.renderHUD(); GP.checks.full(); ui.renderSummary(); GP.emit('overlay'); });
 GP.on('changed', () => { ui.renderHUD(); if (ui.sel.length) { ui.sel = ui.sel.filter(s => s.k === 'wall' || GP.findBy(s.k, s.id)); } });
@@ -190,6 +211,7 @@ app.boot = async () => {
   if (fresh) app.welcome();
   else if (!GP.lib.guideSeen && !(GP.wiz && GP.wiz.on)) setTimeout(() => GP.panels.guide(), 400);
   if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !window.GP_VIEW) { navigator.serviceWorker.register('sw.js').catch(() => { }); }
+  if (location.protocol.startsWith('http') && !GP.viewOnly) { setTimeout(app.checkUpdate, 8000); setInterval(app.checkUpdate, 20 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') app.checkUpdate(); }); }
 };
 app.boot().catch(e => { console.error(e); const st = $('#stage'); st.insertAdjacentHTML('beforeend', `<div class="busy"><div class="busy-card"><b>앱을 시작하지 못했어요</b><small class="note">${U.esc(e.message || e)}</small><button class="btn" onclick="location.reload()">새로고침</button></div></div>`); });
 })();
