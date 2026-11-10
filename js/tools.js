@@ -752,6 +752,7 @@ act.inspAction = async (a, b) => {
   if (a === 'group') return act.group(); if (a === 'ungroup') return act.ungroup();
   if (a === 'saveset') return GP.panels.saveSetDialog(ui.selItems());
   if (so && so.k === 'part' && a === 'pkind') { so.obj.kind = b.dataset.v; GP.changed('parts'); ui.renderInspector(); return; }
+  if (a === 'fin' && so && (so.k === 'opening' || so.k === 'part')) { so.obj[b.dataset.k] = b.dataset.v; GP.changed(so.k === 'opening' ? 'openings' : 'parts'); ui.renderInspector(); return; }
   if (so && so.k === 'opening' && a === 'odoormat') { if (act.clearDoorMats(so.obj)) { GP.changed('mats'); GP.toast('문 열리는 자리의 고무블럭을 비웠어요. 잘린 변에는 경사 마감재가 둘러져요'); } ui.renderInspector(); return; }
   if (so && so.k === 'mat' && a === 'mdoor') { if (act.clearDoorMats()) { GP.changed('mats'); GP.toast('문 열리는 자리의 고무블럭을 비웠어요'); } ui.renderInspector(); return; }
   if (so && so.k === 'opening') { if (a === 'oflip') so.obj.flip = !so.obj.flip; if (a === 'ohinge') so.obj.hinge = so.obj.hinge === 'R' ? 'L' : 'R'; GP.changed('openings'); return; }
@@ -778,6 +779,7 @@ act.inspChange = (el, live) => {
     GP.changed('items'); ui.renderInspector(); return;
   }
   if (!so) return; const o = so.obj;
+  if (el.dataset.fc && (so.k === 'opening' || so.k === 'part')) { o[el.dataset.fc] = el.value; GP.changed(so.k === 'opening' ? 'openings' : 'parts'); ui.renderInspector(); return; }
   if (so.k === 'part') { if (id === 'pT' && isFinite(v)) o.thick = U.clamp(v, 3, 60) / 100; GP.changed('parts'); return; }
   if (so.k === 'opening') {
     const hs = GP.hostSeg(o);

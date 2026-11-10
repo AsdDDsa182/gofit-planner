@@ -43,6 +43,14 @@ GP.TEX = {
     { id: 'wall_plaster_dark', name: '다크 미장', size: 2, rough: .85 },
   ],
 };
+/* colours for doors, windows, partitions (frame / leaf), glass and handles; a hex string works too */
+GP.FINISH = {
+  white: { n: '화이트', c: '#f1f1ee' }, ivory: { n: '아이보리', c: '#e8e2d2' }, grey: { n: '그레이', c: '#a7abaf' }, charcoal: { n: '차콜', c: '#4a4e53' }, black: { n: '블랙', c: '#232528' },
+  silver: { n: '실버', c: '#c4c8cc', metal: .75 }, bronze: { n: '브론즈', c: '#6b5646', metal: .6 }, oak: { n: '오크', c: '#b98a5c' }, walnut: { n: '월넛', c: '#5e3f2c' },
+};
+GP.GLASS = { clear: { n: '투명', c: '#cfe3ee', o: .22 }, smoke: { n: '스모크', c: '#4f555b', o: .55 }, bronze: { n: '브론즈', c: '#7a5b40', o: .5 }, frost: { n: '불투명', c: '#f1f4f5', o: .86, r: .7 } };
+GP.HW = { steel: { n: '스테인리스', c: '#c3c7cc', m: .9, r: .28 }, black: { n: '블랙', c: '#25272a', m: .5, r: .45 }, gold: { n: '골드', c: '#c9a45c', m: .9, r: .3 } };
+GP.OPEN_DEF = { door: { leafC: 'charcoal', frameC: 'black', hw: 'steel' }, door2: { leafC: 'charcoal', frameC: 'black', hw: 'steel' }, glass2: { frameC: 'silver', glass: 'clear', hw: 'steel' }, slide: { leafC: 'oak', frameC: 'white', hw: 'black' }, window: { frameC: 'white', glass: 'clear', hw: 'steel' }, opening: { frameC: 'white' } };
 GP.logoImage = (it) => {
   const im = it && it.img && GP.P && GP.P.images[it.img]; if (!im) return null;
   if (im.cut === undefined && !im._cutting) { im._cutting = true; U.knockout(im.src).then(r => { im.cut = r; delete im._cutting; GP.S.invalidate(); if (GP.V3 && GP.V3.on) GP.V3.rebuild(); GP.emit('dirty'); }).catch(() => { im.cut = null; delete im._cutting; }); }
@@ -176,7 +184,7 @@ T('mirror_lr', '스트레칭 미러 (LR형)', 'stretch', 1.46, 0.85, 2.09, [0.8,
 T('vibration', '진동 운동기', 'stretch', 0.96, 0.83, 1.51, [0.6, 0.3, 0.3, 0.3], {pw:1000,kw:'진동 플레이트 바이브라핏 vibration'});
 T('inbody', '체성분 측정기', 'stretch', 0.63, 0.76, 1.14, [0.6, 0.1, 0.2, 0.2], {pw:100,kw:'인바디 체성분 체중계 inbody'});
 T('mirror', '벽 거울', 'facility', 3, 0.04, 1.9, [0, 0, 0, 0], {wall:true,fit:'actual',mount:'wall',y:0.3,kw:'거울 mirror'});
-T('column', '기둥', 'facility', 0.6, 0.6, 2.8, [0, 0, 0, 0], {fit:'actual',hFromWall:true,kw:'기둥 column'});
+T('column', '기둥', 'facility', 0.6, 0.6, 2.8, [0, 0, 0, 0], {fit:'actual',hFromWall:true,kw:'기둥 column',params:[{k:'color',label:'색상',type:'color',def:'#e8e7e2'},{k:'guard',label:'모서리 보호대',type:'select',def:'steel',options:[['steel','스테인리스'],['black','블랙'],['rubber','고무'],['none','없음']]},{k:'base',label:'걸레받이',type:'select',def:'dark',options:[['dark','블랙'],['white','화이트'],['none','없음']]}]});
 T('outlet', '콘센트', 'facility', 0.12, 0.04, 0.12, [0, 0, 0, 0], {wall:true,mount:'wall',y:0.3,kw:'콘센트 전기 outlet 전원'});
 T('logo', '로고', 'facility', 1.5, 0.03, 0.6, [0, 0, 0, 0], {wall:true,fit:'actual',mount:'wall',y:1.6,kw:'로고 간판 사인 logo'});
 T('tv_wall', '벽걸이 TV', 'facility', 1.45, 0.06, 0.84, [0, 0, 0, 0], {wall:true,mount:'wall',y:1.4,pw:200,kw:'티비 tv 모니터 벽걸이'});

@@ -258,7 +258,13 @@ T('inbody', '체성분 측정기', 'stretch', .5, .9, 1.0, { kw: '인바디 체�
 
 /* ===================== FACILITIES (floor / wall / ceiling) ===================== */
 T('mirror', '벽 거울', 'facility', 3, .04, 1.9, { kw: '거울 mirror', cl: [0, 0, 0, 0], wall: true, mount: 'wall', y: .3, fit: 'actual' }, c => { c.box(c.W, c.H, c.D, 0, 0, 0, M.frame); c.box(c.W - .04, c.H - .04, .01, 0, .02, c.D / 2, M.mirror); });
-T('column', '기둥', 'facility', .6, .6, 2.8, { kw: '기둥 column', cl: [0, 0, 0, 0], fit: 'actual', hFromWall: true }, c => { c.box(c.W, c.H, c.D, 0, 0, 0, M.column); });
+T('column', '기둥', 'facility', .6, .6, 2.8, { kw: '기둥 column', cl: [0, 0, 0, 0], fit: 'actual', hFromWall: true }, (c, p) => {
+  const P = p.params || {}, W = c.W, D = c.D, H = c.H, g = P.guard || 'steel', gm = g === 'black' ? GP.colorMat('#25272a', 'metal') : g === 'rubber' ? GP.colorMat('#1d1e20') : GP.colorMat('#c9cdd1', 'metal');
+  c.box(W, H, D, 0, 0, 0, P.color ? GP.colorMat(P.color) : M.column, { r: .004 });
+  if (P.base !== 'none') c.box(W + .024, .08, D + .024, 0, 0, 0, GP.colorMat(P.base === 'white' ? '#efefec' : '#2f3236'));
+  if (g !== 'none') { const gh = 1.2, a = g === 'rubber' ? .06 : .05, t = g === 'rubber' ? .008 : .003;      // corner guards: an angle on every corner, from the baseboard up
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) { c.box(a, gh, t, sx * (W / 2 - a / 2 + t), .08, sz * (D / 2 + t / 2), gm); c.box(t, gh, a, sx * (W / 2 + t / 2), .08, sz * (D / 2 - a / 2 + t), gm); } }
+});
 T('outlet', '콘센트', 'facility', .12, .04, .12, { kw: '콘센트 전기 outlet 전원', cl: [0, 0, 0, 0], wall: true, mount: 'wall', y: .3 }, c => { c.box(.12, .12, .02, 0, 0, 0, M.white, { r: .01 }); c.cyl(.022, .01, -.028, .06, .012, M.frame2, 'z', 12); c.cyl(.022, .01, .028, .06, .012, M.frame2, 'z', 12); });
 T('logo', '로고', 'facility', 1.5, .03, .6, { kw: '로고 간판 사인 logo', cl: [0, 0, 0, 0], wall: true, mount: 'wall', y: 1.6, fit: 'actual' }, c => { c.box(c.W, c.H, c.D, 0, 0, 0, M.white); });
 T('tv_wall', '벽걸이 TV', 'facility', 1.45, .06, .84, { kw: '티비 tv 모니터 벽걸이', cl: [0, 0, 0, 0], wall: true, mount: 'wall', y: 1.4, pw: 200 }, c => { c.box(1.45, .84, .05, 0, 0, 0, M.body, { r: .01 }); c.box(1.4, .79, .01, 0, .025, .026, M.screen); });

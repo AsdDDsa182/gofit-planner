@@ -125,18 +125,35 @@ function buildRoom() {
     }
     if (marks[i] === 'mirror') for (const [s0, s1, y0] of pieces(Ls, H, ops)) { if (y0 > 0 || s1 - s0 < .2) continue; const mh = Math.min(2.1, H - .15); if (mh < .3) continue; const w = s1 - s0 - .1, c = (s0 + s1) / 2; const pl = new THREE.Mesh(new THREE.PlaneGeometry(w, mh - .1), mat('mirror', () => std('#dfe7ee', { metalness: 1, roughness: .04 }))); pl.position.set(a[0] + e.dx * c + e.nx * .012, .1 + (mh - .1) / 2, a[1] + e.dz * c + e.nz * .012); pl.rotation.y = Math.atan2(e.nx, e.nz); pl.userData.own = true; if (LINE) toLine(pl); g.add(pl); }
     wallMeshes.push({ mat: wm, nx: -e.nx, nz: -e.nz });
+    const bbC = { dark: '#2f3236', white: '#efefec' }[st.baseboard || 'dark'];
+    if (bbC && !LINE) { const bm = std(bbC, { roughness: .6, transparent: true, opacity: 1 }), pin = (s, d) => [a[0] + e.dx * s + e.nx * d, a[1] + e.dz * s + e.nz * d];
+      for (const [s0, s1, y0] of pieces(Ls, H, ops)) { if (y0 > 0 || s1 - s0 < .03) continue; const me = new THREE.Mesh(prismGeo([pin(s0, 0), pin(s1, 0), pin(s1, .012), pin(s0, .012)], 0, .08), bm); me.receiveShadow = true; me.userData.own = true; g.add(me); }
+      wallMeshes.push({ mat: bm, nx: -e.nx, nz: -e.nz }); }
   }
   const k0 = g.children.length; // everything after the walls: partitions, doors, windows
   // partitions
   for (const p of L.partitions) {
     if (!p.pts || p.pts.length < 2) continue; const t = p.thick || .1, H0 = p.kind === 'half' ? (p.height || 1.2) : (p.height || st.wallH), Hp = V3.cut ? Math.min(1.1, H0) : H0;
     const Lf = G.offset(p.pts, t / 2, false), Rt = G.offset(p.pts, -t / 2, false), glass = p.kind === 'glass';
-    const pm = glass ? mat('glass', () => std('#bcd7e6', { transparent: true, opacity: .28, roughness: .05, metalness: .1, depthWrite: false, side: THREE.DoubleSide })) : std(p.color || st.wallColor || '#eeede8', { roughness: .92 });
+    const pm = glass ? glassMat(p.glass || 'clear') : std(p.color ? finC(p.color, 'white') : (st.wallColor || '#eeede8'), { roughness: .92 }), pf = finM(p.frameC, glass ? 'silver' : 'white'), bbC = { dark: '#2f3236', white: '#efefec' }[st.baseboard || 'dark'];
     for (let i = 0; i < p.pts.length - 1; i++) {
       const a = p.pts[i], b = p.pts[i + 1], s = G.segInfo(a, b), ops = L.openings.filter(o => o.host === p.id && o.seg === i), nlx = -s.dz, nlz = s.dx;
       const lf = u => u <= 1e-6 ? Lf[i] : u >= s.L - 1e-6 ? Lf[i + 1] : [a[0] + s.dx * u + nlx * t / 2, a[1] + s.dz * u + nlz * t / 2];
       const rt = u => u <= 1e-6 ? Rt[i] : u >= s.L - 1e-6 ? Rt[i + 1] : [a[0] + s.dx * u - nlx * t / 2, a[1] + s.dz * u - nlz * t / 2];
-      for (const [s0, s1, y0, y1] of pieces(s.L, Hp, ops)) { const q = [lf(s0), lf(s1), rt(s1), rt(s0)]; const me = new THREE.Mesh(prismGeo(q, y0, y1), pm); me.castShadow = !glass; me.receiveShadow = true; me.userData.own = true; g.add(me); if (glass) [[y0, .05], [y1 - .05, .05]].forEach(([yy, hh]) => { const f = new THREE.Mesh(prismGeo(q, yy, yy + hh), mat('alu', () => std('#c6cacf', { metalness: .8, roughness: .3 }))); f.userData.own = true; g.add(f); }); }
+      const off = (u, d) => [a[0] + s.dx * u + nlx * d, a[1] + s.dz * u + nlz * d], prism = (q, y0, y1, m) => { const me = new THREE.Mesh(prismGeo(q, y0, y1), m); me.castShadow = m.transparent !== true; me.receiveShadow = true; me.userData.own = true; g.add(me); return me; };
+      for (const [s0, s1, y0, y1] of pieces(s.L, Hp, ops)) {
+        const q = [lf(s0), lf(s1), rt(s1), rt(s0)];
+        if (!glass) {
+          prism(q, y0, y1, pm);
+          if (y0 <= 0 && bbC && !LINE) [1, -1].forEach(sd => prism([off(s0, sd * t / 2), off(s1, sd * t / 2), off(s1, sd * (t / 2 + .012)), off(s0, sd * (t / 2 + .012))], 0, .08, mat('bb:' + bbC, () => std(bbC, { roughness: .6 }))));
+          if (p.kind === 'half' && y1 >= Hp - 1e-3) prism([off(s0 - .015, t / 2 + .015), off(s1 + .015, t / 2 + .015), off(s1 + .015, -t / 2 - .015), off(s0 - .015, -t / 2 - .015)], y1, y1 + .03, finM(p.frameC, 'oak'));
+          continue;
+        }
+        // glass: tinted pane in a coloured frame (top / bottom channels, posts at the ends and about every 1.2 m)
+        const gq = [off(s0, .006), off(s1, .006), off(s1, -.006), off(s0, -.006)]; prism(gq, y0 + .05, y1 - .05, pm);
+        [[y0, y0 + .05], [y1 - .05, y1]].forEach(([ya, yb]) => prism(q, ya, yb, pf));
+        const n = Math.max(1, Math.round((s1 - s0) / 1.2)); for (let k = 0; k <= n; k++) { const u = s0 + (s1 - s0) * k / n, u0 = Math.max(s0, u - .02), u1 = Math.min(s1, u + .02); prism([off(u0, t / 2), off(u1, t / 2), off(u1, -t / 2), off(u0, -t / 2)], y0 + .05, y1 - .05, pf); }
+      }
     }
   }
   buildOpenings(g, H);
@@ -157,25 +174,99 @@ function pieces(Ls, H, ops) {
   }
   if (cur < Ls - 1e-4) out.push([cur, Ls, 0, H]); return out;
 }
+/* ---------------- doors & windows: frames, casings, leaves and sashes built to size; handles, hinges, closers, fittings and sensors
+   are the Blender parts in models/arch/parts.glb (dev/blender/arch_parts.py). Colours: o.leafC / o.frameC / o.glass / o.hw (GP.FINISH …) ---------------- */
+let archParts = null, archLoading = 0;
+function loadArch() {
+  if (archParts || archLoading) return; archLoading = 1;
+  GP.R3.loaders().then(gl => new Promise((res, rej) => gl.load(GP.R3.base() + 'models/arch/parts.glb?v=1', res, undefined, rej)))
+    .then(g => { archParts = {}; g.scene.children.forEach(n => { archParts[n.name] = n; }); archLoading = 0; if (V3.on) V3.rebuild(); })
+    .catch(() => { archParts = {}; archLoading = 0; });
+}
+const rbCache = new Map();
+/* a box with rounded edges, centred (cached by size: meshes using it are not marked own, so clear() leaves the shared geometry alone) */
+function rbox(w, h, d, r) {
+  const k = `${w.toFixed(4)}|${h.toFixed(4)}|${d.toFixed(4)}|${r}`; let g = rbCache.get(k); if (g) return g;
+  r = Math.max(.0005, Math.min(r, w / 2 - .0005, h / 2 - .0005, d / 2 - .0005));
+  const s = new THREE.Shape(), x = w / 2 - r, y = h / 2 - r; s.moveTo(-x, -y); s.lineTo(x, -y); s.lineTo(x, y); s.lineTo(-x, y); s.lineTo(-x, -y);
+  g = new THREE.ExtrudeGeometry(s, { depth: Math.max(.0002, d - 2 * r), bevelEnabled: true, bevelThickness: r, bevelSize: r, bevelSegments: 2, curveSegments: 2 }); g.translate(0, 0, -(d - 2 * r) / 2);
+  if (rbCache.size > 600) rbCache.clear(); rbCache.set(k, g); return g;
+}
+const finC = (v, def) => { const f = GP.FINISH[v || def]; return f ? f.c : (v || GP.FINISH[def].c); };
+const finM = (v, def) => { const f = GP.FINISH[v || def], c = finC(v, def); return mat('fin:' + c, () => std(c, f && f.metal ? { metalness: f.metal, roughness: .32 } : { roughness: .55 })); };
+const glassMat = (v) => { const g = GP.GLASS[v] || GP.GLASS.clear; return mat('gl:' + (v || 'clear'), () => new THREE.MeshPhysicalMaterial({ color: g.c, transparent: true, opacity: g.o, roughness: g.r || .04, metalness: 0, reflectivity: .5, depthWrite: false, side: THREE.DoubleSide })); };
+const hwMat = (v) => { const h = GP.HW[v] || GP.HW.steel; return mat('hw:' + (v || 'steel'), () => std(h.c, { metalness: h.m, roughness: h.r })); };
 function buildOpenings(g, H) {
-  const L = GP.L(), alu = mat('alu', () => std('#c6cacf', { metalness: .8, roughness: .3 })), glassM = mat('glass', () => std('#bcd7e6', { transparent: true, opacity: .28, roughness: .05, metalness: .1, depthWrite: false, side: THREE.DoubleSide })), doorM = mat('door', () => std('#d9d4c8', { roughness: .6 }));
-  const box = (w, h, d, m, x, y, z, parent) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); b.castShadow = true; b.userData.own = true; parent.add(b); return b; };
+  loadArch(); const L = GP.L();
+  const put = (geo, m, x, y, z, par, own) => { const me = new THREE.Mesh(geo, m); me.position.set(x, y, z); me.castShadow = m.transparent !== true; me.receiveShadow = true; if (own) me.userData.own = true; par.add(me); return me; };
+  const rb = (w, h, d, r, m, x, y, z, par) => put(rbox(w, h, d, r), m, x, y, z, par);
+  /* a Blender part on a face: ry 0 = standing out towards +z, π = towards -z; sx -1 mirrors it along x */
+  const part = (name, par, x, y, z, ry, sx, hw, body) => {
+    const src = archParts && archParts[name]; if (!src) return null; const o = src.clone(true);
+    o.traverse(n => { if (!n.isMesh) return; const nm = n.material && n.material.name; if (nm === 'hw_metal') n.material = hw; else if (nm === 'hw_body') n.material = body || hw; n.castShadow = true; });
+    o.position.set(x, y, z); o.rotation.y = ry || 0; if (sx) o.scale.x = sx; par.add(o); return o;
+  };
+  /* casings (door / window trim) on both faces round an opening x0..x1, y0..y1 */
+  const casing = (og, T, x0, x1, y0, y1, m, faces, cw) => {
+    cw = cw || .07; const ct = .014;
+    for (const zs of faces) { const z = zs * (T / 2 + ct / 2);
+      rb(cw, y1 - y0 + (y0 > 0 ? 2 * cw : cw), ct, .004, m, x0 - cw / 2, y0 > 0 ? (y0 + y1) / 2 : (y1 + cw) / 2, z, og);
+      rb(cw, y1 - y0 + (y0 > 0 ? 2 * cw : cw), ct, .004, m, x1 + cw / 2, y0 > 0 ? (y0 + y1) / 2 : (y1 + cw) / 2, z, og);
+      rb(x1 - x0, cw, ct, .004, m, (x0 + x1) / 2, y1 + cw / 2, z, og); if (y0 > 0) rb(x1 - x0, cw, ct, .004, m, (x0 + x1) / 2, y0 - cw / 2, z, og); }
+  };
   for (const o of L.openings) {
-    const hs = GP.hostSeg(o); if (!hs) continue; const sp = GP.openingSpan(o, hs), w = sp.w, c = sp.c;
+    const hs = GP.hostSeg(o); if (!hs) continue; const sp = GP.openingSpan(o, hs), w = sp.w, c = sp.c, D = GP.OPEN_DEF[o.kind] || {};
     const og = new THREE.Group(); og.position.set(hs.a[0] + hs.dx * c + hs.nx * hs.mid, 0, hs.a[1] + hs.dz * c + hs.nz * hs.mid);
     og.rotation.y = Math.atan2(-hs.dz, hs.dx); g.add(og); // local x = along the wall, local z = (-dz, dx)
-    const T = hs.thick, hinge = o.hinge === 'R' ? 1 : -1, zf = (o.flip ? -1 : 1) * ((-hs.dz * hs.nx + hs.dx * hs.nz) >= 0 ? 1 : -1);
-    if (o.kind === 'window') { const sill = o.sill ?? .9, hh = Math.min(o.h ?? 1.2, H - sill); if (hh <= .05) continue; box(w - .06, hh - .06, .012, glassM, 0, sill + hh / 2, 0, og); [[sill + .02], [sill + hh - .02]].forEach(([y]) => box(w, .04, .07, alu, 0, y, 0, og)); [-w / 2 + .02, w / 2 - .02, 0].forEach(x => box(.04, hh, .07, alu, x, sill + hh / 2, 0, og)); continue; }
-    if (o.kind === 'opening') continue;
+    const T = hs.thick, hinge = o.hinge === 'R' ? 1 : -1, zin = (-hs.dz * hs.nx + hs.dx * hs.nz) >= 0 ? 1 : -1, zf = (o.flip ? -1 : 1) * zin;
+    const frM = finM(o.frameC, D.frameC || 'white'), hw = hwMat(o.hw || D.hw), body = finM(o.frameC === 'black' || o.frameC === 'charcoal' ? 'black' : 'silver');
+    if (o.kind === 'window') {
+      const sill = o.sill ?? .9, hh = Math.min(o.h ?? 1.2, H - sill); if (hh <= .1) continue; const gl = glassMat(o.glass || D.glass), fw = .055, fd = .09;
+      // outer frame in the wall, the stool (sill board) on the room side, trim round it inside
+      rb(w, fw, fd, .006, frM, 0, sill + fw / 2, 0, og); rb(w, fw, fd, .006, frM, 0, sill + hh - fw / 2, 0, og); rb(fw, hh, fd, .006, frM, -w / 2 + fw / 2, sill + hh / 2, 0, og); rb(fw, hh, fd, .006, frM, w / 2 - fw / 2, sill + hh / 2, 0, og);
+      rb(w + .12, .025, T / 2 + .06, .006, finM('white'), 0, sill - .0125, zin * (T / 4 + .03), og);
+      casing(og, T, -w / 2, w / 2, sill + .025, sill + hh, frM, [zin], .05);
+      // sashes: two sliding sashes on their own tracks when wide, one sash when narrow; the lever on the room side of the inner sash
+      const iw = w - 2 * fw, ih = hh - 2 * fw, two = iw > .9, n = two ? 2 : 1, sw = two ? iw / 2 + .03 : iw, sf = .05, sd = .04;
+      for (let k = 0; k < n; k++) {
+        const x = two ? (k ? 1 : -1) * (iw / 4 - .015) : 0, z = two ? (k ? -1 : 1) * zin * .022 : 0, y = sill + fw + ih / 2;
+        rb(sw, sf, sd, .004, frM, x, sill + fw + sf / 2, z, og); rb(sw, sf, sd, .004, frM, x, sill + fw + ih - sf / 2, z, og); rb(sf, ih - 2 * sf, sd, .004, frM, x - sw / 2 + sf / 2, y, z, og); rb(sf, ih - 2 * sf, sd, .004, frM, x + sw / 2 - sf / 2, y, z, og);
+        put(new THREE.BoxGeometry(sw - 2 * sf + .01, ih - 2 * sf + .01, .008), gl, x, y, z, og, true);
+        if (k === 0) part('win_handle', og, two ? x + sw / 2 - sf / 2 : x + sw / 2 - sf / 2, y, z + zin * sd / 2, zin > 0 ? 0 : Math.PI, 0, hw);
+      }
+      continue;
+    }
     const dh = Math.min(o.h ?? 2.1, H - .05); if (dh <= .1) continue;
-    box(.06, dh, T + .01, alu, -w / 2 + .03, dh / 2, 0, og); box(.06, dh, T + .01, alu, w / 2 - .03, dh / 2, 0, og); box(w, .06, T + .01, alu, 0, dh - .03, 0, og);
-    const dbl = o.kind === 'door2' || o.kind === 'glass2', glass = o.kind === 'glass2';
-    const leaves = dbl ? [-1, 1] : [hinge];
+    if (o.kind === 'opening') { casing(og, T, -w / 2, w / 2, 0, dh, frM, [1, -1]); continue; }
+    const leafM = finM(o.leafC, D.leafC || 'white');
+    if (o.kind === 'slide') {
+      // a surface sliding door on the swing side: track above, rollers, two flush pulls; it covers the opening (closed)
+      casing(og, T, -w / 2, w / 2, 0, dh, frM, [1, -1]); const lw = w + .08, lh = dh + .04, lt = .038, z = zf * (T / 2 + .014 + .03), x = 0;
+      const tl = 2 * w + .12; rb(tl, .045, .035, .004, finM('silver'), -hinge * (w / 2) + 0, dh + .09, zf * (T / 2 + .03), og);
+      rb(lw, lh, lt, .005, leafM, x, .012 + lh / 2, z, og);
+      [-1, 1].forEach(s => { const r = put(new THREE.CylinderGeometry(.022, .022, .02, 20), finM('silver'), x + s * (lw / 2 - .12), dh + .07, z, og, true); r.rotation.x = Math.PI / 2; });
+      [1, -1].forEach(fs => part('flush_pull', og, x + hinge * (lw / 2 - .07), 1.0, z + fs * lt / 2, fs > 0 ? 0 : Math.PI, 0, hw));
+      continue;
+    }
+    const glass = o.kind === 'glass2', dbl = o.kind === 'door2' || glass, fw = glass ? .04 : .05, lt = glass ? .012 : .04;
+    // frame in the wall gap (jambs, head) and casings on both faces; glass doors get an operator header instead of a head
+    const head = glass ? .14 : fw;
+    rb(fw, dh, T + .012, .004, frM, -w / 2 + fw / 2, dh / 2, 0, og); rb(fw, dh, T + .012, .004, frM, w / 2 - fw / 2, dh / 2, 0, og); rb(w - 2 * fw, head, glass ? T + .05 : T + .012, .006, frM, 0, dh - head / 2, 0, og);
+    if (!glass) { casing(og, T, -w / 2, w / 2, 0, dh, frM, [1, -1]); [[-1], [1]].forEach(([s]) => rb(.014, dh - fw, .012, .002, frM, s * (w / 2 - fw - .007), (dh - fw) / 2, zf * (T / 2 - lt - .014), og)); }
+    const iw = w - 2 * fw, lh = dh - head - (glass ? .012 : .008), leaves = dbl ? [-1, 1] : [hinge];
     leaves.forEach(sgn => {
-      const lw = dbl ? w / 2 - .06 : w - .12, x = dbl ? sgn * (w / 4 - .01) : (o.kind === 'slide' ? -w * .05 : 0);
-      const leaf = box(lw, dh - .08, .04, glass ? glassM : doorM, x, (dh - .08) / 2, zf * (T / 2 - .03), og); leaf.castShadow = !glass;
-      const hx = dbl ? sgn * (w / 4 - lw / 2 + .08) : -hinge * (lw / 2 - .08); const hd = new THREE.Mesh(new THREE.CylinderGeometry(.012, .012, glass ? .8 : .14, 10), alu); hd.position.set(hx, 1.0, zf * (T / 2 - .03) + zf * .04); hd.userData.own = true; og.add(hd);
+      const lw = dbl ? iw / 2 - .003 : iw - .006, x = dbl ? sgn * (iw / 4) : 0, hx = dbl ? sgn * (iw / 2) : sgn * (iw / 2), zL = glass ? 0 : zf * (T / 2 - lt / 2 - .004), y = (glass ? .012 : .008) + lh / 2;
+      const leaf = glass ? put(new THREE.BoxGeometry(lw, lh, lt), glassMat(o.glass || D.glass), x, y, zL, og, true) : rb(lw, lh, lt, .004, leafM, x, y, zL, og);
+      const away = -Math.sign(hx - x) || 1, ex = x + away * (lw / 2);      // the edge away from the hinge (handle side)
+      if (glass) {      // frameless glass: patch fittings top and bottom at the pivot edge
+        [.012 + .03, .012 + lh - .03].forEach(py => part('patch', og, hx - Math.sign(hx - x) * .1, py, 0, 0, 0, finM(o.frameC, D.frameC || 'silver')));
+        return;
+      }
+      [.25, lh / 2 + .05, lh - .2].forEach(py => part('hinge', og, hx, py, zL + zf * lt / 2, zf > 0 ? 0 : Math.PI, Math.sign(x - hx) * (zf > 0 ? 1 : -1), hw));
+      const lx = ex - away * .065; [1, -1].forEach(fs => { const ry = fs * zf > 0 ? 0 : Math.PI, dir = -away; part('lever', og, lx, 1.0, zL + fs * zf * lt / 2, ry, dir * (ry ? -1 : 1), hw); });
+      part('closer', og, hx + Math.sign(x - hx) * .3, y + lh / 2 - .05, zL + zf * lt / 2, zf > 0 ? 0 : Math.PI, Math.sign(hx - x) * (zf > 0 ? 1 : -1), body, body);
     });
+    if (glass) [1, -1].forEach(fs => part('sensor', og, 0, dh - head - .005 + .025, fs * (T / 2 + .025) * 0 + fs * ((T + .05) / 2), fs > 0 ? 0 : Math.PI, 0, hw, body));
   }
 }
 /* rubber mats (500×500 texture) and 25T sloped trims along exposed edges */
@@ -253,7 +344,7 @@ async function pump(total) {
 GP.on('booted', () => GP.SYM.ready.then(() => setTimeout(V3.prefetch, 1500))); // start after the plan pictures, so the first screen stays quick
 GP.on('changed', U.debounce(() => V3.prefetch(), 1500));
 GP.on('project', () => setTimeout(V3.prefetch, 800));
-V3.whenLoaded = (ms) => new Promise(res => { const t0 = performance.now(); const chk = () => { if ((loading <= 0 && texLoading <= 0) || performance.now() - t0 > (ms || 25000)) res(); else setTimeout(chk, 200); }; chk(); });
+V3.whenLoaded = (ms) => new Promise(res => { const t0 = performance.now(); const chk = () => { if ((loading <= 0 && texLoading <= 0 && !archLoading) || performance.now() - t0 > (ms || 25000)) res(); else setTimeout(chk, 200); }; chk(); });
 function markSel() {
   const sel = GP.ui.selSet(); if (V3.selBox) { sc.remove(V3.selBox); V3.selBox = null; }
   const ids = [...sel].filter(k => k.startsWith('item:')).map(k => k.slice(5)); if (!ids.length) { dirty = true; return; }

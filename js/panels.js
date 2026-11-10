@@ -33,7 +33,7 @@ panels.renderSpace = () => {
   ${fold('finish', '벽 · 바닥 마감', `${ui.texName(st.floorBase)} · ${ui.texName(st.wallTex || 'paint')}`, `<p class="note" style="margin:0">3D 보기와 제안서 3D 그림에 보여요. 바닥 무늬는 도면에도 연하게 보여요. 벽마다 다르게 하려면 도면에서 벽을 누르세요.</p>
     <span class="lbl">바닥</span>${ui.texGrid('floor', st.floorBase)}
     <span class="lbl">벽 (모든 벽)</span>${ui.texGrid('wall', st.wallTex || 'paint')}
-    <label class="fld" style="max-width:180px"><span>페인트 색</span><input type="color" id="wallColor" value="${st.wallColor || '#eeede8'}"></label>`)}
+    <div class="row2"><label class="fld"><span>페인트 색</span><input type="color" id="wallColor" value="${st.wallColor || '#eeede8'}"></label><label class="fld"><span>걸레받이</span><select id="baseboard">${[['dark', '블랙'], ['white', '화이트'], ['none', '없음']].map(([k, n]) => `<option value="${k}" ${(st.baseboard || 'dark') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>`)}
   ${fold('ceil', '천장 높이', `${st.wallH}m`, `<label class="fld"><span>바닥에서 천장까지</span>${numI('ceilH', st.wallH, .05, 'm', 'min="2" max="8"')}</label><p class="note" style="margin:0">기구마다 쓸 때 필요한 높이(트레드밀 위 사람 키, 스텝밀 맨 위 계단 등)를 이 높이로 점검해요. 3D 벽 높이로도 쓰여요.</p>`)}
   ${fold('trace', '고객 도면 대고 그리기', GP.S.underlay ? '도면 깔림' : '', `<p class="note">받은 평면도 사진이나 캐드 파일(DXF)을 깔고 <b>벽 모양</b> 도구로 꼭짓점을 맞추면 실제 모양 그대로 만들 수 있어요.</p>
     <div class="row2"><label class="btn file" style="position:relative;overflow:hidden">이미지·PDF 캡처<input type="file" id="ulImg" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label><label class="btn file" style="position:relative;overflow:hidden">캐드 파일 (DXF)<input type="file" id="ulDxf" accept=".dxf" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label></div>
@@ -112,6 +112,7 @@ spEl.addEventListener('input', e => {
 spEl.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.c != null && t.dataset.i != null && t.closest('#vtable')) { const P = GP.L().room.pts, i = +t.dataset.i, v = +t.value; if (isFinite(v) && P[i]) { P[i][+t.dataset.c] = U.r3(v); GP.changed('room'); } return; }
+  if (t.id === 'baseboard') { GP.P.settings.baseboard = t.value; GP.changed(['room', 'settings']); return; }
   if (t.id === 'wallColor') { GP.P.settings.wallColor = t.value; GP.changed(['room', 'settings']); return; }
   if (t.id === 'ceilH') { const v = U.clamp(+t.value || 2.8, 2, 8); GP.P.settings.wallH = U.r2(v); t.value = GP.P.settings.wallH; GP.changed('all'); GP.toast(`천장 높이 ${GP.P.settings.wallH}m 기준으로 다시 점검했어요`); return; }
   if (t.id === 'logoFile') { const f = t.files[0]; t.value = ''; if (f) panels.addLogo(f); return; }
