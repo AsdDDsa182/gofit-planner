@@ -804,7 +804,7 @@ act.inspChange = (el, live) => {
     if (id === 'iLoad') {
       it.load = el.checked || undefined; GP.changed('items'); ui.renderInspector();
       const rest = GP.L().items.filter(q => q !== it && GP.R3.canLoad(q.type) && !q.load);
-      if (it.load && rest.length) GP.toast('거치대에 올린 모습으로 바꿨어요', { ms: 6000, action: `다른 거치대 ${rest.length}개도 올리기`, onAction: () => { rest.forEach(q => { q.load = true; }); GP.changed('items'); } });
+      if (it.load && rest.length) GP.toast('올린 모습으로 바꿨어요', { ms: 6000, action: `올릴 수 있는 다른 기구 ${rest.length}개도 올리기`, onAction: () => { rest.forEach(q => { q.load = true; }); GP.changed('items'); } });
       return;
     }
     if (id === 'iLogoBg') { it.bgKeep = !el.checked || undefined; GP.changed('items'); ui.renderInspector(); return; }

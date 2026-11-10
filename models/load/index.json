@@ -22,5 +22,41 @@
   "label": "바벨 걸기",
   "sx": 1.0231,
   "sz": 0.864
+ },
+ "powerrack": {
+  "file": "powerrack.glb",
+  "label": "바벨·원판 올리기",
+  "sx": 1.8077,
+  "sz": 1.9261
+ },
+ "halfrack": {
+  "file": "halfrack.glb",
+  "label": "바벨·원판 올리기",
+  "sx": 1.8072,
+  "sz": 1.4768
+ },
+ "squatrack": {
+  "file": "squatrack.glb",
+  "label": "바벨·원판 올리기",
+  "sx": 1.755,
+  "sz": 1.726
+ },
+ "benchpress": {
+  "file": "benchpress.glb",
+  "label": "바벨 걸기",
+  "sx": 1.296,
+  "sz": 1.2605
+ },
+ "bench_incline": {
+  "file": "bench_incline.glb",
+  "label": "바벨 걸기",
+  "sx": 1.2983,
+  "sz": 1.4226
+ },
+ "bench_decline": {
+  "file": "bench_decline.glb",
+  "label": "바벨 걸기",
+  "sx": 1.296,
+  "sz": 1.5511
  }
 }
