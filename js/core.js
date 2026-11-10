@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.11.1';
+GP.VERSION = '2.11.2';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
@@ -254,7 +254,7 @@ function sDeep(o, depth) {      // custom equipment definitions: text stays text
   if (!o || typeof o !== 'object' || depth > 6) return; for (const k of Object.keys(o)) { const v = o[k]; if (typeof v === 'string') { if (/name|label|kw|text|memo/i.test(k)) o[k] = v.slice(0, 120); else if (!WORD.test(v) && !HEX.test(v)) delete o[k]; } else if (typeof v === 'object') sDeep(v, depth + 1); else if (typeof v === 'number' && !isFinite(v)) delete o[k]; }
 }
 /* types taken out of the catalog: a plan (file, link, old version) that still has one gets the nearest machine in its place */
-const GONE = { latlong: 'latpull', multipress: 'shoulder' };
+const GONE = { latlong: 'latpull', multipress: 'shoulder', backext: 'abback' };
 function sanitizeLayout(L) {
   L.room = { pts: sPts(L.room && L.room.pts, 3) || GP.DEFAULT_ROOM.map(q => q.slice()) };
   L.partitions = L.partitions.filter(q => q && sPts(q.pts, 2)).map(q => { q.pts = sPts(q.pts, 2); q.id = sWord(q.id) || U.uid('pt'); q.thick = U.clamp(sNum(q.thick, .1), .03, .6); q.kind = GP.PARTS[q.kind] ? q.kind : 'wall'; sKeys(q, ['color', 'frameC', 'glass']); sNums(q, ['height']); return q; });
