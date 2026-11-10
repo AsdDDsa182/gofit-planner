@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.4.1';
+GP.VERSION = '2.5.0';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
@@ -180,9 +180,10 @@ DB.get = (store, key) => openDB().then(db => {
   if (!db) { try { const v = localStorage.getItem(LSK(store, key)); return v ? JSON.parse(v) : undefined; } catch (e) { return undefined; } }
   return new Promise(res => { try { const r = db.transaction(store).objectStore(store).get(key); r.onsuccess = () => res(r.result); r.onerror = () => res(undefined); } catch (e) { res(undefined); } });
 });
+/* resolves true when the value is really stored (false: no room left, storage blocked, …) */
 DB.put = (store, key, val) => openDB().then(db => {
-  if (!db) { try { localStorage.setItem(LSK(store, key), JSON.stringify(val)); } catch (e) { } return; }
-  return tx(store, 'readwrite', st => st.put(val, key));
+  if (!db) { try { localStorage.setItem(LSK(store, key), JSON.stringify(val)); return true; } catch (e) { return false; } }
+  return tx(store, 'readwrite', st => st.put(val, key)).then(r => r !== undefined);
 });
 DB.del = (store, key) => openDB().then(db => { if (!db) { try { localStorage.removeItem(LSK(store, key)); } catch (e) { } return; } return tx(store, 'readwrite', st => st.delete(key)); });
 DB.all = (store) => openDB().then(db => {
@@ -241,23 +242,66 @@ GP.newProject = (o) => {
     images: {},
   };
 };
+/* Values from a project file, a link or an old version are written into HTML attributes and used as keys, so on the way in:
+   colours must be colours, numbers numbers, keys plain words, pictures data URLs. Anything else is dropped or reset. */
+const HEX = /^#[0-9a-fA-F]{3,8}$/, WORD = /^[\w#.\- ]{0,40}$/;
+const sHex = (v, d) => typeof v === 'string' && HEX.test(v) ? v : d, sWord = (v, d) => typeof v === 'string' && WORD.test(v) ? v : d;
+const sNum = (v, d) => v != null && v !== '' && typeof v !== 'object' && isFinite(+v) ? +v : d, sTxt = (v, n) => typeof v === 'string' ? v.slice(0, n) : '';
+const sPts = (a, min) => Array.isArray(a) && a.length >= min && a.every(p => Array.isArray(p) && isFinite(p[0]) && isFinite(p[1]) && p[0] !== null && p[1] !== null) ? a.map(p => [+p[0], +p[1]]) : null;
+const sKeys = (o, ks) => { for (const k of ks) if (o[k] != null && sWord(o[k]) === undefined) delete o[k]; };
+const sNums = (o, ks) => { for (const k of ks) if (o[k] != null) { const v = sNum(o[k]); if (v === undefined) delete o[k]; else o[k] = v; } };
+function sDeep(o, depth) {      // custom equipment definitions: text stays text (it is escaped where shown), everything else must be a plain word or a number
+  if (!o || typeof o !== 'object' || depth > 6) return; for (const k of Object.keys(o)) { const v = o[k]; if (typeof v === 'string') { if (/name|label|kw|text|memo/i.test(k)) o[k] = v.slice(0, 120); else if (!WORD.test(v) && !HEX.test(v)) delete o[k]; } else if (typeof v === 'object') sDeep(v, depth + 1); else if (typeof v === 'number' && !isFinite(v)) delete o[k]; }
+}
+function sanitizeLayout(L) {
+  L.room = { pts: sPts(L.room && L.room.pts, 3) || GP.DEFAULT_ROOM.map(q => q.slice()) };
+  L.partitions = L.partitions.filter(q => q && sPts(q.pts, 2)).map(q => { q.pts = sPts(q.pts, 2); q.id = sWord(q.id) || U.uid('pt'); q.thick = U.clamp(sNum(q.thick, .1), .03, .6); q.kind = GP.PARTS[q.kind] ? q.kind : 'wall'; sKeys(q, ['color', 'frameC', 'glass']); sNums(q, ['height']); return q; });
+  L.openings = L.openings.filter(o => o && sNum(o.t) !== undefined && sNum(o.w) !== undefined && Number.isInteger(+o.seg)).map(o => { o.id = sWord(o.id) || U.uid('o'); o.host = sWord(o.host) || 'room'; o.seg = +o.seg; o.t = +o.t; o.w = U.clamp(+o.w, .3, 8); o.kind = GP.OPENINGS[o.kind] ? o.kind : 'door'; sNums(o, ['h', 'sill']); sKeys(o, ['leafC', 'frameC', 'glass', 'hw', 'hinge']); return o; });
+  L.items = L.items.filter(it => sWord(String(it.type))).map(it => { it.type = String(it.type); it.uid = sWord(String(it.uid)) || U.uid(); it.x = +it.x; it.z = +it.z; sNums(it, ['w', 'd', 'h', 'elev']); sKeys(it, ['grp', 'mount', 'img']); if (it.name != null) it.name = sTxt(it.name, 80) || undefined;
+    if (it.params && typeof it.params === 'object') { for (const k of Object.keys(it.params)) { const v = it.params[k]; if (!(typeof v === 'boolean' || (typeof v === 'number' && isFinite(v)) || sWord(v) !== undefined) || !WORD.test(k)) delete it.params[k]; } } else delete it.params; return it; });
+  L.mats = L.mats.filter(m => m && sPts(m.pts, 3)).map(m => { m.pts = sPts(m.pts, 3); m.id = sWord(m.id) || U.uid('m'); if (!GP.TRIMS[m.trim]) m.trim = 'rubber'; return m; });
+  L.zones = L.zones.filter(z => z && sPts(z.pts, 3)).map(z => { z.pts = sPts(z.pts, 3); z.id = sWord(z.id) || U.uid('z'); z.color = sHex(z.color, '#2f6bd8'); z.name = sTxt(z.name, 60); return z; });
+  L.rooms = L.rooms.filter(r => r && sNum(r.x) !== undefined && sNum(r.z) !== undefined).map(r => { r.id = sWord(r.id) || U.uid('r'); r.x = +r.x; r.z = +r.z; r.name = sTxt(r.name, 60); return r; });
+  L.notes = L.notes.filter(n => n && sNum(n.x) !== undefined && sNum(n.z) !== undefined).map(n => { n.id = sWord(n.id) || U.uid('n'); n.x = +n.x; n.z = +n.z; n.text = sTxt(n.text, 600); return n; });
+  L.dims = L.dims.filter(d => d && sPts([d.a, d.b], 2)).map(d => { d.id = sWord(d.id) || U.uid('d'); d.a = [+d.a[0], +d.a[1]]; d.b = [+d.b[0], +d.b[1]]; return d; });
+  for (const m of [L.wallMarks, L.wallTex, L.wallColors]) for (const k in m) if (sWord(m[k]) === undefined || !/^\d+$/.test(k)) delete m[k];
+  const q = L.quote; q.extras = (Array.isArray(q.extras) ? q.extras : []).filter(x => x && typeof x === 'object').map(x => ({ name: sTxt(x.name, 80), spec: sTxt(x.spec, 80), unit: sTxt(x.unit, 8) || '식', qty: sNum(x.qty, 1), price: sNum(x.price, 0) }));
+  for (const k of ['shipping', 'install', 'validDays']) q[k] = q[k] == null ? null : sNum(q[k], null);
+  q.discountPct = U.clamp(sNum(q.discountPct, 0), 0, 100); q.discountAmt = Math.max(0, sNum(q.discountAmt, 0)); q.no = sTxt(q.no, 40); q.note = sTxt(q.note, 3000); if (q.issued != null && sWord(q.issued) === undefined) delete q.issued;
+  if (q.finance && typeof q.finance === 'object') { sNums(q.finance, ['months', 'downPct', 'rateLo', 'rateHi', 'rvPct']); sKeys(q.finance, ['kind']); q.finance.show = !!q.finance.show; } else delete q.finance;
+  if (q.prices && typeof q.prices === 'object') { for (const k of Object.keys(q.prices)) { const v = sNum(q.prices[k]); if (v === undefined || k.length > 80) delete q.prices[k]; else q.prices[k] = v; } } else delete q.prices;
+}
+function sanitizeProject(p) {
+  const s = p.settings, d = GP.newProject().settings; s.wallColor = sHex(s.wallColor, d.wallColor); s.wallH = U.clamp(sNum(s.wallH, d.wallH), 2, 8); s.accent = sHex(s.accent, d.accent); s.shroud = sHex(s.shroud, d.shroud);
+  for (const k of ['floorBase', 'wallTex', 'frameColor']) s[k] = sWord(s[k]) || d[k]; if (s.baseboard != null && sWord(s.baseboard) === undefined) delete s.baseboard;
+  p.id = sWord(p.id) || U.uid('p'); p.name = sTxt(p.name, 120) || '새 프로젝트'; p.client = sTxt(p.client, 120); p.consultant = sTxt(p.consultant, 60); for (const k of ['createdAt', 'updatedAt']) p[k] = sNum(p[k], Date.now());
+  for (const k of ['custName', 'custTel', 'siteAddr', 'consTel', 'consEmail']) if (p[k] != null) p[k] = sTxt(p[k], 160);
+  for (const id of Object.keys(p.images)) { const im = p.images[id], ok = v => v && typeof v.src === 'string' && v.src.startsWith('data:image/'); if (!ok(im) || !WORD.test(id)) { delete p.images[id]; continue; } p.images[id] = { src: im.src, w: sNum(im.w, 1), h: sNum(im.h, 1), cut: im.cut === null ? null : ok(im.cut) ? { src: im.cut.src, w: sNum(im.cut.w, 1), h: sNum(im.cut.h, 1) } : undefined }; }
+  p.variants.forEach(v => { v.id = sWord(v.id) || U.uid('v'); v.name = sTxt(v.name, 40) || 'A안'; });
+  if (p.wiz && typeof p.wiz === 'object') { const w = p.wiz; sNums(w, ['step', 'max']); sKeys(w, ['space', 'partAns', 'floorHow', 'floorBlock']); if (w.picks && typeof w.picks === 'object') { for (const k of Object.keys(w.picks)) { const n = sNum(w.picks[k]); if (!WORD.test(k) || !(n > 0)) delete w.picks[k]; else w.picks[k] = Math.min(99, Math.round(n)); } } else w.picks = null; } else delete p.wiz;
+  if (p.customTypes && typeof p.customTypes === 'object') { for (const k of Object.keys(p.customTypes)) { if (!WORD.test(k) || !p.customTypes[k] || typeof p.customTypes[k] !== 'object') delete p.customTypes[k]; else sDeep(p.customTypes[k], 0); } } else delete p.customTypes;
+}
 GP.validateProject = (o) => {
   if (!o || typeof o !== 'object' || !Array.isArray(o.variants) || !o.variants.length) return null;
   const base = GP.newProject();
   const p = Object.assign(base, o);
-  p.settings = Object.assign(GP.newProject().settings, o.settings || {});
-  p.images = o.images || {};
+  p.settings = Object.assign(GP.newProject().settings, o.settings && typeof o.settings === 'object' ? o.settings : {});
+  p.images = o.images && typeof o.images === 'object' ? o.images : {};
   p.variants = o.variants.map(v => {
     const L = Object.assign(GP.newLayout(), v.layout || {});
     if (!L.room || !Array.isArray(L.room.pts) || L.room.pts.length < 3) L.room = { pts: GP.DEFAULT_ROOM.map(q => q.slice()) };
-    ['openings', 'partitions', 'items', 'mats', 'zones', 'rooms', 'notes', 'dims', 'scenes'].forEach(k => { if (!Array.isArray(L[k])) L[k] = []; });
-    L.quote = Object.assign(GP.newLayout().quote, L.quote || {});
+    ['openings', 'partitions', 'items', 'mats', 'zones', 'rooms', 'notes', 'dims', 'scenes'].forEach(k => { L[k] = Array.isArray(L[k]) ? L[k].filter(x => x && typeof x === 'object') : []; });
+    for (const k of ['wallColors', 'wallMarks', 'wallTex']) if (!L[k] || typeof L[k] !== 'object' || Array.isArray(L[k])) L[k] = {};
+    L.quote = Object.assign(GP.newLayout().quote, L.quote && typeof L.quote === 'object' ? L.quote : {});
     L.wallColors = L.wallColors || {}; L.wallMarks = L.wallMarks || {}; L.wallTex = L.wallTex || {};
+    { const n = L.room.pts.length; L.openings = L.openings.filter(o => o && (o.host === 'room' ? o.seg >= 0 && o.seg < n : L.partitions.some(q => q && q.id === o.host && o.seg >= 0 && o.seg < (q.pts || []).length - 1))); for (const m of [L.wallMarks, L.wallTex]) for (const k in m) if (!(+k < n)) delete m[k]; }
     L.mats.forEach(m => { m.thick = 25; if (!GP.BLOCKS[m.block]) m.block = 'coat'; if (!m.trim) m.trim = 'rubber'; });
-    L.items = L.items.filter(it => it && isFinite(it.x) && isFinite(it.z) && it.type).map(it => Object.assign(it, { uid: it.uid || U.uid(), rot: U.normRot(+it.rot || 0) }));
+    L.items = L.items.filter(it => it && isFinite(it.x) && isFinite(it.z) && it.x !== null && it.z !== null && it.type).map(it => Object.assign(it, { uid: it.uid || U.uid(), rot: U.normRot(+it.rot || 0) }));
+    sanitizeLayout(L);
     return { id: v.id || U.uid('v'), name: v.name || 'A안', layout: L };
   });
   p.cur = U.clamp(+o.cur || 0, 0, p.variants.length - 1);
+  sanitizeProject(p); o = p;
   if (o.customTypes) { for (const k in o.customTypes) if (!GP.lib.customTypes[k]) GP.lib.customTypes[k] = o.customTypes[k]; }
   return p;
 };
@@ -286,13 +330,15 @@ GP.saveProject = async (thumb) => {
   if (!GP.P || GP.viewOnly || GP.P.unnamed) return;      // the first-run project is saved once it has a name
   const p = GP.projectPayload(); p.updatedAt = Date.now();
   const rec = { id: p.id, name: p.name, client: p.client, updatedAt: p.updatedAt, thumb: thumb || (await DB.get('projects', p.id))?.thumb || '', data: p };
-  await DB.put('projects', p.id, rec); await DB.put('kv', 'lastProject', p.id); GP.emit('saved', p.updatedAt);
+  if (!(await DB.put('projects', p.id, rec))) { GP.emit('saveError'); return false; }
+  await DB.put('kv', 'lastProject', p.id); GP.emit('saved', p.updatedAt);
   const now = Date.now();
   if (now - H.lastVersionAt > 4 * 60 * 1000) { H.lastVersionAt = now; await GP.addVersion(''); }
 };
 GP.addVersion = async (label) => {
   const key = GP.P.id; const list = (await DB.get('versions', key)) || [];
-  list.unshift({ t: Date.now(), label: label || '', data: H.snap() }); if (list.length > 40) list.length = 40;
+  list.unshift({ t: Date.now(), label: label || '', data: H.snap() });
+  while (list.length > 40) { let k = -1; for (let i = list.length - 1; i > 0; i--) if (!list[i].label) { k = i; break; } list.splice(k > 0 ? k : list.length - 1, 1); }      // the oldest automatic one goes first: named versions stay
   await DB.put('versions', key, list);
 };
 GP.listVersions = async () => (await DB.get('versions', GP.P.id)) || [];

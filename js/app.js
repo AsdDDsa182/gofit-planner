@@ -71,12 +71,15 @@ app.thumb = () => { try { const c = GP.exp.planImage(480, 300, { notes: false, l
 app.saveNow = async () => { if (!GP.P || GP.viewOnly) return; clearTimeout(saveT); await GP.saveProject(app.thumb()); };
 GP.on('dirty', () => { if (GP.viewOnly) return; clearTimeout(saveT); saveT = setTimeout(app.saveNow, 1200); saveSt('saving'); });
 /* save status next to the project name: changes are kept on this device automatically (no save button needed) */
+let saveFailAt = 0;
 function saveSt(s, t) {
   const el = $('#saveSt'); if (!el) return; if (GP.viewOnly || !GP.P || GP.P.unnamed) { el.textContent = ''; return; }
+  if (s === 'err') { el.className = 'savest err'; el.textContent = '저장 실패'; el.title = '이 기기에 저장하지 못했어요. 메뉴 → 파일로 저장해서 백업해 두세요'; return; }
   el.className = 'savest ' + s; el.textContent = s === 'saving' ? '저장 중…' : '자동 저장됨';
   if (t) el.title = `이 기기에 자동으로 저장돼요 · 마지막 저장 ${new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}`;
 }
-GP.on('saved', t => saveSt('ok', t)); GP.on('project', () => saveSt('ok'));
+GP.on('saved', t => saveSt('ok', t));
+GP.on('saveError', () => { saveSt('err'); if (Date.now() - saveFailAt > 60000) { saveFailAt = Date.now(); GP.toast('저장하지 못했어요. 이 기기의 저장 공간이 부족하거나 브라우저가 저장을 막고 있어요. 메뉴에서 프로젝트를 파일로 저장해 두세요', { bad: true, ms: 9000 }); } }); GP.on('project', () => saveSt('ok'));
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') app.saveNow(); });
 window.addEventListener('beforeunload', () => { app.saveNow(); });
 
@@ -102,8 +105,8 @@ $('#updChip').addEventListener('click', async () => {
 });
 
 /* ---------------- global refresh hooks ---------------- */
-GP.on('restore', () => { ui.sel = ui.sel.filter(s => s.k === 'wall' || GP.findBy(s.k, s.id)); GP.tools.cancel(); S.dataChanged(); GP.checks.quick(); ui.renderVariants(); ui.renderTop(); GP.panels.refresh(); ui.renderInspector(); ui.renderHUD(); GP.checks.full(); ui.renderSummary(); GP.emit('overlay'); });
-GP.on('changed', () => { ui.renderHUD(); if (ui.sel.length) { ui.sel = ui.sel.filter(s => s.k === 'wall' || GP.findBy(s.k, s.id)); } });
+GP.on('restore', () => { ui.sel = ui.sel.filter(s => s.k === 'wall' ? s.id < GP.L().room.pts.length : GP.findBy(s.k, s.id)); GP.tools.cancel(); S.dataChanged(); GP.checks.quick(); ui.renderVariants(); ui.renderTop(); GP.panels.refresh(); ui.renderInspector(); ui.renderHUD(); GP.checks.full(); ui.renderSummary(); GP.emit('overlay'); });
+GP.on('changed', () => { ui.renderHUD(); if (ui.sel.length) { ui.sel = ui.sel.filter(s => s.k === 'wall' ? s.id < GP.L().room.pts.length : GP.findBy(s.k, s.id)); } });
 GP.on('project', () => { ui.renderTop(); ui.renderVariants(); GP.panels.refresh(); ui.renderHUD(); ui.renderSummary(); });
 GP.on('dragging', () => { ui.renderHUD(); });
 GP.on('library', () => { S.invalidate(); });
@@ -179,8 +182,12 @@ function projectFromPayload(pl) {
   return GP.validateProject(p);
 }
 function viewerQuote(q) {
-  const rows = q.g.map(g => `<tr class="grp"><td colspan="5">${U.esc(g.n)}</td></tr>` + g.r.map(r => `<tr><td>${U.esc(r[0])}</td><td class="c">${U.esc(r[1])}</td><td class="n">${r[2]} ${U.esc(r[3])}</td><td class="n">${r[4] ? U.won(r[4]) : '미입력'}</td><td class="n">${U.won(r[5])}</td></tr>`).join('')).join('');
-  GP.modal('견적', `<div class="qdoc" style="padding:20px;box-shadow:none"><div class="qsum"><span>합계 (부가세 포함)</span><b>₩ ${U.won(q.total)}</b></div><table class="qtbl"><thead><tr><th>품목</th><th>규격</th><th>수량</th><th>단가</th><th>금액</th></tr></thead><tbody>${rows}</tbody></table><div class="qtot"><span>부가세 별도</span><b>${U.won(q.supply)}원</b><span>부가세</span><b>${U.won(q.vat)}원</b><span class="big">부가세 포함</span><b class="big">${U.won(q.total)}원</b></div>${q.note ? `<div class="qnote">${U.esc(q.note)}</div>` : ''}</div>`, '<button class="btn primary" data-close>닫기</button>', { size: 'wide' });
+  const rows = q.g.map(g => `<tr class="grp"><td colspan="5">${U.esc(g.n)}</td></tr>` + g.r.map(r => `<tr><td>${U.esc(r[0])}</td><td class="c">${U.esc(r[1])}</td><td class="n">${U.esc(String(r[2]))} ${U.esc(r[3])}</td><td class="n">${r[4] ? U.won(r[4]) : '-'}</td><td class="n">${r[4] ? U.won(r[5]) : '-'}</td></tr>`).join('')).join('');
+  const meta = [q.no ? `견적 번호 ${q.no}` : '', q.d ? `견적일 ${q.d}` : '', q.vd ? `${q.vd}까지 유효` : ''].filter(Boolean).map(U.esc).join(' · ');
+  const who = [GP.lib.company.name, GP.P.consultant ? `담당 ${GP.P.consultant}` : '', q.tel, q.em].filter(Boolean).map(U.esc).join(' · '), tel = String(q.tel || '').replace(/[^\d+]/g, '');
+  GP.modal('견적', `<div class="qdoc" style="padding:20px;box-shadow:none">${meta ? `<div class="qmeta">${meta}</div>` : ''}<div class="qsum"><span>합계 (부가세 포함)</span><b>₩ ${U.won(q.total)}</b></div><table class="qtbl"><thead><tr><th>품목</th><th>규격</th><th>수량</th><th>단가</th><th>금액</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="qtot">${q.disc ? `<span>소계</span><b>${U.won(q.sub)}원</b><span>할인</span><b>-${U.won(q.disc)}원</b>` : ''}<span>부가세 별도</span><b>${U.won(q.supply)}원</b><span>부가세</span><b>${U.won(q.vat)}원</b><span class="big">부가세 포함</span><b class="big">${U.won(q.total)}원</b></div>${q.note ? `<div class="qnote">${U.esc(q.note)}</div>` : ''}${who ? `<div class="qmeta" style="margin-top:14px">${who}</div>` : ''}</div>`,
+    `${tel ? `<a class="btn" href="tel:${tel}">담당자에게 전화</a>` : ''}<button class="btn primary" data-close>닫기</button>`, { size: 'wide' });
 }
 
 /* ---------------- boot ---------------- */
@@ -210,6 +217,10 @@ app.boot = async () => {
   S.frame(); GP.emit('booted');
   if (fresh) app.welcome();
   else if (!GP.lib.guideSeen && !(GP.wiz && GP.wiz.on)) setTimeout(() => GP.panels.guide(), 400);
+  // ask the browser to keep this site's data (without it Safari / Chrome may clear projects when the device runs low on space)
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persisted().then(ok => ok || navigator.storage.persist()).then(ok => { GP.persisted = !!ok; }).catch(() => { }); } catch (e) { }
+  // the same project open in two windows: whichever saves last wins, so say it once
+  try { const bc = new BroadcastChannel('gofit-planner'); bc.onmessage = e => { if (e.data === 'hello') bc.postMessage('here'); else if (e.data === 'here' && !app._twin) { app._twin = true; GP.toast('이 앱이 다른 창에도 열려 있어요. 같은 프로젝트를 두 창에서 고치면 나중에 저장한 쪽만 남아요', { bad: true, ms: 8000 }); } }; bc.postMessage('hello'); } catch (e) { }
   if ('serviceWorker' in navigator && location.protocol.startsWith('http') && !window.GP_VIEW) { navigator.serviceWorker.register('sw.js').catch(() => { }); }
   if (location.protocol.startsWith('http') && !GP.viewOnly) { setTimeout(app.checkUpdate, 8000); setInterval(app.checkUpdate, 20 * 60 * 1000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') app.checkUpdate(); }); }
 };

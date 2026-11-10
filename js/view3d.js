@@ -441,7 +441,7 @@ V3.ghostRefresh = () => { if (last3d) ghostMove(last3d); };
 /* ---------------- walk mode: eye height 1.6 m inside the room; keys / drag to look, a joystick on touch screens ---------------- */
 const EYE = 1.6, SPEED = 1.4, keys = new Set(); let wk = null, walkHud = null, joy = null, lastT = 0, solid = false;
 function walkStart() {
-  const L = GP.L(), P = L.room.pts, b = G.bounds(P), door = L.openings.find(o => o.host === 'room' && o.kind !== 'window');
+  const L = GP.L(), P = L.room.pts, b = G.bounds(P), door = L.openings.find(o => o.host === 'room' && o.kind !== 'window' && GP.hostSeg(o));
   let x = b.cx, z = b.cz, yaw = 0;
   if (door) { const hs = GP.hostSeg(door), sp = GP.openingSpan(door, hs); x = hs.a[0] + hs.dx * sp.c + hs.nx * 1.0; z = hs.a[1] + hs.dz * sp.c + hs.nz * 1.0; yaw = Math.atan2(-hs.nx, -hs.nz); }
   if (!free(x, z)) { x = b.cx; z = b.cz; for (let r = .5; r < 6 && !free(x, z); r += .5) for (let a = 0; a < 6.28; a += .5) if (free(b.cx + Math.cos(a) * r, b.cz + Math.sin(a) * r)) { x = b.cx + Math.cos(a) * r; z = b.cz + Math.sin(a) * r; break; } }
@@ -505,7 +505,7 @@ V3.eyeViews = () => {
   };
   const stand = (x, z, tg) => { let first = null; for (let k = 0; k <= 24; k++) { const t = k / 24, px = x + (C[0] - x) * t, pz = z + (C[1] - z) * t; if (!free(px, pz)) continue; if (!first) first = [px, pz]; if (!tg || clear(px, pz, tg)) return [px, pz]; } return first; };
   const view = (p, tg, label, ty) => { if (!p) return; out.push({ pos: [p[0], EYE, p[1]], target: [tg[0], ty || 1.1, tg[1]], fov: 62, label }); };
-  const door = L.openings.find(o => o.host === 'room' && o.kind !== 'window'); let D = null;
+  const door = L.openings.find(o => o.host === 'room' && o.kind !== 'window' && GP.hostSeg(o)); let D = null;
   if (door) { const hs = GP.hostSeg(door), sp = GP.openingSpan(door, hs); D = [hs.a[0] + hs.dx * sp.c, hs.a[1] + hs.dz * sp.c]; view(stand(D[0] + hs.nx * .9, D[1] + hs.nz * .9, C), C, '입구에서 본 모습'); }
   // the far end: the corner farthest from the entrance (or from the middle), 1 m inside
   const ref = D || C; let far = P[0]; for (const q of P) if (Math.hypot(q[0] - ref[0], q[1] - ref[1]) > Math.hypot(far[0] - ref[0], far[1] - ref[1])) far = q;

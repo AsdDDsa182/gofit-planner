@@ -524,7 +524,7 @@ tools.handleDown = (e, el) => {
     GP.emit('overlay'); GP.S.invalidate(); return;
   }
   if (h === 'e' && target && !e.altKey) { startSide(target, +el.dataset.i, GP.S.floorAt(e.clientX, e.clientY)); cap(el, e); return; }
-  if ((h === 'm' || h === 'e') && target) { const i = +el.dataset.i, pts = target.pts, n = pts.length, a = pts[i], b = pts[(i + 1) % n]; pts.splice(i + 1, 0, [U.r3((a[0] + b[0]) / 2), U.r3((a[1] + b[1]) / 2)]); selOnly(i + 1); GP.S.dataChanged(); hd = { type: 'v', target, i: i + 1, moved: true }; GP.emit('overlay'); return; }
+  if ((h === 'm' || h === 'e') && target) { const i = +el.dataset.i, pts = target.pts, n = pts.length, a = pts[i], b = pts[(i + 1) % n]; const old0 = pts.map(p => p.slice()); pts.splice(i + 1, 0, [U.r3((a[0] + b[0]) / 2), U.r3((a[1] + b[1]) / 2)]); tools.reindex(target, 'ins', i, old0); selOnly(i + 1); GP.S.dataChanged(); hd = { type: 'v', target, i: i + 1, moved: true }; GP.emit('overlay'); return; }
   const it = ui.selItems()[0];
   if (h === 'rs' && it) { const [cx, cz] = [+el.dataset.cx, +el.dataset.cz]; const d = GP.dims(it); const opp = G.l2w(it.x, it.z, it.rot, -cx * d.w / 2, -cz * d.d / 2); hd = { type: 'rs', it, cx, cz, opp }; cap(el, e); return; }
   if (h === 'grot') {
@@ -532,7 +532,7 @@ tools.handleDown = (e, el) => {
     hd = { type: 'grot', cx: b.cx, cz: b.cz, R: Math.max(.2, Math.hypot(fp.x - b.cx, fp.z - b.cz)), a0: ptrAng(c, fp), last: ptrAng(c, fp), acc: 0, d: 0, start: its.map(q => ({ it: q, x: q.x, z: q.z, rot: q.rot })), moved: false }; cap(el, e); return;
   }
   if (h === 'rot' && it) { const fp = GP.S.floorAt(e.clientX, e.clientY); hd = { type: 'rot', it, r0: it.rot, last: ptrAng(it, fp), acc: 0 }; cap(el, e); return; }
-  if (h === 'oe') { const so = ui.selObj(); if (!so || so.k !== 'opening') return; const o = so.obj, hs = GP.hostSeg(o), sp = GP.openingSpan(o, hs); hd = { type: 'oe', o, side: +el.dataset.side, fixed: +el.dataset.side > 0 ? sp.s0 : sp.s1 }; cap(el, e); return; }
+  if (h === 'oe') { const so = ui.selObj(); if (!so || so.k !== 'opening') return; const o = so.obj, hs = GP.hostSeg(o), sp = GP.openingSpan(o, hs); if (!sp) return; hd = { type: 'oe', o, side: +el.dataset.side, fixed: +el.dataset.side > 0 ? sp.s0 : sp.s1 }; cap(el, e); return; }
 };
 tools.handleMove = (e) => {
   if (!hd) return; const S = GP.S, fp = S.floorAt(e.clientX, e.clientY);
@@ -599,11 +599,41 @@ tools.polyTarget = () => {
   if (so.k === 'part') return { kind: 'part', obj: so.obj, pts: so.obj.pts, open: true };
   return null;
 };
+/* Walls and partition pieces are known by their index (openings.seg, wallMarks, wallTex). When a point is added or removed the
+   indices move: this keeps every door, window, mirror and wall finish on the wall it was on.
+   t: {kind:'room'|'part', obj, pts, open}; op 'ins' (a point was added after i, splitting piece i) | 'del' (point i removed); old: the points before. */
+tools.reindex = (t, op, i, old) => {
+  if (!t || (t.kind !== 'room' && t.kind !== 'part')) return; const L = GP.L(), host = t.kind === 'room' ? 'room' : t.obj.id, n0 = old.length, open = !!t.open;
+  const ops = L.openings.filter(o => o.host === host), maps = t.kind === 'room' ? [L.wallMarks || (L.wallMarks = {}), L.wallTex || (L.wallTex = {})] : [];
+  const len = k => G.len(old[k], old[(k + 1) % n0]), gone = new Set();
+  const remap = f => { for (const m of maps) { const nx = {}; Object.keys(m).map(Number).sort((a, b) => a - b).forEach(k => { for (const s of [].concat(f(k))) if (s != null && nx[s] == null) nx[s] = m[k]; }); for (const k in m) delete m[k]; Object.assign(m, nx); } };
+  if (op === 'ins') {
+    const cut = G.len(old[i], t.pts[i + 1]);
+    for (const o of ops) { if (o.seg > i) o.seg++; else if (o.seg === i && o.t > cut) { o.seg = i + 1; o.t = U.r3(o.t - cut); } }
+    remap(k => k < i ? k : k === i ? [i, i + 1] : k + 1);
+  } else if (!open && i === 0) {      // the last wall and the first one become one (the new last wall)
+    const add = len(n0 - 1); for (const o of ops) { if (o.seg === n0 - 1) o.seg = n0 - 2; else if (o.seg === 0) { o.seg = n0 - 2; o.t = U.r3(o.t + add); } else o.seg--; }
+    remap(k => k === n0 - 1 || k === 0 ? n0 - 2 : k - 1);
+  } else if (open && (i === 0 || i === n0 - 1)) {      // an end point of a partition: its end piece goes, with what was on it
+    const dead = i === 0 ? 0 : n0 - 2; for (const o of ops) { if (o.seg === dead) gone.add(o); else if (o.seg > dead) o.seg--; }
+  } else {      // pieces i-1 and i become one
+    const add = len(i - 1); for (const o of ops) { if (o.seg === i) { o.seg = i - 1; o.t = U.r3(o.t + add); } else if (o.seg > i) o.seg--; }
+    remap(k => k < i ? k : k === i ? i - 1 : k - 1);
+  }
+  if (gone.size) L.openings = L.openings.filter(o => !gone.has(o));
+};
+/* after the room or a partition was replaced as a whole: doors / windows / finishes of walls that no longer exist go. Returns how many openings went. */
+GP.pruneWalls = () => {
+  const L = GP.L(), n = L.room.pts.length, before = L.openings.length;
+  L.openings = L.openings.filter(o => { if (o.host === 'room') return o.seg >= 0 && o.seg < n; const p = L.partitions.find(q => q.id === o.host); return !!p && o.seg >= 0 && o.seg < p.pts.length - 1; });
+  for (const m of [L.wallMarks, L.wallTex]) if (m) for (const k in m) if (!(+k < n)) delete m[k];
+  return before - L.openings.length;
+};
 tools.deleteVertex = (i) => {
   const t = tools.polyTarget(); if (!t) return; const min = t.open ? 2 : 3;
   const del = (tools.selVs.size > 1 && tools.selVs.has(i) ? [...tools.selVs] : [i]).sort((a, b) => b - a);
   if (t.pts.length - del.length < min) { GP.toast(`꼭짓점은 최소 ${min}개가 필요해요`, { bad: true }); return; }
-  del.forEach(k => t.pts.splice(k, 1)); selOnly(-1); GP.changed(t.kind === 'room' ? 'room' : t.kind);
+  del.forEach(k => { const old = t.pts.map(p => p.slice()); t.pts.splice(k, 1); tools.reindex(t, 'del', k, old); }); selOnly(-1); GP.changed(t.kind === 'room' ? ['room', 'openings'] : t.kind);
 };
 tools.setAngle = (i, deg, side) => {
   const P = GP.L().room.pts, n = P.length, p = P[i], j = side === 'prev' ? (i - 1 + n) % n : (i + 1) % n, keep = P[j].slice();

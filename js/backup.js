@@ -80,7 +80,9 @@ function chip() {
   const b = $('#bkChip'); if (!b) return;
   b.hidden = GP.viewOnly || B.state !== 'need';
 }
-B.statusHtml = () => {
+B.statusHtml = () => B.keepNote() + B.folderHtml();
+B.keepNote = () => GP.persisted === false ? '<p class="note" style="color:var(--amber)">이 브라우저는 저장 공간이 모자라면 앱 데이터를 지울 수 있어요. 앱을 설치(홈 화면에 추가)하거나, 아래 백업을 꼭 해 두세요.</p>' : '';
+B.folderHtml = () => {
   if (!B.supported) return `<p class="note">이 브라우저(아이패드·사파리 등)는 폴더 자동 백업을 지원하지 않아요. 대신 아래 <b>모든 프로젝트를 파일 하나로 저장</b>을 가끔 눌러 두세요.</p>`;
   if (B.state === 'off') return `<p class="note">폴더를 하나 정해 두면, 저장될 때마다 프로젝트 파일(.gofit)이 그 폴더에 자동으로 쌓여요. 원드라이브·구글 드라이브 폴더를 고르면 다른 PC에서도 꺼내 쓸 수 있어요.</p><div class="acts"><button class="btn primary" id="bkChoose">백업 폴더 정하기</button></div>`;
   return `<p class="note">백업 폴더: <b>${U.esc(B.dir.name)}</b>${B.state === 'need' ? ' · <span style="color:var(--amber)">연결이 필요해요</span>' : ''}${B.last ? ` · 마지막 백업 ${new Date(B.last).toLocaleString('ko-KR')}` : ''}</p>

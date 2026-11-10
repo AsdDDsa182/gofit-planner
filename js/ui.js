@@ -80,7 +80,7 @@ INFO.NO_QUOTE = new Set(['column', 'outlet']);
 INFO.showPrice = () => !GP.viewOnly || !!GP.viewPrice;
 INFO.priceLines = (unitPrice, qty, unit) => {
   if (!INFO.showPrice()) return '';
-  if (!unitPrice) return `<div class="tip-p none">가격 미입력</div>`;
+  if (!unitPrice) return GP.viewOnly ? '' : `<div class="tip-p none">단가 미입력</div>`;
   const sup = Math.round(unitPrice * (qty || 1)), inc = Math.round(sup * 1.1);
   return `<div class="tip-p"><span>부가세 별도</span><b>${U.won(sup)}원</b></div><div class="tip-p"><span>부가세 포함</span><b>${U.won(inc)}원</b></div>` + (qty > 1 ? `<div class="tip-s">${U.won(unitPrice)}원 × ${qty}${unit || ''}</div>` : '');
 };
@@ -125,7 +125,7 @@ ui.select = (list, add, raw) => {
 };
 ui.clearSel = () => { if (ui.sel.length) { ui.sel = []; GP.emit('selection'); } };
 ui.selItems = () => ui.sel.filter(s => s.k === 'item').map(s => GP.findItem(s.id)).filter(Boolean);
-ui.selObj = () => { if (ui.sel.length !== 1) return null; const s = ui.sel[0]; if (s.k === 'wall') return { k: 'wall', id: s.id, obj: s.id }; const o = GP.findBy(s.k, s.id); return o ? { k: s.k, id: s.id, obj: o } : null; };
+ui.selObj = () => { if (ui.sel.length !== 1) return null; const s = ui.sel[0]; if (s.k === 'wall') return s.id < GP.L().room.pts.length ? { k: 'wall', id: s.id, obj: s.id } : null; const o = GP.findBy(s.k, s.id); return o ? { k: s.k, id: s.id, obj: o } : null; };
 
 /* ---------------- change pipeline ---------------- */
 let fullT = 0;
@@ -307,7 +307,7 @@ $('#variants').addEventListener('click', e => {
 });
 ui.varPick = (v) => {
   const P = GP.P;
-  if (v === 'add') { const src = P.variants[P.cur]; const n = { id: U.uid('v'), name: String.fromCharCode(65 + P.variants.length) + '안', layout: U.clone(src.layout) }; P.variants.push(n); P.cur = P.variants.length - 1; ui.sel = []; GP.changed('all'); ui.renderVariants(); GP.emit('project'); GP.toast(`${n.name}을 만들었어요. 지금 안을 복사했어요`); return; }
+  if (v === 'add') { const src = P.variants[P.cur]; const n = { id: U.uid('v'), name: String.fromCharCode(65 + P.variants.length) + '안', layout: U.clone(src.layout) }; if (n.layout.quote) { n.layout.quote.no = ''; delete n.layout.quote.issued; } P.variants.push(n); P.cur = P.variants.length - 1; ui.sel = []; GP.changed('all'); ui.renderVariants(); GP.emit('project'); GP.toast(`${n.name}을 만들었어요. 지금 안을 복사했어요`); return; }
   const i = +v; if (i === P.cur) return; P.cur = i; ui.sel = []; GP.tools && GP.tools.cancel(); GP.changed('all', { commit: false }); if (!GP.viewOnly) GP.H.commit(); ui.renderVariants(); GP.emit('project');
 };
 ui.varRename = (i) => {
@@ -367,7 +367,7 @@ function head(title, sub, color, editable) { return `<div class="insp-h"><span c
 function priceBox(pk, price, label) { return `<div class="sec"><span class="lbl">${label || '단가 (부가세 별도)'}</span>${num('iPrice', price || '', 1000, '원', `min="0" placeholder="가격 미입력" data-pk="${pk}"`)}<small class="vat">${price ? `부가세 포함 ${U.won(Math.round(price * 1.1))}원` : '입력하면 이 기구 모두에 적용돼요'}</small></div>`; }
 function inspItem(it) {
   const def = GP.getDef(it.type) || {}, d = GP.dims(it), mount = GP.mountOf(it), c = def.cl || {}, bad = GP.checks.conflicts.get(it.uid);
-  const params = (def.params || []).map(q => { const v = (it.params || {})[q.k] ?? q.def; if (q.type === 'select') return `<label class="fld"><span>${q.label}</span><select data-param="${q.k}">${q.options.map(([k, l]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`; if (q.type === 'color') return `<label class="fld"><span>${q.label}</span><input type="color" data-param="${q.k}" value="${v}"></label>`; return `<label class="fld"><span>${q.label}</span><input type="number" data-param="${q.k}" min="${q.min}" max="${q.max}" step="${q.step}" value="${v}"></label>`; }).join('');
+  const params = (def.params || []).map(q => { const v = (it.params || {})[q.k] ?? q.def; if (q.type === 'select') return `<label class="fld"><span>${q.label}</span><select data-param="${q.k}">${q.options.map(([k, l]) => `<option value="${k}" ${k === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>`; if (q.type === 'color') return `<label class="fld"><span>${q.label}</span><input type="color" data-param="${q.k}" value="${U.esc(String(v))}"></label>`; return `<label class="fld"><span>${q.label}</span><input type="number" data-param="${q.k}" min="${q.min}" max="${q.max}" step="${q.step}" value="${U.esc(String(v))}"></label>`; }).join('');
   const has3d = GP.R3.ok && GP.R3.hasModel(it.type), nph = GP.media.photos(it.type).length;
   insp.innerHTML = head(GP.itemName(it), `${U.esc(GP.typeName(it.type))} · ${U.cm(d.w)}×${U.cm(d.d)} cm`, `var(--cat-${def.cat || 'facility'})`, true)
     + (bad ? `<div class="insp-warn">${[bad.has('wall') ? '벽 밖으로 나갔어요' : '', bad.has('overlap') ? '다른 물건과 겹쳐요' : '', bad.has('part') ? '가벽과 겹쳐요' : ''].filter(Boolean).join(' · ')}</div>` : '')
@@ -401,7 +401,7 @@ function inspPart(p) {
     + `<p class="note">꼭짓점을 끌어 모양을 바꿔요. 문·창문 도구로 가벽에도 문을 낼 수 있어요.</p><div class="acts"><button class="btn sm danger" data-act="odel">가벽 삭제</button></div>`;
 }
 /* a row of colour chips (+ any colour) for doors, windows and partitions */
-const finRow = (label, key, cur, keys, table, custom) => `<div class="finrow"><span class="fr-l">${label}</span><div class="fr-c">${keys.map(k => `<button class="fin${cur === k ? ' on' : ''}" data-act="fin" data-k="${key}" data-v="${k}" title="${table[k].n}" style="--c:${table[k].c}${table[k].tex ? `;background:url(${GP.texUrl(table[k].tex, true)}) center/cover` : ''}"></button>`).join('')}${custom ? `<label class="fin cust${cur && !table[cur] ? ' on' : ''}" title="다른 색 고르기"${cur && !table[cur] ? ` style="--c:${cur}"` : ''}><input type="color" data-fc="${key}" value="${table[cur] ? table[cur].c : cur || '#ffffff'}"></label>` : ''}</div></div>`;
+const finRow = (label, key, cur, keys, table, custom) => `<div class="finrow"><span class="fr-l">${label}</span><div class="fr-c">${keys.map(k => `<button class="fin${cur === k ? ' on' : ''}" data-act="fin" data-k="${key}" data-v="${k}" title="${table[k].n}" style="--c:${table[k].c}${table[k].tex ? `;background:url(${GP.texUrl(table[k].tex, true)}) center/cover` : ''}"></button>`).join('')}${custom ? `<label class="fin cust${cur && !table[cur] ? ' on' : ''}" title="다른 색 고르기"${cur && !table[cur] ? ` style="--c:${U.esc(cur)}"` : ''}><input type="color" data-fc="${key}" value="${U.esc(table[cur] ? table[cur].c : cur || '#ffffff')}"></label>` : ''}</div></div>`;
 const LEAF_K = ['white', 'ivory', 'grey', 'charcoal', 'black', 'ash', 'oak', 'teak', 'walnut'], FRAME_K = ['white', 'ivory', 'grey', 'charcoal', 'black', 'silver', 'bronze'];
 function openingColours(o) {
   const D = GP.OPEN_DEF[o.kind] || {}, win = o.kind === 'window';

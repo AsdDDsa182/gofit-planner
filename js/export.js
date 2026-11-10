@@ -15,7 +15,7 @@ exp.planImage = (w, h, o) => {
   const sc = Math.min(w / (b.sx + m * 2), h / (b.sz + m * 2)); const c = document.createElement('canvas'); c.width = w; c.height = h; const x = c.getContext('2d');
   const k = Math.max(1, Math.min(w, h) / 900); // label scale for large prints
   const V = { x: b.cx, z: b.cz, s: sc / k, W: w / k, H: h / k, dpr: k };
-  const layers = Object.assign({}, S.layers, { items: true, labels: o.labels !== false, mats: true, dims: true, zones: true, notes: o.notes !== false, clear: !!o.clear, aisle: false });
+  const layers = Object.assign({}, S.layers, { items: true, labels: o.labels !== false, mats: true, dims: true, zones: true, notes: o.notes !== false, clear: !!o.clear, aisle: false, egress: !!o.egress });
   S.drawPlan(x, V, { white: true, grid: false, matLabels: true, layers, notes: o.notes !== false, style: o.style });
   if (o.gray) { const im = x.getImageData(0, 0, w, h), d = im.data; for (let i = 0; i < d.length; i += 4) { const g = d[i] * .3 + d[i + 1] * .59 + d[i + 2] * .11; d[i] = d[i + 1] = d[i + 2] = g; } x.putImageData(im, 0, 0); }
   return c;
@@ -84,20 +84,22 @@ function header(pg, title, sub) { const { x, mm, W } = pg; x.fillStyle = '#1B202
 function footer(pg, n, tot) { const { x, mm, W, H } = pg; x.fillStyle = '#9aa1a8'; x.font = `500 ${mm(2.6)}px ${FONT}`; x.textAlign = 'left'; x.fillText(`${GP.P.name} · ${U.today()}`, mm(12), H - mm(8)); x.textAlign = 'right'; x.fillText(tot ? `${n} / ${tot}` : `${n}`, W - mm(12), H - mm(8)); }
 
 /* quote page(s) drawn on canvas (A4 portrait) */
-function quotePages(R) {
-  const P = GP.P, q = GP.L().quote, co = GP.lib.company, pages = []; let pg = page(210, 297, 170), { x, mm, W } = pg; let y;
-  const valid = q.validDays ?? GP.lib.defaults.validDays ?? 30, vd = new Date(Date.now() + valid * 864e5);
+/* text broken into lines that fit (Korean breaks anywhere) */
+function wrapText(x, text, maxW) { const out = []; String(text).split('\n').forEach(par => { let line = ''; for (const ch of par) { if (line && x.measureText(line + ch).width > maxW) { out.push(line); line = ch === ' ' ? '' : ch; } else line += ch; } out.push(line); }); return out; }
+function quotePages(R, opt) {
+  opt = opt || {}; const P = GP.P, q = GP.L().quote, co = GP.lib.company, pages = []; let pg = page(210, 297, 170), { x, mm, W } = pg; let y;
   const first = () => {
     x.fillStyle = '#1B2024'; x.textAlign = 'center'; x.font = `800 ${mm(9)}px ${FONT}`; x.fillText('견   적   서', W / 2, mm(24));
     const box = (bx, by, bw, rows) => { x.strokeStyle = '#cfd4d1'; x.lineWidth = mm(.3); rr(x, bx, by, bw, mm(7) * rows.length + mm(4), mm(1.5)); x.stroke(); rows.forEach(([k, v], i) => { x.textAlign = 'left'; x.fillStyle = '#6b747c'; x.font = `500 ${mm(3.1)}px ${FONT}`; x.fillText(k, bx + mm(3), by + mm(7) * (i + 1)); x.fillStyle = '#1B2024'; x.font = `700 ${mm(3.2)}px ${FONT}`; x.fillText(fit(x, v, bw - mm(28)), bx + mm(24), by + mm(7) * (i + 1)); }); };
-    box(mm(12), mm(32), mm(90), [['수신', `${P.client || '고객사'} 귀하`], ['프로젝트', P.name], ['견적 번호', GP.quote.no()], ['견적일', U.today()], ['유효기간', `${vd.getFullYear()}.${String(vd.getMonth() + 1).padStart(2, '0')}.${String(vd.getDate()).padStart(2, '0')}까지`]]);
-    box(mm(108), mm(32), mm(90), [['공급자', co.name || 'GOFIT KOREA'], ['대표', co.ceo || '-'], ['사업자번호', co.bizNo || '-'], ['연락처', co.tel || '-'], ['담당', P.consultant || '-']]);
-    y = mm(76); x.strokeStyle = '#1B2024'; x.lineWidth = mm(.6); x.beginPath(); x.moveTo(mm(12), y); x.lineTo(W - mm(12), y); x.stroke();
+    const recv = [['수신', P.client ? `${P.client} 귀하` : '귀하'], ['프로젝트', P.name], ['견적 번호', GP.quote.no()], ['견적일', GP.quote.issued()], ['유효기간', `${GP.quote.validUntil()}까지`]];
+    const sup = [['공급자', co.name || 'GOFIT KOREA'], ['대표', co.ceo || '-'], ['사업자번호', co.bizNo || '-']].concat(co.addr ? [['주소', co.addr]] : [], [['연락처', co.tel || '-']], co.email ? [['이메일', co.email]] : [], [['담당', P.consultant || '-']]);
+    box(mm(12), mm(32), mm(90), recv); box(mm(108), mm(32), mm(90), sup);
+    y = mm(32) + mm(7) * Math.max(recv.length, sup.length) + mm(9); x.strokeStyle = '#1B2024'; x.lineWidth = mm(.6); x.beginPath(); x.moveTo(mm(12), y); x.lineTo(W - mm(12), y); x.stroke();
     x.textAlign = 'left'; x.font = `600 ${mm(3.6)}px ${FONT}`; x.fillStyle = '#1B2024'; x.fillText('합계 금액 (부가세 포함)', mm(14), y + mm(8)); x.textAlign = 'right'; x.font = `800 ${mm(6)}px ${FONT}`; x.fillText(`₩ ${U.won(R.total)}`, W - mm(14), y + mm(9)); y += mm(13); x.lineWidth = mm(.3); x.beginPath(); x.moveTo(mm(12), y); x.lineTo(W - mm(12), y); x.stroke(); y += mm(4);
   };
   const cols = [mm(12), mm(96), mm(128), mm(146), mm(172), W - mm(12)];
   const th = () => { x.fillStyle = '#f1f3f1'; x.fillRect(mm(12), y, W - mm(24), mm(8)); x.fillStyle = '#1B2024'; x.font = `700 ${mm(3.1)}px ${FONT}`; x.textAlign = 'center'; ['품목', '규격', '수량', '단가', '금액'].forEach((t, i) => x.fillText(t, (cols[i] + cols[i + 1]) / 2, y + mm(5.6))); y += mm(8); };
-  const newPage = () => { footer(pg, pages.length + 1, 0); pages.push(pg); pg = page(210, 297, 170); ({ x, mm, W } = pg); y = mm(14); th(); };
+  const newPage = (plain) => { if (!opt.noFooter) footer(pg, pages.length + 1, 0); pages.push(pg); pg = page(210, 297, 170); ({ x, mm, W } = pg); y = mm(14); if (!plain) th(); };
   first(); th();
   R.groups.forEach(g => {
     if (y > mm(262)) newPage();
@@ -107,7 +109,7 @@ function quotePages(R) {
   if (y > mm(240)) newPage();
   y += mm(4); const tot = [['소계', U.won(R.sub) + '원']].concat(R.disc ? [['할인', '-' + U.won(R.disc) + '원']] : []).concat([['공급가 (부가세 별도)', U.won(R.supply) + '원'], ['부가세 (10%)', U.won(R.vat) + '원'], ['합계 (부가세 포함)', U.won(R.total) + '원']]);
   tot.forEach(([k, v], i) => { const last = i === tot.length - 1; if (last) { x.strokeStyle = '#1B2024'; x.lineWidth = mm(.4); x.beginPath(); x.moveTo(mm(110), y + mm(1)); x.lineTo(W - mm(12), y + mm(1)); x.stroke(); } x.textAlign = 'left'; x.fillStyle = '#1B2024'; x.font = `${last ? 800 : 500} ${mm(last ? 3.8 : 3.2)}px ${FONT}`; x.fillText(k, mm(112), y + mm(6)); x.textAlign = 'right'; x.font = `${last ? 800 : 600} ${mm(last ? 3.8 : 3.2)}px ${MONO}`; x.fillText(v, W - mm(14), y + mm(6)); y += mm(last ? 9 : 7); });
-  if (q.note) { y += mm(4); x.textAlign = 'left'; x.fillStyle = '#48515a'; x.font = `500 ${mm(3)}px ${FONT}`; String(q.note).split('\n').forEach(line => { x.fillText(line, mm(14), y + mm(4)); y += mm(5); }); }
+  if (q.note) { y += mm(4); x.font = `500 ${mm(3)}px ${FONT}`; wrapText(x, q.note, W - mm(28)).forEach(line => { if (y > mm(280)) newPage(true); x.textAlign = 'left'; x.fillStyle = '#48515a'; x.font = `500 ${mm(3)}px ${FONT}`; x.fillText(line, mm(14), y + mm(4)); y += mm(5); }); }
   // installment / lease estimate (only when the salesperson ticked 「견적서에 넣기」)
   if (GP.quote.fin(q).show && R.total > 0) {
     const F = GP.quote.finance(R); if (y > mm(250)) newPage(); y += mm(4);
@@ -117,7 +119,7 @@ function quotePages(R) {
     x.font = `500 ${mm(2.8)}px ${FONT}`; x.fillStyle = '#48515a'; x.fillText(fit(x, `${F.n}개월 · 연 ${F.lo}${F.hi !== F.lo ? `~${F.hi}` : ''}% 기준${F.down ? ` · 선수금 ${U.won(F.down)}원` : ''}${F.rv ? ` · 만기 잔존가치 ${U.won(F.rv)}원` : ''}`, W - mm(92)), mm(80), y + mm(11));
     x.fillStyle = '#6b747c'; x.font = `500 ${mm(2.6)}px ${FONT}`; x.fillText('※ 예상 금액이며, 실제 금리와 조건은 신용도 및 금융사 심사에 따라 달라집니다.', mm(15), y + mm(16.2)); y += mm(21);
   }
-  footer(pg, pages.length + 1, 0); pages.push(pg);
+  if (!opt.noFooter) footer(pg, pages.length + 1, 0); pages.push(pg);
   return pages;
 }
 exp.quotePdf = async () => { GP.busy(true, '견적서 PDF 만드는 중…'); await new Promise(r => setTimeout(r, 30)); try { const pages = quotePages(GP.quote.compute()); const blob = await exp.pdf(pages); U.download(blob, U.fileSafe(GP.P.name) + '_견적서.pdf'); GP.toast('견적서 PDF를 저장했어요'); } catch (e) { console.error(e); GP.toast('PDF를 만들지 못했어요', { bad: true }); } finally { GP.busy(false); } };
@@ -133,7 +135,7 @@ exp.proposalPdf = async (withPrice) => {
     const pages = [], L = GP.L(), P = GP.P;
     // 1. plan
     let pg = page(297, 210, 150); header(pg, '공간 배치 제안서', `${P.client || ''} ${P.variants.length > 1 ? '· ' + P.variants[P.cur].name : ''}`);
-    const pw = pg.W - pg.mm(24), ph = pg.H - pg.mm(40); const img = exp.planImage(Math.round(pw), Math.round(ph), {}); pg.x.drawImage(img, pg.mm(12), pg.mm(28)); pg.x.strokeStyle = '#dde1de'; pg.x.strokeRect(pg.mm(12), pg.mm(28), pw, ph); titleBlock(pg.x, pg.W - pg.mm(12), pg.H - pg.mm(12), pg.H / 1000, { sub: '평면도' }); pages.push(pg); GP.busy(true, '3D 장면 그리는 중…', .35);
+    const pw = pg.W - pg.mm(24), ph = pg.H - pg.mm(40); const img = exp.planImage(Math.round(pw), Math.round(ph), { notes: false }); pg.x.drawImage(img, pg.mm(12), pg.mm(28)); pg.x.strokeStyle = '#dde1de'; pg.x.strokeRect(pg.mm(12), pg.mm(28), pw, ph); titleBlock(pg.x, pg.W - pg.mm(12), pg.H - pg.mm(12), pg.H / 1000, { sub: '평면도' }); pages.push(pg); GP.busy(true, '3D 장면 그리는 중…', .35);
     if (GP.R3.ok) { try { pg = page(297, 210, 150); header(pg, '3D 공간 이미지', '실제 기구 모델'); const gw = (pg.W - pg.mm(30)) / 2, gh = pg.H - pg.mm(44); const shots = [['persp', '전체 모습'], ['persp2', '반대편에서']]; for (let i = 0; i < shots.length; i++) { const c = await GP.V3.snapshot(Math.round(gw), Math.round(gh), shots[i][0]); if (!c) continue; const gx = pg.mm(12) + i * (gw + pg.mm(6)), gy = pg.mm(30); pg.x.drawImage(c, gx, gy); pg.x.fillStyle = 'rgba(27,32,36,.75)'; pg.x.font = `700 ${pg.mm(3.4)}px ${FONT}`; const t = shots[i][1]; const tw = pg.x.measureText(t).width + pg.mm(5); rr(pg.x, gx + pg.mm(3), gy + pg.mm(3), tw, pg.mm(7), pg.mm(1.5)); pg.x.fill(); pg.x.fillStyle = '#fff'; pg.x.textAlign = 'left'; pg.x.fillText(t, gx + pg.mm(5.5), gy + pg.mm(8)); } pages.push(pg); } catch (e) { console.warn('3D page', e); } }
     if (GP.R3.ok) { try {
       const views = GP.V3.eyeViews().slice(0, 3);
@@ -160,12 +162,13 @@ exp.proposalPdf = async (withPrice) => {
     // equipment table (right column)
     const R = GP.quote.compute(); const eqG = R.groups.find(g => g.name === '운동기구·물품'); let yy = mm(34); const X0 = mm(160);
     x.font = `700 ${mm(4)}px ${FONT}`; x.fillStyle = '#1B2024'; x.fillText('기구 목록', X0, yy); yy += mm(7);
-    (eqG ? eqG.rows : []).forEach(r => { if (yy > pg.H - mm(20)) return; x.font = `500 ${mm(3.1)}px ${FONT}`; x.fillStyle = '#1B2024'; x.fillText(fit(x, r.name, mm(70)), X0, yy); x.fillStyle = '#78818A'; x.font = `500 ${mm(2.8)}px ${MONO}`; x.fillText(r.spec, X0 + mm(74), yy); x.fillStyle = '#1B2024'; x.textAlign = 'right'; x.font = `700 ${mm(3.1)}px ${MONO}`; x.fillText(r.qty + '대', pg.W - mm(14), yy); x.textAlign = 'left'; yy += mm(5.8); });
-    const chk = (GP.checks.list || []).filter(c => c.sev !== 'info'); if (chk.length) { y += mm(4); x.font = `700 ${mm(4)}px ${FONT}`; x.fillStyle = '#1B2024'; x.fillText('확인할 점', mm(14), y); y += mm(7); chk.slice(0, 8).forEach(c => { x.font = `500 ${mm(3)}px ${FONT}`; x.fillStyle = c.sev === 'err' ? '#D6362B' : '#C47F0E'; x.fillText('• ' + fit(x, c.msg, mm(130)), mm(14), y); y += mm(5.5); }); }
+    const eqRows = eqG ? eqG.rows : [], room = Math.floor((pg.H - mm(20) - yy) / mm(5.8)) + 1, shown = eqRows.length > room ? room - 1 : eqRows.length;
+    if (shown < eqRows.length) { x.font = `500 ${mm(2.9)}px ${FONT}`; x.fillStyle = '#78818A'; x.fillText(`… 외 ${eqRows.length - shown}종`, X0, mm(34) + mm(7) + shown * mm(5.8)); }
+    eqRows.slice(0, shown).forEach(r => { x.font = `500 ${mm(3.1)}px ${FONT}`; x.fillStyle = '#1B2024'; x.fillText(fit(x, r.name, mm(70)), X0, yy); x.fillStyle = '#78818A'; x.font = `500 ${mm(2.8)}px ${MONO}`; x.fillText(r.spec, X0 + mm(74), yy); x.fillStyle = '#1B2024'; x.textAlign = 'right'; x.font = `700 ${mm(3.1)}px ${MONO}`; x.fillText(r.qty + '대', pg.W - mm(14), yy); x.textAlign = 'left'; yy += mm(5.8); });
     pages.push(pg);
     // 4. quote
-    if (withPrice) quotePages(R).forEach(p => pages.push(p));
-    pages.forEach((p, i) => { if (p.wPt > p.hPt) footer(p, i + 1, pages.length); });
+    if (withPrice) quotePages(R, { noFooter: true }).forEach(p => pages.push(p));
+    pages.forEach((p, i) => footer(p, i + 1, pages.length));
     GP.busy(true, 'PDF 만드는 중…', .9);
     const blob = await exp.pdf(pages); U.download(blob, U.fileSafe(P.name) + '_제안서.pdf'); GP.toast('제안서 PDF를 저장했어요');
   } catch (e) { console.error(e); GP.toast('제안서를 만들지 못했어요', { bad: true }); } finally { GP.busy(false); }
@@ -173,7 +176,7 @@ exp.proposalPdf = async (withPrice) => {
 
 /* ---------------- share payload (link / HTML) ---------------- */
 exp.payload = (o) => {
-  const P = GP.P, L = U.clone(GP.L()); delete L.scenes; delete L.steps;
+  const P = GP.P, L = U.clone(GP.L()); delete L.scenes; delete L.steps; delete L.quote;      // the priced link carries its quote as `q` below
   if (!o.notes) L.notes = []; L.items.forEach(it => { delete it.img; });
   const ct = {}; L.items.forEach(it => { if (String(it.type).startsWith('c_') && GP.lib.customTypes[it.type]) ct[it.type] = GP.lib.customTypes[it.type]; });
   const names = {}; L.items.forEach(it => { if (GP.lib.names[it.type]) names[it.type] = GP.lib.names[it.type]; });
@@ -183,7 +186,7 @@ exp.payload = (o) => {
     const pr = {}; L.items.forEach(it => { if (GP.lib.prices[it.type]) pr[it.type] = GP.lib.prices[it.type]; });
     const mp = {}; L.mats.forEach(m => { const k = m.block + '|25'; if (GP.lib.matPrices[k]) mp[k] = GP.lib.matPrices[k]; });
     const R = GP.quote.compute(); out.pr = pr; out.mp = mp;
-    out.q = { g: R.groups.map(g => ({ n: g.name, r: g.rows.map(r => [r.name, r.spec, r.qty, r.unit, r.price, r.amount]) })), sub: R.sub, disc: R.disc, supply: R.supply, vat: R.vat, total: R.total, no: GP.quote.no(), note: GP.L().quote.note || '' };
+    out.q = { g: R.groups.map(g => ({ n: g.name, r: g.rows.map(r => [r.name, r.spec, r.qty, r.unit, r.price, r.amount]) })), sub: R.sub, disc: R.disc, supply: R.supply, vat: R.vat, total: R.total, no: GP.quote.no(), note: GP.L().quote.note || '', d: GP.quote.issued(), vd: GP.quote.validUntil(), tel: GP.lib.company.tel || '', em: GP.lib.company.email || '' };
   }
   return out;
 };

@@ -19,7 +19,8 @@ for (const k in SHAPES) sp.vals[k] = Object.fromEntries(SHAPES[k].ps.map(p => [p
 let liveT = 0;
 function applyRoomLive(P, fit) {
   const L = GP.L(); L.room.pts = P.map(p => [U.r3(p[0]), U.r3(p[1])]);
-  GP.changed('room', { commit: false, fast: true }); clearTimeout(liveT); liveT = setTimeout(() => { GP.H.commit(); if (fit) GP.S.fit(); }, 700);
+  GP.changed('room', { commit: false, fast: true }); clearTimeout(liveT);
+  liveT = setTimeout(() => { const n = GP.pruneWalls(); if (n) { GP.changed('openings', { commit: false }); GP.toast(`벽 개수가 줄어서 문·창문 ${n}개를 지웠어요 (Ctrl+Z로 되돌릴 수 있어요)`, { ms: 4500 }); } GP.H.commit(); if (fit) GP.S.fit(); }, 700);
 }
 panels.renderSpace = () => {
   const P = GP.P, st = P.settings, L = GP.L(), A = Math.abs(G.area(L.room.pts));
@@ -33,7 +34,7 @@ panels.renderSpace = () => {
   ${fold('finish', '벽 · 바닥 마감', `${ui.texName(st.floorBase)} · ${ui.texName(st.wallTex || 'paint')}`, `<p class="note" style="margin:0">3D 보기와 제안서 3D 그림에 보여요. 바닥 무늬는 도면에도 연하게 보여요. 벽마다 다르게 하려면 도면에서 벽을 누르세요.</p>
     <span class="lbl">바닥</span>${ui.texGrid('floor', st.floorBase)}
     <span class="lbl">벽 (모든 벽)</span>${ui.texGrid('wall', st.wallTex || 'paint')}
-    <div class="row2"><label class="fld"><span>페인트 색</span><input type="color" id="wallColor" value="${st.wallColor || '#eeede8'}"></label><label class="fld"><span>걸레받이</span><select id="baseboard">${[['dark', '블랙'], ['white', '화이트'], ['none', '없음']].map(([k, n]) => `<option value="${k}" ${(st.baseboard || 'dark') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>`)}
+    <div class="row2"><label class="fld"><span>페인트 색</span><input type="color" id="wallColor" value="${U.esc(st.wallColor || '#eeede8')}"></label><label class="fld"><span>걸레받이</span><select id="baseboard">${[['dark', '블랙'], ['white', '화이트'], ['none', '없음']].map(([k, n]) => `<option value="${k}" ${(st.baseboard || 'dark') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>`)}
   ${fold('ceil', '천장 높이', `${st.wallH}m`, `<label class="fld"><span>바닥에서 천장까지</span>${numI('ceilH', st.wallH, .05, 'm', 'min="2" max="8"')}</label><p class="note" style="margin:0">기구마다 쓸 때 필요한 높이(트레드밀 위 사람 키, 스텝밀 맨 위 계단 등)를 이 높이로 점검해요. 3D 벽 높이로도 쓰여요.</p>`)}
   ${fold('trace', '고객 도면 대고 그리기', GP.S.underlay ? '도면 깔림' : '', `<p class="note">받은 평면도 사진이나 캐드 파일(DXF)을 깔고 <b>벽 모양</b> 도구로 꼭짓점을 맞추면 실제 모양 그대로 만들 수 있어요.</p>
     <div class="row2"><label class="btn file" style="position:relative;overflow:hidden">이미지·PDF 캡처<input type="file" id="ulImg" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label><label class="btn file" style="position:relative;overflow:hidden">캐드 파일 (DXF)<input type="file" id="ulDxf" accept=".dxf" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label></div>
@@ -97,7 +98,7 @@ spEl.addEventListener('click', e => {
   if (t.id === 'walkAdd') { sp.walk.push({ len: 3, turn: 90 }); renderSpBody(); applyRoomLive(walkToPts(sp.walk)); return; }
   if (t.id === 'walkReset') { sp.walk = roomToWalk(GP.L().room.pts); renderSpBody(); return; }
   const wd = t.closest('[data-del]'); if (wd) { sp.walk.splice(+wd.dataset.del, 1); renderSpBody(); applyRoomLive(walkToPts(sp.walk)); return; }
-  const vd = t.closest('[data-vdel]'); if (vd) { const P = GP.L().room.pts; if (P.length > 3) { P.splice(+vd.dataset.vdel, 1); GP.changed('room'); renderVTable(); } return; }
+  const vd = t.closest('[data-vdel]'); if (vd) { const P = GP.L().room.pts, k = +vd.dataset.vdel; if (P.length > 3) { const old = P.map(p => p.slice()); P.splice(k, 1); GP.tools.reindex({ kind: 'room', pts: P }, 'del', k, old); GP.changed(['room', 'openings']); renderVTable(); } return; }
   if (t.id === 'ulHide') { const UL = GP.S.underlay; if (UL) { UL.hidden = !UL.hidden; GP.S.invalidate(); renderUL(); } return; }
   if (t.id === 'ulDel') { GP.S.buildUnderlay(null); GP.DB.del('blobs', 'ul:' + GP.P.id); renderUL(); return; }
   if (t.id === 'ulUseLoop') { const UL = GP.S.underlay; const loop = UL.loops[UL.loopIdx || 0]; UL.loopIdx = ((UL.loopIdx || 0) + 1) % UL.loops.length; const s = UL.scale || 1; applyRoomLive(loop.map(p => [p[0] * s + UL.x, p[1] * s + UL.z]), true); renderUL(); GP.toast('캐드 도면의 선을 벽으로 가져왔어요. 다시 누르면 다음 선을 써요'); return; }
@@ -249,10 +250,10 @@ Q.compute = () => {
   const eq = new Map();
   for (const it of L.items) { if (GP.info.NO_QUOTE.has(it.type)) continue; const k = Q.itemKey(it); const g = eq.get(k) || { type: it.type, it, n: 0 }; g.n++; eq.set(k, g); }
   const order = GP.CATS.map(c => c.id);
-  const eqRows = [...eq.values()].sort((a, b) => order.indexOf(GP.getDef(a.type).cat) - order.indexOf(GP.getDef(b.type).cat) || GP.typeName(a.type).localeCompare(GP.typeName(b.type), 'ko')).map(g => { const d = GP.dims(g.it); const pk = 'type:' + g.type; return { name: GP.typeName(g.type), spec: `${U.cm(d.w)}×${U.cm(d.d)}×${U.cm(d.h)}`, qty: g.n, unit: '대', price: lib.prices[g.type] || 0, pk }; });
+  const eqRows = [...eq.values()].sort((a, b) => order.indexOf(GP.getDef(a.type).cat) - order.indexOf(GP.getDef(b.type).cat) || GP.typeName(a.type).localeCompare(GP.typeName(b.type), 'ko')).map(g => { const d = GP.dims(g.it); const pk = 'type:' + g.type; return { name: GP.typeName(g.type), spec: `${U.cm(d.w)}×${U.cm(d.d)}×${U.cm(d.h)}cm`, qty: g.n, unit: '대', price: lib.prices[g.type] || 0, pk }; });
   if (eqRows.length) groups.push({ name: '운동기구·물품', rows: eqRows });
   const ms = GP.calc.matSummary(); const flRows = [];
-  ms.blocks.forEach(b => flRows.push({ name: `${GP.BLOCKS[b.block].name} 25T`, spec: '500×500', qty: b.count, unit: '장', price: lib.matPrices[`${b.block}|25`] || 0, pk: `mat:${b.block}|25` }));
+  ms.blocks.forEach(b => flRows.push({ name: `${(GP.BLOCKS[b.block] || GP.BLOCKS.coat).name} 25T`, spec: '500×500mm', qty: b.count, unit: '장', price: lib.matPrices[`${b.block}|25`] || 0, pk: `mat:${b.block}|25` }));
   ms.trims.forEach(t => { const nm = GP.TRIMS[t.trim]; [['straight', '일자', 2400, t.straight], ['out', '모서리', 300, t.outC], ['in', '역모서리', 300, t.inC]].forEach(([pc, pn, len, q]) => { if (q > 0) flRows.push({ name: `${nm} 25T ${pn}`, spec: `${len}mm`, qty: q, unit: '개', price: lib.trimPrices[`${t.trim}|25|${pc}`] || 0, pk: `trim:${t.trim}|25|${pc}` }); }); });
   if (flRows.length) groups.push({ name: '바닥재·마감재', rows: flRows });
   const pl2 = GP.calc.partLength(); const ptRows = Object.entries(pl2).filter(([, v]) => v > 0).map(([k, v]) => ({ name: GP.PARTS[k], spec: '시공', qty: U.r2(v), unit: 'm', price: lib.partPrices[k] || 0, pk: 'part:' + k }));
@@ -283,6 +284,10 @@ Q.finance = (R) => {
   return { f, amt, lo, hi, mLo, mHi, down, rv, n: +f.months || 36, totLo: down + mLo * (+f.months || 36) + rv, totHi: down + mHi * (+f.months || 36) + rv };
 };
 Q.setPrice = (pk, v) => { const lib = GP.lib; const [kind, key] = [pk.slice(0, pk.indexOf(':')), pk.slice(pk.indexOf(':') + 1)]; if (kind === 'type') lib.prices[key] = v; else if (kind === 'mat') lib.matPrices[key] = v; else if (kind === 'trim') lib.trimPrices[key] = v; else if (kind === 'part') lib.partPrices[key] = v; GP.saveLib(); };
+const ymd = d => `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+/* the quote's date: the day it was issued once it has been sent (q.issued), today until then */
+Q.issued = () => GP.L().quote.issued || U.today();
+Q.validUntil = () => { const q = GP.L().quote, days = q.validDays ?? GP.lib.defaults.validDays ?? 30, m = /^(\d{4})\D(\d{1,2})\D(\d{1,2})/.exec(q.issued || ''), from = m ? new Date(+m[1], +m[2] - 1, +m[3]) : new Date(); return ymd(new Date(from.getTime() + days * 864e5)); };
 Q.no = () => { const q = GP.L().quote; if (!q.no) { const d = new Date(); q.no = `GF-${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}-${String(Math.floor(Math.random() * 900) + 100)}`; } return q.no; };
 /* quote-only items: common small equipment, then names used before */
 const EXTRA_PRESETS = [['덤벨 세트', '2~30kg', '세트'], ['바벨·원판 세트', '', '세트'], ['케틀벨 세트', '', '세트'], ['덤벨 거치대', '', '개'], ['요가·스트레칭 매트', '', '개'], ['폼롤러', '', '개'], ['밴드·튜빙 세트', '', '세트'], ['메디신볼 세트', '', '세트'], ['짐볼', '', '개'], ['플라이오 박스', '', '개']];
@@ -295,7 +300,7 @@ panels.renderQuote = () => {
     <section class="blk"><h3>추가 비용 · 할인</h3><div class="row2"><label class="fld"><span>운송비</span>${numI('qShip', q.shipping ?? lib.defaults.shipping ?? 0, 10000, '원')}</label><label class="fld"><span>설치비</span>${numI('qInst', q.install ?? lib.defaults.install ?? 0, 10000, '원')}</label></div><div class="row2"><label class="fld"><span>할인율</span>${numI('qDp', q.discountPct || 0, 1, '%', 'min="0" max="100"')}</label><label class="fld"><span>할인 금액</span>${numI('qDa', q.discountAmt || 0, 10000, '원', 'min="0"')}</label></div></section>
     <section class="blk"><div class="blk-h"><h3>견적에만 넣는 품목</h3><button class="btn xs" id="qAdd">＋ 직접 입력</button></div><p class="note">덤벨·원판처럼 도면에 놓기 애매한 소도구는 여기서 넣어요. 눌러서 바로 추가:</p>
       <div class="xchips">${extraChips().map(([n, sp, un]) => `<button class="chip" data-xadd="${U.esc(n)}" data-sp="${U.esc(sp)}" data-un="${U.esc(un)}">＋ ${U.esc(n)}${lib.extraPrices[n] ? ` <small>${U.won(lib.extraPrices[n])}원</small>` : ''}</button>`).join('')}</div>
-      ${(q.extras || []).length ? `<div class="xrows">${q.extras.map((x, i) => `<div class="xrow"><input class="xn" data-x="${i}" data-f="name" value="${U.esc(x.name || '')}" placeholder="품목 이름"><input class="xs" data-x="${i}" data-f="spec" value="${U.esc(x.spec || '')}" placeholder="규격 (선택)"><div class="xq"><input data-x="${i}" data-f="qty" type="number" min="0" value="${x.qty ?? 1}" aria-label="수량"><select data-x="${i}" data-f="unit" aria-label="단위">${['개', '세트', '식', 'm', '박스'].map(u => `<option${(x.unit || '식') === u ? ' selected' : ''}>${u}</option>`).join('')}</select></div><div class="unit xp"><input data-x="${i}" data-f="price" type="number" step="1000" min="0" value="${x.price || ''}" placeholder="단가"><em>원</em></div><button class="x" data-xdel="${i}" aria-label="삭제">×</button></div>`).join('')}</div>` : ''}</section>
+      ${(q.extras || []).length ? `<div class="xrows">${q.extras.map((x, i) => `<div class="xrow"><input class="xn" data-x="${i}" data-f="name" value="${U.esc(x.name || '')}" placeholder="품목 이름"><input class="xs" data-x="${i}" data-f="spec" value="${U.esc(x.spec || '')}" placeholder="규격 (선택)"><div class="xq"><input data-x="${i}" data-f="qty" type="number" min="0" value="${+x.qty || 0}" aria-label="수량"><select data-x="${i}" data-f="unit" aria-label="단위">${['개', '세트', '식', 'm', '박스'].map(u => `<option${(x.unit || '식') === u ? ' selected' : ''}>${u}</option>`).join('')}</select></div><div class="unit xp"><input data-x="${i}" data-f="price" type="number" step="1000" min="0" value="${+x.price || ''}" placeholder="단가"><em>원</em></div><button class="x" data-xdel="${i}" aria-label="삭제">×</button></div>`).join('')}</div>` : ''}</section>
     ${finBlock(R, q)}
     <section class="blk"><h3>견적 정보</h3><div class="row2"><label class="fld"><span>견적 번호</span><input id="qNo" value="${U.esc(Q.no())}"></label><label class="fld"><span>유효기간</span>${numI('qValid', q.validDays ?? lib.defaults.validDays ?? 30, 1, '일')}</label></div><label class="fld"><span>비고 (견적서 아래에 들어가요)</span><textarea id="qNote" rows="3" placeholder="예: 설치 일정 협의, 배송 조건 등">${U.esc(q.note || '')}</textarea></label></section>
   </aside><div class="qmain">${sheetHtml(R)}</div></div>`;
@@ -373,7 +378,7 @@ panels.projects = async () => {
   mb.onclick = async e => {
     if (e.target.id === 'pjNew') { GP.closeModal(); panels.wizard(); return; }
     const o = e.target.closest('[data-open]'); if (o) { GP.closeModal(); await GP.app.openProject(o.dataset.open); return; }
-    const d = e.target.closest('[data-dup]'); if (d) { const r = list.find(x => x.id === d.dataset.dup); if (r) { const p = GP.validateProject(U.clone(r.data)); p.id = U.uid('p'); p.name = p.name + ' (복사)'; await GP.DB.put('projects', p.id, { id: p.id, name: p.name, client: p.client, updatedAt: Date.now(), thumb: r.thumb, data: p }); panels.projects(); } return; }
+    const d = e.target.closest('[data-dup]'); if (d) { const r = list.find(x => x.id === d.dataset.dup); if (r) { const p = GP.validateProject(U.clone(r.data)); p.id = U.uid('p'); p.name = p.name + ' (복사)'; p.variants.forEach(v => { if (v.layout.quote) { v.layout.quote.no = ''; delete v.layout.quote.issued; } }); await GP.DB.put('projects', p.id, { id: p.id, name: p.name, client: p.client, updatedAt: Date.now(), thumb: r.thumb, data: p }); panels.projects(); } return; }
     const x = e.target.closest('[data-pdel]'); if (x) { const r = list.find(q => q.id === x.dataset.pdel); if (!r) return; if (!(await GP.confirm(`'${r.name}' 프로젝트를 삭제할까요? 이 기기에서 지워지고 되돌릴 수 없어요.`, '삭제', true))) { panels.projects(); return; } await GP.deleteProject(r.id); if (r.id === GP.P.id) { const rest = (await GP.listProjects()); if (rest.length) await GP.app.openProject(rest[0].id); else await GP.app.newProject({ sample: true }); } panels.projects(); }
   };
 };
@@ -428,7 +433,7 @@ panels.versions = async () => {
   const list = await GP.listVersions();
   GP.modal('버전 기록', `<p class="note">4분마다 자동으로 저장돼요. 원하는 때로 되돌릴 수 있어요 (되돌린 뒤에도 Ctrl+Z로 취소 가능).</p><div class="row2"><input id="verLbl" placeholder="이름 (예: 1차 제안)"><button class="btn" id="verSave">지금 버전 저장</button></div><div class="list">${list.map((v, i) => `<div class="li"><span class="t"><b>${U.esc(v.label || '자동 저장')}</b><small>${U.stamp(v.t)}</small></span><button class="btn xs" data-ver="${i}">이 버전으로</button></div>`).join('') || '<p class="empty">아직 저장된 버전이 없어요.</p>'}</div>`, '', { size: 'narrow' });
   $('#verSave').onclick = async () => { await GP.addVersion($('#verLbl').value.trim() || '수동 저장'); GP.toast('버전을 저장했어요'); panels.versions(); };
-  $('#modalBody').onclick = e => { const b = e.target.closest('[data-ver]'); if (!b) return; const v = list[+b.dataset.ver]; GP.closeModal(); const o = JSON.parse(v.data); Object.assign(GP.P, o); GP.H.commit(); GP.emit('restore'); GP.toast(`${U.stamp(v.t)} 버전으로 되돌렸어요`, { action: '취소', onAction: () => GP.H.undo() }); };
+  $('#modalBody').onclick = e => { const b = e.target.closest('[data-ver]'); if (!b) return; const v = list[+b.dataset.ver]; GP.closeModal(); const o = JSON.parse(v.data), ok = GP.validateProject(Object.assign({}, GP.P, { settings: o.settings, variants: o.variants, cur: o.cur })); if (!ok) { GP.toast('이 버전은 열 수 없어요', { bad: true }); return; } Object.assign(GP.P, { settings: ok.settings, variants: ok.variants, cur: ok.cur }); GP.H.commit(); GP.emit('restore'); GP.toast(`${U.stamp(v.t)} 버전으로 되돌렸어요`, { action: '취소', onAction: () => GP.H.undo() }); };
 };
 panels.settings = (tab) => {
   tab = tab || 'prices'; const lib = GP.lib; let q = '';

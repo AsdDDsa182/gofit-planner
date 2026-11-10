@@ -285,7 +285,7 @@ checks.full = () => {
    Each exit gets a 1.2 m "porch" outside it, so the door frame narrows the way out exactly as much as it does in reality. ---------- */
 calc.egress = (minW, list) => {        // list: items to test instead of the plan's (the automatic layout tries spots with it)
   const L = GP.L(), P = L.room.pts; if (P.length < 3) return null;
-  const exits = L.openings.filter(o => o.kind !== 'window' && o.host === 'room');
+  const exits = L.openings.filter(o => o.kind !== 'window' && o.host === 'room' && GP.hostSeg(o));
   const gr = makeGrid(.1, 1.5), free = new Uint8Array(gr.inside), items = [], W = gr.W, c = gr.cell, psegs = [];   // psegs: partition pieces (door gaps left out)
   for (const it of list || L.items) { const def = GP.getDef(it.type); if (!def || def.flat || def.wall || GP.mountOf(it) !== 'floor') continue; stampPoly(gr, free, GP.footprint(it), 0); items.push(it); }
   for (const p of L.partitions) for (let i = 0; i < p.pts.length - 1; i++) {
