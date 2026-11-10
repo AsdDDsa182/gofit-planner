@@ -177,17 +177,26 @@ async function viewerPayload() {
 }
 function projectFromPayload(pl) {
   const p = GP.newProject({ name: pl.n || '공간 배치안' }); p.client = pl.c || ''; p.consultant = pl.k || ''; p.consTel = pl.kt || ''; p.consEmail = pl.ke || ''; p.settings = Object.assign(p.settings, pl.s || {});
-  p.variants = [{ id: 'v1', name: pl.var || 'A안', layout: Object.assign(GP.newLayout(), pl.L || {}) }];
+  /* one plan (pl.L, prices pl.pr / pl.mp, quote pl.q) or several (pl.vs: each with its own; its prices ride in its layout so the
+     price shown on a machine is the one of the plan on screen) */
+  const many = Array.isArray(pl.vs) && pl.vs.length > 0, vs = many ? pl.vs.slice(0, 12) : [{ var: pl.var || 'A안', L: pl.L, q: pl.q }];
+  p.variants = vs.map((v, i) => {
+    const L = Object.assign(GP.newLayout(), (v && v.L) || {});
+    if (many) { const pm = {}; for (const [t, x] of Object.entries(v.pr || {})) pm['type:' + t] = x; for (const [k, x] of Object.entries(v.mp || {})) pm['mat:' + k] = x; L.quote = Object.assign(GP.newLayout().quote, { prices: pm }); }
+    return { id: 'v' + (i + 1), name: String((v && v.var) || String.fromCharCode(65 + i) + '안').slice(0, 40), layout: L };
+  });
+  p.cur = many ? U.clamp(pl.cur | 0, 0, vs.length - 1) : 0; GP.viewQuotes = vs.map(v => (v && v.q) || null);
   Object.assign(GP.lib.customTypes, pl.ct || {}); Object.assign(GP.lib.names, pl.nm || {}); if (pl.co) GP.lib.company.name = pl.co;
-  GP.lib.prices = Object.assign({}, pl.pr || {}); GP.lib.matPrices = Object.assign({}, pl.mp || {}); GP.media.remote = pl.md || {};
+  GP.lib.prices = Object.assign({}, many ? {} : pl.pr || {}); GP.lib.matPrices = Object.assign({}, many ? {} : pl.mp || {}); GP.media.remote = pl.md || {};
   return GP.validateProject(p);
 }
-function viewerQuote(q) {
-  const rows = q.g.map(g => `<tr class="grp"><td colspan="5">${U.esc(g.n)}</td></tr>` + g.r.map(r => `<tr><td>${U.esc(r[0])}</td><td class="c">${U.esc(r[1])}</td><td class="n">${U.esc(String(r[2]))} ${U.esc(r[3])}</td><td class="n">${r[4] ? U.won(r[4]) : '-'}</td><td class="n">${r[4] ? U.won(r[5]) : '-'}</td></tr>`).join('')).join('');
+function viewerQuote(q, name) {
+  const dc = q.g.some(g => g.r.some(r => r[6]));      // a discount column only when a line has one
+  const rows = q.g.map(g => `<tr class="grp"><td colspan="${dc ? 6 : 5}">${U.esc(g.n)}</td></tr>` + g.r.map(r => `<tr><td>${U.esc(r[0])}</td><td class="c">${U.esc(r[1])}</td><td class="n">${U.esc(String(r[2]))} ${U.esc(r[3])}</td><td class="n">${r[4] ? U.won(r[4]) : '-'}</td>${dc ? `<td class="n dc">${r[6] ? '-' + U.esc(String(+r[6])) + '%' : ''}</td>` : ''}<td class="n">${r[4] ? U.won(r[5]) : '-'}</td></tr>`).join('')).join('');
   const meta = [q.no ? `견적 번호 ${q.no}` : '', q.d ? `견적일 ${q.d}` : '', q.vd ? `${q.vd}까지 유효` : ''].filter(Boolean).map(U.esc).join(' · ');
   const who = [GP.lib.company.name, GP.P.consultant ? `담당자 ${GP.P.consultant}` : '', GP.P.consTel || q.tel, GP.P.consEmail || q.em].filter(Boolean).map(U.esc).join(' · '), tel = String(GP.P.consTel || q.tel || '').replace(/[^\d+]/g, '');
-  GP.modal('견적', `<div class="qdoc" style="padding:20px;box-shadow:none">${meta ? `<div class="qmeta">${meta}</div>` : ''}<div class="qsum"><span>합계 (부가세 포함)</span><b>₩ ${U.won(q.total)}</b></div><table class="qtbl"><thead><tr><th>품목</th><th>규격</th><th>수량</th><th>단가</th><th>금액</th></tr></thead><tbody>${rows}</tbody></table>
-    <div class="qtot">${q.disc ? `<span>소계</span><b>${U.won(q.sub)}원</b><span>할인</span><b>-${U.won(q.disc)}원</b>` : ''}<span>부가세 별도</span><b>${U.won(q.supply)}원</b><span>부가세</span><b>${U.won(q.vat)}원</b><span class="big">부가세 포함</span><b class="big">${U.won(q.total)}원</b></div>${q.note ? `<div class="qnote">${U.esc(q.note)}</div>` : ''}${who ? `<div class="qmeta" style="margin-top:14px">${who}</div>` : ''}</div>`,
+  GP.modal(name ? `견적 · ${name}` : '견적', `<div class="qdoc" style="padding:20px;box-shadow:none">${meta ? `<div class="qmeta">${meta}</div>` : ''}<div class="qsum"><span>합계 (부가세 포함)</span><b>₩ ${U.won(q.total)}</b></div><table class="qtbl"><thead><tr><th>품목</th><th>규격</th><th>수량</th><th>단가</th>${dc ? '<th>할인</th>' : ''}<th>금액</th></tr></thead><tbody>${rows}</tbody></table>
+    <div class="qtot">${q.disc ? `<span>소계</span><b>${U.won(q.sub)}원</b><span>할인</span><b>-${U.won(q.disc)}원</b>` : ''}<span>부가세 별도</span><b>${U.won(q.supply)}원</b><span>부가세</span><b>${U.won(q.vat)}원</b><span class="big">부가세 포함</span><b class="big">${U.won(q.total)}원</b></div>${q.ld ? `<div class="qldn">※ 품목별 할인 합계 ${U.won(q.ld)}원이 위 금액에 반영되어 있습니다.</div>` : ''}${q.note ? `<div class="qnote">${U.esc(q.note)}</div>` : ''}${who ? `<div class="qmeta" style="margin-top:14px">${who}</div>` : ''}</div>`,
     `${tel ? `<a class="btn" href="tel:${tel}">담당자에게 전화</a>` : ''}<button class="btn primary" data-close>닫기</button>`, { size: 'wide' });
 }
 
@@ -200,11 +209,13 @@ app.boot = async () => {
   new ResizeObserver(() => { S.resize(); if ((S.fitW || 0) < 200 && S.W >= 200 && S.H >= 150) S.fit(); GP.emit('overlay'); }).observe($('#stage'));
   let pl = null; try { pl = await viewerPayload(); } catch (e) { console.warn(e); }
   if (pl) {
-    GP.viewOnly = true; GP.viewPrice = !!pl.q; GP.saveLib = () => { }; $('#app').classList.add('viewer'); S.layers.clear = false; S.layers.aisle = false;
+    GP.viewOnly = true; GP.viewPrice = !!(pl.q || (Array.isArray(pl.vs) && pl.vs.some(v => v && v.q))); GP.saveLib = () => { }; $('#app').classList.add('viewer'); S.layers.clear = false; S.layers.aisle = false;
     const p = projectFromPayload(pl); GP.P = p; ui.step = 'place';
     await app.loadProject(p);
-    if (pl.q) { const b = document.createElement('button'); b.className = 'btn primary'; b.innerHTML = `${IC.doc}<span>견적 보기</span>`; b.onclick = () => viewerQuote(pl.q); $('.tb-right').appendChild(b); }
-    const touch = matchMedia('(pointer:coarse)').matches; $('#viewerHint').hidden = false; $('#viewerHint').innerHTML = `<span>${touch ? `기구를 <b>누르면</b> 3D 모델${GP.viewPrice ? '·가격' : ''}을 볼 수 있어요 · 두 손가락으로 확대` : `${U.jo('기구에 마우스를 올리면 이름' + (GP.viewPrice ? '·가격' : ''), '이', '가')} 나오고, <b>누르면 3D 모델</b>을 볼 수 있어요`}</span><button class="icon-btn ghost sm" aria-label="닫기">${IC.x}</button>`; $('#viewerHint button').onclick = () => { $('#viewerHint').hidden = true; };
+    const many = p.variants.length > 1;
+    if (many) { const b = document.createElement('button'); b.className = 'btn'; b.id = 'vwCmp'; b.innerHTML = `${IC.doc}<span>안 비교</span>`; b.onclick = () => GP.panels.compare(); $('.tb-right').appendChild(b); }
+    if (GP.viewPrice) { const b = document.createElement('button'); b.className = 'btn primary'; b.id = 'vwQuote'; b.innerHTML = `${IC.doc}<span>견적 보기</span>`; b.onclick = () => { const q = GP.viewQuotes[GP.P.cur]; if (q) viewerQuote(q, many ? GP.P.variants[GP.P.cur].name : ''); else GP.toast('이 안에는 견적이 없어요'); }; $('.tb-right').appendChild(b); }
+    const touch = matchMedia('(pointer:coarse)').matches; $('#viewerHint').hidden = false; $('#viewerHint').innerHTML = `<span>${touch ? `기구를 <b>누르면</b> 3D 모델${GP.viewPrice ? '·가격' : ''}을 볼 수 있어요 · 두 손가락으로 확대` : `${U.jo('기구에 마우스를 올리면 이름' + (GP.viewPrice ? '·가격' : ''), '이', '가')} 나오고, <b>누르면 3D 모델</b>을 볼 수 있어요`}${many ? ` · 안이 ${p.variants.length}개예요. 왼쪽 위 <b>안 이름 ▾</b>을 누르면 바꿔 볼 수 있어요` : ''}</span><button class="icon-btn ghost sm" aria-label="닫기">${IC.x}</button>`; $('#viewerHint button').onclick = () => { $('#viewerHint').hidden = true; };
     S.frame(); GP.emit('booted'); return;
   }
   let p = null; const last = await GP.DB.get('kv', 'lastProject');

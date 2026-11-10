@@ -97,18 +97,20 @@ function quotePages(R, opt) {
     y = mm(32) + mm(7) * Math.max(recv.length, sup.length) + mm(9); x.strokeStyle = '#1B2024'; x.lineWidth = mm(.6); x.beginPath(); x.moveTo(mm(12), y); x.lineTo(W - mm(12), y); x.stroke();
     x.textAlign = 'left'; x.font = `600 ${mm(3.6)}px ${FONT}`; x.fillStyle = '#1B2024'; x.fillText('합계 금액 (부가세 포함)', mm(14), y + mm(8)); x.textAlign = 'right'; x.font = `800 ${mm(6)}px ${FONT}`; x.fillText(`₩ ${U.won(R.total)}`, W - mm(14), y + mm(9)); y += mm(13); x.lineWidth = mm(.3); x.beginPath(); x.moveTo(mm(12), y); x.lineTo(W - mm(12), y); x.stroke(); y += mm(4);
   };
-  const cols = [mm(12), mm(96), mm(128), mm(146), mm(172), W - mm(12)];
-  const th = () => { x.fillStyle = '#f1f3f1'; x.fillRect(mm(12), y, W - mm(24), mm(8)); x.fillStyle = '#1B2024'; x.font = `700 ${mm(3.1)}px ${FONT}`; x.textAlign = 'center'; ['품목', '규격', '수량', '단가', '금액'].forEach((t, i) => x.fillText(t, (cols[i] + cols[i + 1]) / 2, y + mm(5.6))); y += mm(8); };
+  const hasDc = R.groups.some(g => g.rows.some(r => r.dc)), heads = hasDc ? ['품목', '규격', '수량', '단가', '할인', '금액'] : ['품목', '규격', '수량', '단가', '금액'];      // the discount column is there only when a line has one
+  const cols = hasDc ? [mm(12), mm(88), mm(118), mm(136), mm(160), mm(173), W - mm(12)] : [mm(12), mm(96), mm(128), mm(146), mm(172), W - mm(12)];
+  const th = () => { x.fillStyle = '#f1f3f1'; x.fillRect(mm(12), y, W - mm(24), mm(8)); x.fillStyle = '#1B2024'; x.font = `700 ${mm(3.1)}px ${FONT}`; x.textAlign = 'center'; heads.forEach((t, i) => x.fillText(t, (cols[i] + cols[i + 1]) / 2, y + mm(5.6))); y += mm(8); };
   const newPage = (plain) => { if (!opt.noFooter) footer(pg, pages.length + 1, 0); pages.push(pg); pg = page(210, 297, 170); ({ x, mm, W } = pg); y = mm(14); if (!plain) th(); };
   first(); th();
   R.groups.forEach(g => {
     if (y > mm(262)) newPage();
     x.fillStyle = '#fafbfa'; x.fillRect(mm(12), y, W - mm(24), mm(7)); x.fillStyle = '#48515a'; x.font = `700 ${mm(3)}px ${FONT}`; x.textAlign = 'left'; x.fillText(g.name, mm(14), y + mm(5)); y += mm(7);
-    g.rows.forEach(r => { if (y > mm(268)) newPage(); x.font = `500 ${mm(3.05)}px ${FONT}`; x.fillStyle = '#1B2024'; x.textAlign = 'left'; x.fillText(fit(x, r.name, cols[1] - cols[0] - mm(4)), cols[0] + mm(2), y + mm(5)); x.textAlign = 'center'; x.fillStyle = '#48515a'; x.fillText(fit(x, r.spec, cols[2] - cols[1] - mm(2)), (cols[1] + cols[2]) / 2, y + mm(5)); x.textAlign = 'right'; x.fillStyle = '#1B2024'; x.font = `500 ${mm(3.05)}px ${MONO}`; x.fillText(`${r.qty} ${r.unit}`, cols[3] - mm(2), y + mm(5)); x.fillText(r.price ? U.won(r.price) : '-', cols[4] - mm(2), y + mm(5)); x.fillText(U.won(r.amount), cols[5] - mm(2), y + mm(5)); x.strokeStyle = '#e1e4e2'; x.lineWidth = mm(.2); x.beginPath(); x.moveTo(mm(12), y + mm(7)); x.lineTo(W - mm(12), y + mm(7)); x.stroke(); y += mm(7); });
+    g.rows.forEach(r => { if (y > mm(268)) newPage(); x.font = `500 ${mm(3.05)}px ${FONT}`; x.fillStyle = '#1B2024'; x.textAlign = 'left'; x.fillText(fit(x, r.name, cols[1] - cols[0] - mm(4)), cols[0] + mm(2), y + mm(5)); x.textAlign = 'center'; x.fillStyle = '#48515a'; x.fillText(fit(x, r.spec, cols[2] - cols[1] - mm(2)), (cols[1] + cols[2]) / 2, y + mm(5)); x.textAlign = 'right'; x.fillStyle = '#1B2024'; x.font = `500 ${mm(3.05)}px ${MONO}`; x.fillText(`${r.qty} ${r.unit}`, cols[3] - mm(2), y + mm(5)); x.fillText(r.price ? U.won(r.price) : '-', cols[4] - mm(2), y + mm(5)); if (hasDc && r.dc) { x.fillStyle = '#c0392b'; x.fillText(`-${r.dc}%`, cols[5] - mm(2), y + mm(5)); x.fillStyle = '#1B2024'; } x.fillText(U.won(r.amount), cols[cols.length - 1] - mm(2), y + mm(5)); x.strokeStyle = '#e1e4e2'; x.lineWidth = mm(.2); x.beginPath(); x.moveTo(mm(12), y + mm(7)); x.lineTo(W - mm(12), y + mm(7)); x.stroke(); y += mm(7); });
   });
   if (y > mm(240)) newPage();
   y += mm(4); const tot = [['소계', U.won(R.sub) + '원']].concat(R.disc ? [['할인', '-' + U.won(R.disc) + '원']] : []).concat([['공급가 (부가세 별도)', U.won(R.supply) + '원'], ['부가세 (10%)', U.won(R.vat) + '원'], ['합계 (부가세 포함)', U.won(R.total) + '원']]);
   tot.forEach(([k, v], i) => { const last = i === tot.length - 1; if (last) { x.strokeStyle = '#1B2024'; x.lineWidth = mm(.4); x.beginPath(); x.moveTo(mm(110), y + mm(1)); x.lineTo(W - mm(12), y + mm(1)); x.stroke(); } x.textAlign = 'left'; x.fillStyle = '#1B2024'; x.font = `${last ? 800 : 500} ${mm(last ? 3.8 : 3.2)}px ${FONT}`; x.fillText(k, mm(112), y + mm(6)); x.textAlign = 'right'; x.font = `${last ? 800 : 600} ${mm(last ? 3.8 : 3.2)}px ${MONO}`; x.fillText(v, W - mm(14), y + mm(6)); y += mm(last ? 9 : 7); });
+  if (R.lineDisc) { x.textAlign = 'right'; x.fillStyle = '#6b747c'; x.font = `500 ${mm(2.7)}px ${FONT}`; x.fillText(`※ 품목별 할인 합계 ${U.won(R.lineDisc)}원이 위 금액에 반영되어 있습니다.`, W - mm(14), y + mm(3)); y += mm(6); }
   if (q.note) { y += mm(4); x.font = `500 ${mm(3)}px ${FONT}`; wrapText(x, q.note, W - mm(28)).forEach(line => { if (y > mm(280)) newPage(true); x.textAlign = 'left'; x.fillStyle = '#48515a'; x.font = `500 ${mm(3)}px ${FONT}`; x.fillText(line, mm(14), y + mm(4)); y += mm(5); }); }
   // installment / lease estimate (only when the salesperson ticked 「견적서에 넣기」)
   if (GP.quote.fin(q).show && R.total > 0) {
@@ -128,6 +130,7 @@ exp.preflight = async (withPrice) => {
   const say = []; if (miss) say.push(`단가를 넣지 않은 품목이 ${miss}개 있어요 (0원으로 나가요)`); if (errs) say.push(`도면에 고칠 점이 ${errs}개 있어요 (겹침 · 벽 밖 등)`);
   return GP.confirm(`${say.join(' · ')}. 그래도 만들까요?`, '그대로 만들기');
 };
+exp._quotePages = quotePages;      // for the checks in dev/
 exp.quotePdf = async () => { if (!(await exp.preflight(true))) return; GP.busy(true, '견적서 PDF 만드는 중…'); await new Promise(r => setTimeout(r, 30)); try { GP.quote.issue('견적서 PDF'); const pages = quotePages(GP.quote.compute()); const blob = await exp.pdf(pages); U.download(blob, U.fileSafe(GP.P.name) + '_견적서.pdf'); GP.toast('견적서 PDF를 저장했어요'); } catch (e) { console.error(e); GP.toast('PDF를 만들지 못했어요', { bad: true }); } finally { GP.busy(false); } };
 exp.planPdf = async (size, o) => {
   o = o || {}; GP.busy(true, '인쇄용 도면 만드는 중…'); await GP.SYM.ready; await new Promise(r => setTimeout(r, 30));
@@ -183,27 +186,37 @@ exp.proposalPdf = async (withPrice) => {
 
 /* ---------------- share payload (link / HTML) ---------------- */
 exp.payload = (o) => {
-  const P = GP.P, L = U.clone(GP.L()); delete L.scenes; delete L.steps; delete L.quote;      // the priced link carries its quote as `q` below
-  if (!o.notes) L.notes = []; L.items.forEach(it => { delete it.img; });
-  const ct = {}; L.items.forEach(it => { if (String(it.type).startsWith('c_') && GP.lib.customTypes[it.type]) ct[it.type] = GP.lib.customTypes[it.type]; });
-  const names = {}; L.items.forEach(it => { if (GP.lib.names[it.type]) names[it.type] = GP.lib.names[it.type]; });
-  const md = GP.media.forPayload([...new Set(L.items.map(i => i.type))]);
-  const out = { v: 2, md, n: P.name, c: P.client, k: P.consultant, kt: P.consTel || '', ke: P.consEmail || '', s: P.settings, L, ct, nm: names, co: GP.lib.company.name, d: U.today(), var: P.variants.length > 1 ? P.variants[P.cur].name : '' };
-  if (o.price) {
-    const pr = {}; L.items.forEach(it => { const v = GP.quote.priceOf('type:' + it.type); if (v) pr[it.type] = v; });
-    const mp = {}; L.mats.forEach(m => { const k = m.block + '|25', v = GP.quote.priceOf('mat:' + k); if (v) mp[k] = v; });
-    const R = GP.quote.compute(); out.pr = pr; out.mp = mp;
-    out.q = { g: R.groups.map(g => ({ n: g.name, r: g.rows.map(r => [r.name, r.spec, r.qty, r.unit, r.price, r.amount]) })), sub: R.sub, disc: R.disc, supply: R.supply, vat: R.vat, total: R.total, no: GP.quote.no(), note: GP.L().quote.note || '', d: GP.quote.issued(), vd: GP.quote.validUntil(), tel: GP.lib.company.tel || '', em: GP.lib.company.email || '' };
-  }
+  o = o || {}; const P = GP.P, keep = P.cur, multi = !!o.all && P.variants.length > 1, ct = {}, names = {}, types = new Set();
+  /* the plan on screen: its layout without the quote (a priced link carries the finished quote as `q`), its prices, its quote */
+  const one = () => {
+    const L = U.clone(GP.L()); delete L.scenes; delete L.steps; delete L.quote; if (!o.notes) L.notes = [];
+    L.items.forEach(it => { delete it.img; types.add(it.type); if (String(it.type).startsWith('c_') && GP.lib.customTypes[it.type]) ct[it.type] = GP.lib.customTypes[it.type]; if (GP.lib.names[it.type]) names[it.type] = GP.lib.names[it.type]; });
+    const v = { L };
+    if (o.price) {
+      const pr = {}; L.items.forEach(it => { const p = GP.quote.priceOf('type:' + it.type); if (p) pr[it.type] = p; });
+      const mp = {}; L.mats.forEach(m => { const k = m.block + '|25', p = GP.quote.priceOf('mat:' + k); if (p) mp[k] = p; });
+      const R = GP.quote.compute(); v.pr = pr; v.mp = mp;
+      v.q = { g: R.groups.map(g => ({ n: g.name, r: g.rows.map(r => [r.name, r.spec, r.qty, r.unit, r.price, r.amount].concat(r.dc ? [r.dc] : [])) })), sub: R.sub, disc: R.disc, ld: R.lineDisc || 0, supply: R.supply, vat: R.vat, total: R.total, no: GP.quote.no(), note: GP.L().quote.note || '', d: GP.quote.issued(), vd: GP.quote.validUntil(), tel: GP.lib.company.tel || '', em: GP.lib.company.email || '' };
+    }
+    return v;
+  };
+  const out = { v: 2, n: P.name, c: P.client, k: P.consultant, kt: P.consTel || '', ke: P.consEmail || '', s: P.settings, co: GP.lib.company.name, d: U.today() };
+  if (multi) {      // every plan, in order; the customer switches between them and compares (out.cur = the one to open on)
+    try { out.vs = P.variants.map((vv, i) => { P.cur = i; GP.S.dataChanged(); return Object.assign({ var: vv.name }, one()); }); } finally { P.cur = keep; GP.S.dataChanged(); }
+    out.cur = keep;
+  } else Object.assign(out, one(), { var: P.variants.length > 1 ? P.variants[P.cur].name : '' });
+  out.md = GP.media.forPayload([...types]); out.ct = ct; out.nm = names;
   return out;
 };
+/* plans whose quote still has lines without a price (shown before every plan is sent) */
+exp.missingAll = () => { const P = GP.P, keep = P.cur, out = []; try { P.variants.forEach((v, i) => { P.cur = i; GP.S.dataChanged(); const n = GP.quote.compute().missing; if (n) out.push({ name: v.name, n }); }); } finally { P.cur = keep; GP.S.dataChanged(); } return out; };
 const b64u = (bytes) => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const unb64u = (s) => { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '='; const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
 exp.encode = async (obj) => { const raw = new TextEncoder().encode(JSON.stringify(obj)); if (window.CompressionStream) { const cs = new Response(new Blob([raw]).stream().pipeThrough(new CompressionStream('deflate-raw'))); return 'z' + b64u(new Uint8Array(await cs.arrayBuffer())); } return 'j' + b64u(raw); };
 exp.decode = async (s) => { const kind = s[0], bytes = unb64u(s.slice(1)); if (kind === 'z') { const ds = new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw'))); return JSON.parse(await ds.text()); } return JSON.parse(new TextDecoder().decode(bytes)); };
 /* before a link or HTML file is made: push any photos / 3D files of this layout that are not online yet */
-exp.syncMediaFirst = async () => {
-  const MD = GP.media, types = new Set(GP.L().items.map(i => i.type)); const local = [...types].filter(t => { const r = MD.of(t); return r && (r.photos.some(p => !p.up) || (r.model && !r.model.up)); });
+exp.syncMediaFirst = async (all) => {
+  const MD = GP.media, types = new Set((all ? GP.P.variants.flatMap(v => v.layout.items) : GP.L().items).map(i => i.type)); const local = [...types].filter(t => { const r = MD.of(t); return r && (r.photos.some(p => !p.up) || (r.model && !r.model.up)); });
   if (!local.length) return;
   if (!MD.gh.cfg()) { GP.toast('직접 등록한 사진·3D는 GitHub 저장소를 연결해야 고객 링크에 보여요 (설정 → 사진·3D 저장소)', { ms: 5500 }); return; }
   if (!navigator.onLine) { GP.toast('인터넷이 없어서 등록한 사진·3D가 아직 안 올라갔어요. 연결되면 자동으로 올라가요', { ms: 5000 }); return; }
@@ -257,15 +270,19 @@ exp.shareDialog = async (kind) => {
   GP.modal(isLink ? '고객용 링크' : 'HTML 파일', `<p class="note">${isLink ? '링크를 받은 고객은 휴대폰·PC에서 도면을 직접 확대해 보고, 기구에 마우스를 올리거나 누르면 이름·가격과 3D 모델을 볼 수 있어요. 편집은 할 수 없어요.' : '파일 하나로 도면 보기가 들어가요. 받은 사람은 더블클릭해서 열어요. 3D 모델은 인터넷이 될 때 보여요.'}</p>
    <label class="tg on" style="justify-content:flex-start" id="shPrice"><i></i><span><b>가격 표시</b> <small class="note">(끄면 가격 없이 보내요)</small></span></label>
    <label class="tg" style="justify-content:flex-start" id="shNotes"><i></i>메모 포함 (내부용 메모는 빼는 게 좋아요)</label>
+   ${GP.P.variants.length > 1 ? `<label class="tg" style="justify-content:flex-start" id="shAll"><i></i><span><b>모든 안 함께 보내기</b> <small class="note">(${GP.P.variants.map(v => U.esc(v.name)).join(' · ')} — 고객이 바꿔 보고 비교해요)</small></span></label><p class="note" id="shAllNote" hidden></p>` : ''}
    ${isLink ? '<textarea id="shOut" rows="3" readonly placeholder="아래 버튼을 누르면 링크가 만들어져요" style="width:100%;font:12px var(--f-mono)"></textarea>' : ''}${location.protocol === 'file:' ? '<p class="note" style="color:var(--amber)">지금은 파일로 열어서 링크·HTML이 이 컴퓨터에서만 열려요. 앱을 인터넷 주소(호스팅)에 올린 뒤 만들어 주세요.</p>' : ''}`,
     `<button class="btn" data-close>닫기</button><button class="btn" id="shShare" hidden>${IC.share}<span>공유하기</span></button><button class="btn primary" id="shGo">${isLink ? '링크 만들고 복사' : 'HTML 파일 저장'}</button>`, { size: 'narrow' }); GP.fillIcons && GP.fillIcons($('#modal'));
-  let price = true, notes = false;
-  $('#shPrice').onclick = e => { e.preventDefault(); price = !price; $('#shPrice').classList.toggle('on', price); };
+  let price = true, notes = false, all = false;
+  const allNote = () => { const el = $('#shAllNote'); if (!el) return; const miss = all && price ? exp.missingAll() : []; el.hidden = !all; el.style.color = miss.length ? 'var(--amber)' : ''; el.textContent = !all ? '' : miss.length ? `단가를 넣지 않은 품목: ${miss.map(m => `${m.name} ${m.n}개`).join(' · ')} (0원으로 나가요)` : `지금 보는 안(${GP.P.variants[GP.P.cur].name})이 먼저 열려요. 끄면 이 안만 보내요.`; };
+  if ($('#shAll')) $('#shAll').onclick = e => { e.preventDefault(); all = !all; $('#shAll').classList.toggle('on', all); allNote(); };
+  $('#shPrice').onclick = e => { e.preventDefault(); price = !price; $('#shPrice').classList.toggle('on', price); allNote(); };
   $('#shNotes').onclick = e => { e.preventDefault(); notes = !notes; $('#shNotes').classList.toggle('on', notes); };
   $('#shGo').onclick = async () => {
-    if (price) GP.quote.issue(isLink ? '고객용 링크' : 'HTML 파일'); else GP.addVersion(`보냄 · ${isLink ? '고객용 링크' : 'HTML 파일'} (가격 없이)`);
-    if (!isLink) { GP.closeModal(); await exp.syncMediaFirst(); exp.htmlFile({ price, notes }); return; }
-    await exp.syncMediaFirst(); const url = await exp.shareLink({ price, notes }); $('#shOut').value = url; const ok = await U.copyText(url); GP.toast(ok ? `링크를 복사했어요 · ${price ? '가격 표시' : '가격 숨김'}` : '링크를 선택해서 복사해 주세요'); $('#shOut').select();
+    const how = isLink ? '고객용 링크' : 'HTML 파일';
+    if (price) { if (all) GP.quote.issueAll(how); else GP.quote.issue(how); } else GP.addVersion(`보냄 · ${how} (가격 없이${all ? ` · 안 ${GP.P.variants.length}개` : ''})`);
+    if (!isLink) { GP.closeModal(); await exp.syncMediaFirst(all); exp.htmlFile({ price, notes, all }); return; }
+    await exp.syncMediaFirst(all); const url = await exp.shareLink({ price, notes, all }); $('#shOut').value = url; const ok = await U.copyText(url); GP.toast(ok ? `링크를 복사했어요 · ${all ? `안 ${GP.P.variants.length}개 · ` : ''}${price ? '가격 표시' : '가격 숨김'}${url.length > 12000 ? ' · 링크가 길어서 일부 메신저에서는 잘릴 수 있어요 (그럴 땐 HTML 파일로 보내 주세요)' : ''}` : '링크를 선택해서 복사해 주세요', url.length > 12000 ? { ms: 7000 } : undefined); $('#shOut').select();
     if (navigator.share) { const sb = $('#shShare'); sb.hidden = false; sb.onclick = () => navigator.share({ title: GP.P.name, text: `${GP.P.name} 공간 배치안`, url }).catch(() => { }); }
   };
 };

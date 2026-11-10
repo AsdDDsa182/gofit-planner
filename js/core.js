@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.8.1';
+GP.VERSION = '2.9.0';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
@@ -265,10 +265,11 @@ function sanitizeLayout(L) {
   L.notes = L.notes.filter(n => n && sNum(n.x) !== undefined && sNum(n.z) !== undefined).map(n => { n.id = sWord(n.id) || U.uid('n'); n.x = +n.x; n.z = +n.z; n.text = sTxt(n.text, 600); return n; });
   L.dims = L.dims.filter(d => d && sPts([d.a, d.b], 2)).map(d => { d.id = sWord(d.id) || U.uid('d'); d.a = [+d.a[0], +d.a[1]]; d.b = [+d.b[0], +d.b[1]]; return d; });
   for (const m of [L.wallMarks, L.wallTex, L.wallColors]) for (const k in m) if (sWord(m[k]) === undefined || !/^\d+$/.test(k)) delete m[k];
-  const q = L.quote; q.extras = (Array.isArray(q.extras) ? q.extras : []).filter(x => x && typeof x === 'object').map(x => ({ name: sTxt(x.name, 80), spec: sTxt(x.spec, 80), unit: sTxt(x.unit, 8) || '식', qty: sNum(x.qty, 1), price: sNum(x.price, 0) }));
+  const q = L.quote; q.extras = (Array.isArray(q.extras) ? q.extras : []).filter(x => x && typeof x === 'object').map(x => ({ name: sTxt(x.name, 80), spec: sTxt(x.spec, 80), unit: sTxt(x.unit, 8) || '식', qty: sNum(x.qty, 1), price: sNum(x.price, 0), disc: U.clamp(sNum(x.disc, 0), 0, 100) || undefined }));
   for (const k of ['shipping', 'install', 'validDays']) q[k] = q[k] == null ? null : sNum(q[k], null);
   q.discountPct = U.clamp(sNum(q.discountPct, 0), 0, 100); q.discountAmt = Math.max(0, sNum(q.discountAmt, 0)); q.no = sTxt(q.no, 40); q.note = sTxt(q.note, 3000); if (q.issued != null && sWord(q.issued) === undefined) delete q.issued;
   if (q.finance && typeof q.finance === 'object') { sNums(q.finance, ['months', 'downPct', 'rateLo', 'rateHi', 'rvPct']); sKeys(q.finance, ['kind']); q.finance.show = !!q.finance.show; } else delete q.finance;
+  if (q.lineDisc && typeof q.lineDisc === 'object') { for (const k of Object.keys(q.lineDisc)) { const v = sNum(q.lineDisc[k]); if (!(v > 0) || k.length > 80) delete q.lineDisc[k]; else q.lineDisc[k] = Math.min(100, v); } } else delete q.lineDisc;      // a line's own discount, % by price key
   if (q.prices && typeof q.prices === 'object') { for (const k of Object.keys(q.prices)) { const v = sNum(q.prices[k]); if (v === undefined || k.length > 80) delete q.prices[k]; else q.prices[k] = v; } } else delete q.prices;
 }
 function sanitizeProject(p) {

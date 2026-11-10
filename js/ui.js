@@ -299,7 +299,7 @@ $('#variants').addEventListener('click', e => {
   if (v === 'menu') {
     const eq = L => L.items.filter(it => !GP.info.NO_QUOTE.has(it.type)).length;
     GP.popover(b, `<div class="ph">배치안</div>${P.variants.map((q, i) => `<button class="mi${i === P.cur ? ' cur' : ''}" data-act="v${i}"><div><b>${U.esc(q.name)}${i === P.cur ? ' · 지금 보는 안' : ''}</b><small>기구 ${eq(q.layout)}대</small></div></button>`).join('')}
-      ${GP.viewOnly ? '' : `<hr><button class="mi" data-act="add">${IC.plus}<div><b>새 안 만들기</b><small>지금 안을 복사해서 시작해요</small></div></button>${P.variants.length > 1 ? `<button class="mi" data-act="cmp">${IC.doc}<div><b>안 비교</b><small>기구 수 · 면적 · 견적을 나란히</small></div></button>` : ''}<button class="mi" data-act="ren">${IC.note}<div><b>이름 바꾸기 · 삭제</b><small>${U.esc(P.variants[P.cur].name)}</small></div></button>`}`, (a) => {
+      ${GP.viewOnly ? (P.variants.length > 1 ? `<hr><button class="mi" data-act="cmp">${IC.doc}<div><b>안 비교</b><small>기구 수 · 면적${GP.viewPrice ? ' · 견적' : ''}을 나란히</small></div></button>` : '') : `<hr><button class="mi" data-act="add">${IC.plus}<div><b>새 안 만들기</b><small>지금 안을 복사해서 시작해요</small></div></button>${P.variants.length > 1 ? `<button class="mi" data-act="cmp">${IC.doc}<div><b>안 비교</b><small>기구 수 · 면적 · 견적을 나란히</small></div></button>` : ''}<button class="mi" data-act="ren">${IC.note}<div><b>이름 바꾸기 · 삭제</b><small>${U.esc(P.variants[P.cur].name)}</small></div></button>`}`, (a) => {
       if (a === 'cmp') GP.panels.compare(); else if (a === 'ren') ui.varRename(P.cur); else if (a === 'add') ui.varPick('add'); else if (a[0] === 'v') ui.varPick(+a.slice(1));
     });
     return;

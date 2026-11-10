@@ -250,10 +250,10 @@ Q.itemKey = it => { const d = GP.dims(it); return [it.type, U.cm(d.w), U.cm(d.d)
 Q.libPrice = pk => { const lib = GP.lib, i = pk.indexOf(':'), kind = pk.slice(0, i), key = pk.slice(i + 1); return (kind === 'type' ? lib.prices[key] : kind === 'mat' ? lib.matPrices[key] : kind === 'trim' ? lib.trimPrices[key] : kind === 'part' ? lib.partPrices[key] : 0) || 0; };
 Q.priceOf = (pk, L) => { const q = (L || GP.L()).quote, own = q && q.prices ? q.prices[pk] : null; return own != null ? own : Q.libPrice(pk); };
 /* the quote goes out (PDF / link): its prices and its date are fixed in the project, and the state is kept as a named version */
-Q.issue = (how) => {
-  if (GP.viewOnly) return; const q = GP.L().quote, R = Q.compute(); q.prices = q.prices || {}; R.groups.forEach(g => g.rows.forEach(r => { if (r.pk && r.price > 0) q.prices[r.pk] = r.price; }));
-  if (!q.issued) q.issued = U.today(); Q.no(); GP.H.commit(); GP.addVersion(`보냄 · ${how}`);
-};
+const freeze = () => { const q = GP.L().quote, R = Q.compute(); q.prices = q.prices || {}; R.groups.forEach(g => g.rows.forEach(r => { if (r.pk && r.price > 0) q.prices[r.pk] = r.price; })); if (!q.issued) q.issued = U.today(); Q.no(); };
+Q.issue = (how) => { if (GP.viewOnly) return; freeze(); GP.H.commit(); GP.addVersion(`보냄 · ${how}`); };
+/* every plan goes out in one link: each one's prices and date are fixed, one version is kept */
+Q.issueAll = (how) => { if (GP.viewOnly) return; const P = GP.P, keep = P.cur; try { P.variants.forEach((v, i) => { P.cur = i; GP.S.dataChanged(); freeze(); }); } finally { P.cur = keep; GP.S.dataChanged(); } GP.H.commit(); GP.addVersion(`보냄 · ${how} (안 ${P.variants.length}개)`); };
 Q.compute = () => {
   const L = GP.L(), lib = GP.lib, groups = [];
   const eq = new Map();
@@ -272,11 +272,14 @@ Q.compute = () => {
   if (ex.length) groups.push({ name: '소도구·기타 품목', rows: ex });
   const si = []; if (ship > 0) si.push({ name: '운송비', spec: '', qty: 1, unit: '식', price: ship, fixed: 'shipping' }); if (inst > 0) si.push({ name: '설치비', spec: '', qty: 1, unit: '식', price: inst, fixed: 'install' });
   if (si.length) groups.push({ name: '운송·설치', rows: si });
-  let sub = 0; groups.forEach(g => g.rows.forEach(r => { r.amount = Math.round(r.qty * r.price); sub += r.amount; }));
+  /* a line's own discount (%, q.lineDisc by price key; x.disc on a quote-only item): the line's amount is the discounted one and
+     the subtotal adds those up, so the column still sums to the subtotal. The discount on the whole quote comes after it. */
+  const ld = q.lineDisc || {}; let sub = 0, lineDisc = 0;
+  groups.forEach(g => g.rows.forEach(r => { const list = Math.round(r.qty * r.price); r.dc = r.fixed ? 0 : U.clamp(+(r.pk ? ld[r.pk] : ((q.extras || [])[r.extra] || {}).disc) || 0, 0, 100); r.amount = Math.round(r.qty * r.price * (100 - r.dc) / 100); lineDisc += list - r.amount; sub += r.amount; }));
   const disc = Math.round(sub * (+q.discountPct || 0) / 100) + (+q.discountAmt || 0);
   const supply = Math.max(0, sub - disc), vat = Math.round(supply * .1);
   const missing = groups.reduce((n, g) => n + g.rows.filter(r => !r.price && r.pk).length, 0);
-  return { groups, sub, disc, supply, vat, total: supply + vat, missing };
+  return { groups, sub, disc, supply, vat, total: supply + vat, missing, lineDisc };
 };
 /* installment / lease estimate: monthly payment at the low and high end of the rate range the salesperson enters
    (the real rate depends on the buyer's credit). Lease: the residual value is left at the end (balloon). */
@@ -306,7 +309,7 @@ panels.renderQuote = () => {
   qs.innerHTML = `<div class="qtool"><button class="btn" data-q="close">← 도면으로</button><b class="qt-title">견적서</b><div class="acts" style="flex:0"><button class="btn" data-q="prices">${IC.gear} 단가 한 번에</button><button class="btn primary" data-q="pdf">${IC.pdf} 견적서 PDF</button></div></div>
   <div class="qwrap"><aside class="qside">
     <section class="blk"><div class="kv"><span>부가세 별도</span><b>${U.won(R.supply)}원</b><span>부가세 10%</span><b>${U.won(R.vat)}원</b><span class="big"><b>부가세 포함</b></span><b class="big">${U.won(R.total)}원</b></div>${R.missing ? `<p class="note" style="color:var(--amber)">단가 미입력 ${R.missing}개 — 노란 칸에 단가를 넣으면 다음부터 기억해요.</p>` : ''}</section>
-    <section class="blk"><h3>추가 비용 · 할인</h3><div class="row2"><label class="fld"><span>운송비</span>${numI('qShip', q.shipping ?? lib.defaults.shipping ?? 0, 10000, '원')}</label><label class="fld"><span>설치비</span>${numI('qInst', q.install ?? lib.defaults.install ?? 0, 10000, '원')}</label></div><div class="row2"><label class="fld"><span>할인율</span>${numI('qDp', q.discountPct || 0, 1, '%', 'min="0" max="100"')}</label><label class="fld"><span>할인 금액</span>${numI('qDa', q.discountAmt || 0, 10000, '원', 'min="0"')}</label></div></section>
+    <section class="blk"><h3>추가 비용 · 전체 할인</h3><div class="row2"><label class="fld"><span>운송비</span>${numI('qShip', q.shipping ?? lib.defaults.shipping ?? 0, 10000, '원')}</label><label class="fld"><span>설치비</span>${numI('qInst', q.install ?? lib.defaults.install ?? 0, 10000, '원')}</label></div><div class="row2"><label class="fld"><span>할인율</span>${numI('qDp', q.discountPct || 0, 1, '%', 'min="0" max="100"')}</label><label class="fld"><span>할인 금액</span>${numI('qDa', q.discountAmt || 0, 10000, '원', 'min="0"')}</label></div><p class="note">견적 전체에 적용돼요. 한 품목만 깎을 때는 오른쪽 표의 「할인」 칸에 %를 넣어요.</p></section>
     <section class="blk"><div class="blk-h"><h3>견적에만 넣는 품목</h3><button class="btn xs" id="qAdd">＋ 직접 입력</button></div><p class="note">덤벨·원판처럼 도면에 놓기 애매한 소도구는 여기서 넣어요. 눌러서 바로 추가:</p>
       <div class="xchips">${extraChips().map(([n, sp, un]) => `<button class="chip" data-xadd="${U.esc(n)}" data-sp="${U.esc(sp)}" data-un="${U.esc(un)}">＋ ${U.esc(n)}${lib.extraPrices[n] ? ` <small>${U.won(lib.extraPrices[n])}원</small>` : ''}</button>`).join('')}</div>
       ${(q.extras || []).length ? `<div class="xrows">${q.extras.map((x, i) => `<div class="xrow"><input class="xn" data-x="${i}" data-f="name" value="${U.esc(x.name || '')}" placeholder="품목 이름"><input class="xs" data-x="${i}" data-f="spec" value="${U.esc(x.spec || '')}" placeholder="규격 (선택)"><div class="xq"><input data-x="${i}" data-f="qty" type="number" min="0" value="${+x.qty || 0}" aria-label="수량"><select data-x="${i}" data-f="unit" aria-label="단위">${['개', '세트', '식', 'm', '박스'].map(u => `<option${(x.unit || '식') === u ? ' selected' : ''}>${u}</option>`).join('')}</select></div><div class="unit xp"><input data-x="${i}" data-f="price" type="number" step="1000" min="0" value="${+x.price || ''}" placeholder="단가"><em>원</em></div><button class="x" data-xdel="${i}" aria-label="삭제">×</button></div>`).join('')}</div>` : ''}</section>
@@ -331,10 +334,10 @@ function sheetHtml(R) {
    <div class="qhead"><div class="qbox"><span>수신</span><b>${P.client ? U.esc(P.client) + ' ' : ''}귀하</b>${P.custName || P.custTel ? `<span>고객 담당</span><b>${U.esc([P.custName, P.custTel].filter(Boolean).join(' · '))}</b>` : ''}${P.siteAddr ? `<span>현장</span><b>${U.esc(P.siteAddr)}</b>` : ''}<span>프로젝트</span><b>${U.esc(P.name)}${P.variants.length > 1 ? ' · ' + U.esc(P.variants[P.cur].name) : ''}</b><span>견적 번호</span><b>${U.esc(Q.no())}</b><span>견적일</span><b>${U.esc(Q.issued())}</b><span>유효기간</span><b>${Q.validUntil()}까지</b></div>
    <div class="qbox"><span>공급자</span><b>${U.esc(co.name || 'GOFIT KOREA')}</b>${co.ceo ? `<span>대표</span><b>${U.esc(co.ceo)}</b>` : ''}${co.bizNo ? `<span>사업자번호</span><b>${U.esc(co.bizNo)}</b>` : ''}${co.addr ? `<span>주소</span><b>${U.esc(co.addr)}</b>` : ''}${co.tel ? `<span>연락처</span><b>${U.esc(co.tel)}</b>` : ''}${co.email ? `<span>이메일</span><b>${U.esc(co.email)}</b>` : ''}${P.consultant ? `<span>담당자</span><b>${U.esc([P.consultant, P.consTel].filter(Boolean).join(' · '))}</b>` : ''}</div></div>
    <div class="qsum"><span>합계 금액 (부가세 포함)</span><b>₩ ${U.won(R.total)}</b></div>
-   <table class="qtbl"><thead><tr><th>품목</th><th>규격</th><th style="width:60px">수량</th><th style="width:130px">단가</th><th style="width:120px">금액</th></tr></thead><tbody>
-   ${R.groups.map(g => `<tr class="grp"><td colspan="5">${U.esc(g.name)}</td></tr>` + g.rows.map(r => `<tr><td>${U.esc(r.name)}</td><td class="c">${U.esc(r.spec)}</td><td class="n">${r.qty} ${r.unit}</td><td class="n">${r.pk ? `<input class="price" data-pk="${r.pk}" type="number" step="1000" value="${r.price || ''}" placeholder="단가 입력">` : U.won(r.price)}</td><td class="n">${U.won(r.amount)}</td></tr>`).join('')).join('') || '<tr><td colspan="5" class="c">도면에 기구를 놓으면 품목이 자동으로 들어와요</td></tr>'}
+   <table class="qtbl"><thead><tr><th>품목</th><th>규격</th><th style="width:60px">수량</th><th style="width:130px">단가</th><th style="width:74px" title="이 품목만 깎아 줄 때 (%)">할인</th><th style="width:120px">금액</th></tr></thead><tbody>
+   ${R.groups.map(g => `<tr class="grp"><td colspan="6">${U.esc(g.name)}</td></tr>` + g.rows.map(r => `<tr><td>${U.esc(r.name)}</td><td class="c">${U.esc(r.spec)}</td><td class="n">${r.qty} ${r.unit}</td><td class="n">${r.pk ? `<input class="price" data-pk="${r.pk}" type="number" step="1000" value="${r.price || ''}" placeholder="단가 입력">` : U.won(r.price)}</td><td class="n">${r.fixed ? '' : `<span class="ldw"><input class="ldc${r.dc ? ' on' : ''}" ${r.pk ? `data-ld="${r.pk}"` : `data-ldx="${r.extra}"`} type="number" min="0" max="100" step="1" value="${r.dc || ''}" placeholder="0" aria-label="${U.esc(r.name)} 할인율"><em>%</em></span>`}</td><td class="n">${U.won(r.amount)}</td></tr>`).join('')).join('') || '<tr><td colspan="6" class="c">도면에 기구를 놓으면 품목이 자동으로 들어와요</td></tr>'}
    </tbody></table>
-   <div class="qtot"><span>소계</span><b>${U.won(R.sub)}원</b>${R.disc ? `<span>할인</span><b>-${U.won(R.disc)}원</b>` : ''}<span>공급가 (부가세 별도)</span><b>${U.won(R.supply)}원</b><span>부가세 (10%)</span><b>${U.won(R.vat)}원</b><span class="big">합계 (부가세 포함)</span><b class="big">${U.won(R.total)}원</b></div>
+   <div class="qtot"><span>소계</span><b>${U.won(R.sub)}원</b>${R.disc ? `<span>할인</span><b>-${U.won(R.disc)}원</b>` : ''}<span>공급가 (부가세 별도)</span><b>${U.won(R.supply)}원</b><span>부가세 (10%)</span><b>${U.won(R.vat)}원</b><span class="big">합계 (부가세 포함)</span><b class="big">${U.won(R.total)}원</b></div>${R.lineDisc ? `<div class="qldn">※ 품목별 할인 합계 ${U.won(R.lineDisc)}원이 위 금액에 반영되어 있습니다.</div>` : ''}
    ${Q.fin(q).show && R.total > 0 ? (() => { const F = Q.finance(R); return `<div class="qfin"><b>${F.f.kind === 'lease' ? '리스' : '할부'} 예상 월 납입금</b><span>월 약 ${U.won(F.mLo)}${F.mHi !== F.mLo ? ` ~ ${U.won(F.mHi)}` : ''}원 <small>(${F.n}개월 · 연 ${F.lo}${F.hi !== F.lo ? `~${F.hi}` : ''}% 기준${F.down ? ` · 선수금 ${U.won(F.down)}원` : ''}${F.rv ? ` · 만기 잔존가치 ${U.won(F.rv)}원` : ''})</small></span><small>※ 예상 금액이며, 실제 금리와 조건은 신용도 및 금융사 심사에 따라 달라집니다.</small></div>`; })() : ''}
    ${q.note ? `<div class="qnote">${U.esc(q.note)}</div>` : ''}</div>`;
 }
@@ -349,6 +352,12 @@ qs.addEventListener('click', e => {
 qs.addEventListener('change', e => {
   const t = e.target, q = GP.L().quote, v = +t.value;
   if (t.dataset.pk) { Q.setPrice(t.dataset.pk, Math.max(0, v || 0)); panels.renderQuote(); ui.renderSummary(); return; }
+  if (t.dataset.ld != null || t.dataset.ldx != null) {      // a line's own discount (%)
+    const d = U.clamp(Math.round((v || 0) * 10) / 10, 0, 100);
+    if (t.dataset.ld != null) { const m = q.lineDisc || (q.lineDisc = {}); if (d) m[t.dataset.ld] = d; else delete m[t.dataset.ld]; }
+    else { const x = (q.extras || [])[+t.dataset.ldx]; if (x) { if (d) x.disc = d; else delete x.disc; } }
+    GP.H.commit(); panels.renderQuote(); ui.renderSummary(); return;
+  }
   const fm = { fMonths: 'months', fDown: 'downPct', fLo: 'rateLo', fHi: 'rateHi', fRv: 'rvPct' }[t.id];
   if (fm) { setFin({ [fm]: U.clamp(v || 0, 0, fm === 'months' ? 120 : 100) }); return; }
   if (t.id === 'fOn') { setFin({ show: t.checked }); return; }
@@ -369,7 +378,7 @@ function setFin(o) {
   const d = Object.assign({}, q.finance); delete d.show; GP.lib.defaults.finance = d; GP.saveLib();
   GP.H.commit(); panels.renderQuote();
 }
-qs.addEventListener('keydown', e => { if (e.target.dataset.pk && e.key === 'Enter') { e.target.blur(); } });
+qs.addEventListener('keydown', e => { const d = e.target.dataset; if ((d.pk || d.ld != null || d.ldx != null) && e.key === 'Enter') { e.target.blur(); } });
 
 /* ======================= dialogs ======================= */
 panels.editProjectInfo = () => {
@@ -413,16 +422,16 @@ panels.wizard = () => {
 };
 /* ---------- A안·B안 비교: every variant computed in turn (plan picture, equipment, space, floor, quote, checks) ---------- */
 panels.compare = () => {
-  const P = GP.P, keep = P.cur; if (P.variants.length < 2) { GP.toast(GP.wiz && GP.wiz.on ? '안이 하나뿐이에요. 마지막 단계의 「다른 안 만들기」로 B안을 만들면 비교할 수 있어요' : '안이 하나뿐이에요. 위쪽 「A안 ▾」 → 「지금 배치를 복사해 새 안 만들기」로 B안을 만들면 비교할 수 있어요', { ms: 5000 }); return; }
+  const P = GP.P, keep = P.cur, view = !!GP.viewOnly; if (P.variants.length < 2) { GP.toast(GP.wiz && GP.wiz.on ? '안이 하나뿐이에요. 마지막 단계의 「다른 안 만들기」로 B안을 만들면 비교할 수 있어요' : '안이 하나뿐이에요. 위쪽 「A안 ▾」 → 「지금 배치를 복사해 새 안 만들기」로 B안을 만들면 비교할 수 있어요', { ms: 5000 }); return; }
   const catName = c => GP.lib.catNames[c] || (GP.CATS.find(x => x.id === c) || {}).name || c;
   const V = P.variants.map((v, i) => {
     P.cur = i; GP.S.dataChanged();
-    const L = GP.L(), R = GP.quote.compute(), list = GP.checks.full(), occ = GP.calc.occupancy(), ms = GP.calc.matSummary(), pl = GP.calc.partLength();
+    const L = GP.L(), vq = view ? (GP.viewQuotes || [])[i] : null, R = view ? { total: vq ? vq.total : null, missing: 0 } : GP.quote.compute(), list = view ? [] : GP.checks.full(), occ = GP.calc.occupancy(), ms = GP.calc.matSummary(), pl = GP.calc.partLength();
     const byCat = {}; let eqN = 0; L.items.forEach(it => { if (GP.info.NO_QUOTE.has(it.type)) return; const c = (GP.getDef(it.type) || {}).cat; byCat[c] = (byCat[c] || 0) + 1; eqN++; });
     let img = ''; try { img = GP.exp.planImage(420, 280, { notes: false, labels: false }).toDataURL('image/jpeg', .82); } catch (e) { }
     return { name: v.name, img, eqN, byCat, room: occ.room, foot: occ.foot, used: occ.used, blocks: ms.blocks.reduce((n, b) => n + b.count, 0), part: Object.values(pl).reduce((a, b) => a + b, 0), total: R.total, missing: R.missing, err: list.filter(c => c.sev === 'err').length, warn: list.filter(c => c.sev === 'warn').length, aisle: (GP.checks.aisle && GP.checks.aisle.comps.length) || 0 };
   });
-  P.cur = keep; GP.S.dataChanged(); GP.checks.full(); GP.S.invalidate();
+  P.cur = keep; GP.S.dataChanged(); if (!view) GP.checks.full(); GP.S.invalidate();
   const pct = (a, b) => b > 0 ? Math.round(a / b * 100) : 0;
   const diff = (v, base, fmt, unit) => { const d = v - base; if (Math.abs(d) < 1e-9) return ''; return ` <small class="cmp-d ${d > 0 ? 'up' : 'dn'}">${d > 0 ? '+' : '−'}${fmt(Math.abs(d))}${unit || ''}</small>`; };
   const row = (label, f, num) => `<tr><th>${label}</th>${V.map((v, i) => `<td>${f(v)}${num && i ? diff(num(v), num(V[0]), num.fmt || (x => U.won(Math.round(x))), num.unit) : ''}</td>`).join('')}</tr>`;
@@ -435,12 +444,12 @@ panels.compare = () => {
     ${row('사용 공간 포함', v => `${U.r2(v.used)}㎡ <small>(${pct(v.used, v.room)}%)</small>`, Object.assign(v => v.used, { fmt: x => U.r2(x), unit: '㎡' }))}
     ${row('고무블럭', v => v.blocks ? `${v.blocks}장` : '-', Object.assign(v => v.blocks, { fmt: x => x, unit: '장' }))}
     ${row('가벽', v => v.part ? `${U.r2(v.part)}m` : '-', Object.assign(v => v.part, { fmt: x => U.r2(x), unit: 'm' }))}
-    ${row('견적 합계 (부가세 포함)', v => `<b>${U.won(v.total)}원</b>${v.missing ? `<br><small class="cmp-miss">단가 미입력 ${v.missing}개</small>` : ''}`, won)}
-    ${row('배치 점검', v => v.err + v.warn ? `<span class="cmp-bad">확인할 점 ${v.err + v.warn}개</span>${v.aisle ? ` <small>(좁은 통로 ${v.aisle}곳)</small>` : ''}` : '<span class="cmp-ok">이상 없음</span>')}
+    ${V.some(v => v.total != null) ? row('견적 합계 (부가세 포함)', v => v.total == null ? '-' : `<b>${U.won(v.total)}원</b>${v.missing ? `<br><small class="cmp-miss">단가 미입력 ${v.missing}개</small>` : ''}`, V.every(v => v.total != null) ? won : null) : ''}
+    ${view ? '' : row('배치 점검', v => v.err + v.warn ? `<span class="cmp-bad">확인할 점 ${v.err + v.warn}개</span>${v.aisle ? ` <small>(좁은 통로 ${v.aisle}곳)</small>` : ''}` : '<span class="cmp-ok">이상 없음</span>')}
     <tr><th></th>${V.map((v, i) => `<td>${i === keep ? '' : `<button class="btn sm" data-cmpgo="${i}">${U.esc(v.name)} 보기</button>`}</td>`).join('')}</tr>
   </tbody></table></div><p class="note">숫자 옆 작은 글씨는 ${U.esc(V[0].name)}과의 차이예요. 사용 공간은 기구 앞뒤로 운동할 때 필요한 공간까지 포함한 면적이에요.</p>`;
   GP.modal('안 비교', html, '<button class="btn primary" data-close>닫기</button>', { size: 'wide' });
-  $('#modalBody').onclick = e => { const b = e.target.closest('[data-cmpgo]'); if (!b) return; GP.closeModal(); const vb = $(`#variants [data-var="${b.dataset.cmpgo}"]`); if (vb) vb.click(); };
+  $('#modalBody').onclick = e => { const b = e.target.closest('[data-cmpgo]'); if (!b) return; GP.closeModal(); ui.varPick(+b.dataset.cmpgo); };      // (the plan menu is one button now: pick the plan directly)
 };
 panels.versions = async () => {
   const list = await GP.listVersions();
