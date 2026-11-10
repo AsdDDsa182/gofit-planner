@@ -325,7 +325,7 @@ function onUp(e) {
   if (draw) { toolUp(e); return; }
   if (drag) {
     const d = drag; drag = null; canvas().style.cursor = '';
-    if (d.cloned) { const a = GP.findItem(d.anchor); if (a) act.lastDup = { dx: a.x - d.origin.x, dz: a.z - d.origin.z, uids: d.start.map(s => s.uid) }; ui.setHint(); }
+    if (d.cloned) { act.lastDup = { pairs: d.pairs }; ui.setHint(); }
     if (d.moved) { if (d.kind === 'mat') tools.snapMat(d.obj); GP.changed(d.kind === 'items' ? 'items' : d.kind); ui.renderInspector(); }
     return;
   }
@@ -358,7 +358,7 @@ function dragMove(e) {
   if (d.kind === 'items') {
     if (d.altDup && !d.cloned) {      // Alt held when the drag started: copy, and drag the copies
       const src = d.start.map(s => GP.findItem(s.uid)).filter(Boolean), out = cloneItems(src, 0, 0), map = new Map(src.map((it, k) => [it.uid, out[k].uid]));
-      d.start = d.start.map(s => ({ uid: map.get(s.uid), x: s.x, z: s.z })); d.origin = d.start.find(s => s.uid === map.get(d.anchor)); d.anchor = map.get(d.anchor); d.cloned = true;
+      d.pairs = d.start.map(s => [s.uid, map.get(s.uid)]); d.start = d.start.map(s => ({ uid: map.get(s.uid), x: s.x, z: s.z })); d.anchor = map.get(d.anchor); d.cloned = true;
       ui.select(out.map(it => ({ k: 'item', id: it.uid })), false, true); GP.S.dataChanged(); ui.setHint('복제해서 옮기는 중 · 놓은 뒤 <kbd>Shift</kbd>+<kbd>D</kbd>: 같은 간격으로 하나 더');
     }
     moveItems(d, fp, e.altKey && !d.altDup); return;
@@ -649,15 +649,17 @@ const cloneItems = (its, dx, dz) => { const L = GP.L(), gmap = {}; return its.ma
 act.dupSel = () => {
   const its = ui.selItems(); if (!its.length) return; let dx = .5, dz = .5;
   if (its.length === 1) { const it = its[0], d = GP.dims(it), c = (GP.getDef(it.type) || {}).cl || {}; const gap = Math.max(.1, ((c.l || 0) + (c.r || 0)) / 2); const [nx, nz] = G.l2w(it.x, it.z, it.rot, d.w + gap, 0); dx = nx - it.x; dz = nz - it.z; }
-  const out = cloneItems(its, dx, dz); act.lastDup = { dx, dz, uids: out.map(it => it.uid) };
+  const out = cloneItems(its, dx, dz); act.lastDup = { pairs: its.map((it, k) => [it.uid, out[k].uid]) };
   GP.changed('items'); ui.select(out.map(it => ({ k: 'item', id: it.uid })), false, true);
 };
-/* Shift+D: one more copy, the same distance on from the last one (like Photoshop's duplicate-again) */
+/* Shift+D: one more copy, as far on and in the same direction as the last copy is from its original right now
+   (like Photoshop's duplicate-again; a copy that was moved or nudged after copying counts where it is now) */
 act.dupAgain = () => {
   const its = ui.selItems(), ld = act.lastDup; if (!its.length) return;
-  const same = ld && ld.uids.length === its.length && its.every(it => ld.uids.includes(it.uid));
-  if (!same) { act.dupSel(); GP.toast('복제했어요. 끌어서 간격을 정하고 Shift+D를 누르면 같은 간격으로 이어서 복제돼요', { ms: 4000 }); return; }
-  const out = cloneItems(its, ld.dx, ld.dz); act.lastDup = { dx: ld.dx, dz: ld.dz, uids: out.map(it => it.uid) };
+  const pairs = ld && ld.pairs && ld.pairs.length === its.length && its.every(it => ld.pairs.some(p => p[1] === it.uid)) ? ld.pairs : null;
+  const src = pairs && GP.findItem(pairs[0][0]), cp = pairs && GP.findItem(pairs[0][1]), dx = cp && src ? cp.x - src.x : 0, dz = cp && src ? cp.z - src.z : 0;
+  if (!pairs || !src || Math.hypot(dx, dz) < .01) { act.dupSel(); GP.toast('복제했어요. 끌어서 간격을 정하고 Shift+D를 누르면 같은 간격 · 방향으로 이어서 복제돼요', { ms: 4000 }); return; }
+  const copies = pairs.map(p => GP.findItem(p[1])), out = cloneItems(copies, dx, dz); act.lastDup = { pairs: copies.map((it, k) => [it.uid, out[k].uid]) };
   GP.changed('items'); ui.select(out.map(it => ({ k: 'item', id: it.uid })), false, true);
 };
 act.group = () => {
