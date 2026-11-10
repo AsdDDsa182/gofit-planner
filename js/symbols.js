@@ -27,9 +27,10 @@ SYM.draw = (x, it, def, dm, px, state, style) => {
   const pre = def && !def.custom && !def.params && SYM.man[it.type], map = line ? lines : imgs, im = pre && map.get(it.type);
   if (im) { src = im; ext = SYM.man[it.type].ext; }
   else if (pre && !map.has(it.type)) { x.fillStyle = 'rgba(200,205,210,.35)'; x.fillRect(-dm.w / 2, -dm.d / 2, dm.w, dm.d); }
-  else { const tv = GP.R3.topView(it, null, line); if (tv) { src = tv.canvas; ext = tv.ext; } }
+  else { const fz = GP.R3.freeze, tv = fz && fz.uid === it.uid && fz.line === line ? fz.tv : GP.R3.topView(it, null, line); if (tv) { src = tv.canvas; ext = tv.ext; } }
   if (src) x.drawImage(src, ext[0] * dm.w, ext[2] * dm.d, (ext[1] - ext[0]) * dm.w, (ext[3] - ext[2]) * dm.d);
   else { x.fillStyle = '#E9EBED'; x.fillRect(-dm.w / 2, -dm.d / 2, dm.w, dm.d); x.strokeStyle = '#59626B'; x.lineWidth = 1.2 * px; x.strokeRect(-dm.w / 2, -dm.d / 2, dm.w, dm.d); }
+  if (it.load && GP.R3.canLoad(it.type)) { const lv = GP.R3.loadTop(it.type, line); if (lv) x.drawImage(lv.canvas, lv.ext[0] * dm.w, lv.ext[2] * dm.d, (lv.ext[1] - lv.ext[0]) * dm.w, (lv.ext[3] - lv.ext[2]) * dm.d); }
   const t = TINT[state]; if (t) { x.fillStyle = t[0]; x.fillRect(-dm.w / 2, -dm.d / 2, dm.w, dm.d); x.strokeStyle = t[1]; x.lineWidth = 2 * px; x.strokeRect(-dm.w / 2, -dm.d / 2, dm.w, dm.d); }
 };
 })();

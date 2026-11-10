@@ -373,6 +373,7 @@ function inspItem(it) {
   insp.innerHTML = head(GP.itemName(it), `${U.esc(GP.typeName(it.type))} · ${U.cm(d.w)}×${U.cm(d.d)} cm`, `var(--cat-${def.cat || 'facility'})`, true)
     + (bad ? `<div class="insp-warn">${[bad.has('wall') ? '벽 밖으로 나갔어요' : '', bad.has('overlap') ? '다른 물건과 겹쳐요' : '', bad.has('part') ? '가벽과 겹쳐요' : ''].filter(Boolean).join(' · ')}</div>` : '')
     + `<button class="btn wide soft" data-act="model">${has3d ? IC.cube : IC.image}${has3d ? '3D 모델 보기' + (nph ? ` · 사진 ${nph}` : '') : nph ? `사진 ${nph}장 보기` : '사진·3D 파일 등록'}</button>`
+    + (GP.R3.canLoad(it.type) ? `<div class="sec"><label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="iLoad" style="width:auto;flex:none" ${it.load ? 'checked' : ''}><span style="margin:0"><b>${U.esc(GP.R3.loads[it.type].label)}</b> <small class="note">(3D · 도면에 보여요)</small></span></label>${it.load ? '<small class="vat">보이기만 해요. 견적에는 「견적에만 넣는 품목」으로 따로 넣어 주세요.</small>' : ''}</div>` : '')
     + (INFO.NO_QUOTE.has(it.type) ? '' : priceBox('type:' + it.type, GP.quote.priceOf('type:' + it.type)))
     + `<div class="sec"><span class="lbl">크기 <a data-act="resetSize">기본 크기로</a></span><div class="row3"><label class="fld"><span>가로</span>${num('iW', U.cm(d.w), 5, 'cm', 'min="5"')}</label><label class="fld"><span>세로</span>${num('iD', U.cm(d.d), 5, 'cm', 'min="2"')}</label><label class="fld"><span>높이</span>${num('iH', U.cm(d.h), 5, 'cm', 'min="1"')}</label></div></div>`
     + (params ? `<div class="sec"><span class="lbl">모양</span><div class="row2">${params}</div></div>` : '')
@@ -382,7 +383,8 @@ function inspItem(it) {
     + (it.type === 'logo' && it.img && GP.P.images[it.img] ? (() => { const im = GP.P.images[it.img]; return `<div class="sec"><span class="lbl">로고 이미지</span><label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="iLogoBg" style="width:auto;flex:none" ${!it.bgKeep && im.cut ? 'checked' : ''} ${im.cut ? '' : 'disabled'}><span style="margin:0">배경 지우기 (로고 모양만 벽에)</span></label>${im.cut === null ? '<small class="vat">배경이 한 가지 색이 아니거나 이미 투명한 이미지예요. 투명 배경 PNG를 올리면 그대로 보여요.</small>' : ''}</div>`; })() : '')
     + (GP.WEIGHTS && GP.WEIGHTS[it.type] ? `<p class="insp-note">무게 약 ${GP.WEIGHTS[it.type]}kg <small>(일반적인 업소용 기준${['plate', 'rack', 'storage'].includes(def.cat) ? ' · 원판·덤벨 제외' : ''})</small></p>` : '')
     + `<details class="sec more"><summary>줄 세우기 · 위치</summary><div class="row3"><label class="fld"><span>개수</span>${num('iRowN', 4, 1, '대', 'min="2" max="30"')}</label><label class="fld"><span>간격</span>${num('iRowG', Math.round(Math.max(10, ((c.l || 0) + (c.r || 0)) / 2 * 100)), 5, 'cm', 'min="0"')}</label><button class="btn sm" data-act="row">한 줄로</button></div><div class="row2"><label class="fld"><span>X</span>${num('iX', it.x.toFixed(2), .05, 'm')}</label><label class="fld"><span>Y</span>${num('iZ', it.z.toFixed(2), .05, 'm')}</label></div><div class="mount"><button class="${mount === 'floor' ? 'on' : ''}" data-act="mount" data-m="floor">바닥</button><button class="${mount === 'wall' ? 'on' : ''}" data-act="mount" data-m="wall">벽에 걸기</button><button class="${mount === 'ceil' ? 'on' : ''}" data-act="mount" data-m="ceil">천장</button></div></details>`
-    + `<div class="acts"><button class="btn sm" data-act="wall" title="가장 가까운 벽에 붙이기 (W)">벽에 붙이기</button><button class="btn sm" data-act="dup" title="옆으로 복제 (Ctrl+D) · Alt+끌기로 복제 · Shift+D 같은 간격으로 하나 더">복제</button><button class="btn sm" data-act="fav">${GP.lib.favorites.includes(it.type) ? '★' : '☆'} 즐겨찾기</button><button class="btn sm danger" data-act="del" title="삭제 (Delete)">삭제</button></div>`;
+    + `<div class="acts"><button class="btn sm" data-act="wall" title="가장 가까운 벽에 붙이기 (W)">벽에 붙이기</button><button class="btn sm" data-act="dup" title="옆으로 복제 (Ctrl+D) · Alt+끌기로 복제 · Shift+D 같은 간격으로 하나 더">복제</button><button class="btn sm" data-act="fav">${GP.lib.favorites.includes(it.type) ? '★' : '☆'} 즐겨찾기</button><button class="btn sm danger" data-act="del" title="삭제 (Delete)">삭제</button></div>`
+    + (GP.act.canDupAgain() ? `<button class="btn sm soft wide" data-act="dupAgain" title="Shift+D">같은 간격으로 하나 더 복제</button>` : '');
 }
 function renderMulti(items) {
   insp.hidden = false; const grouped = items.every(it => it.grp && it.grp === items[0].grp), anyG = items.some(it => it.grp);
@@ -390,7 +392,8 @@ function renderMulti(items) {
     + `<div class="acts">${grouped ? '<button class="btn sm" data-act="ungroup" title="Ctrl+Shift+G">그룹 풀기</button>' : `<button class="btn sm primary" data-act="group" title="Ctrl+G">그룹으로 묶기</button>${anyG ? '<button class="btn sm" data-act="ungroup">그룹 풀기</button>' : ''}`}</div>`
     + `<div class="sec"><span class="lbl">간격 맞추기</span><div class="row2"><label class="fld"><span>기구 사이 간격</span>${num('mGap', GP.ui.lastGap ?? 50, 5, 'cm', 'min="0"')}</label><button class="btn sm" data-act="gap">간격 적용</button></div><button class="btn sm soft" data-act="even">양끝 고정하고 균등하게</button></div>`
     + `<div class="sec"><span class="lbl">줄 맞추기 (처음 고른 기구 기준)</span><div class="acts"><button class="btn sm" data-act="alignF">앞선</button><button class="btn sm" data-act="alignC">가운데</button><button class="btn sm" data-act="alignB">뒷선</button></div></div>`
-    + `<div class="acts"><button class="btn sm" data-act="grot">90° 회전</button><button class="btn sm" data-act="mdup">복제</button><button class="btn sm" data-act="saveset">세트로 저장</button><button class="btn sm danger" data-act="mdel">삭제</button></div>`;
+    + `<div class="acts"><button class="btn sm" data-act="grot">90° 회전</button><button class="btn sm" data-act="mdup">복제</button><button class="btn sm" data-act="saveset">세트로 저장</button><button class="btn sm danger" data-act="mdel">삭제</button></div>`
+    + (GP.act.canDupAgain() ? `<button class="btn sm soft wide" data-act="dupAgain" title="Shift+D">같은 간격으로 하나 더 복제</button>` : '');
   GP.fillIcons(insp); ui.renderSummary();
 }
 function inspPart(p) {
@@ -410,16 +413,17 @@ function openingColours(o) {
     + (D.leafC ? finRow('문짝', 'leafC', o.leafC || D.leafC, LEAF_K, GP.FINISH, true) : '')
     + finRow(win ? '창틀' : o.kind === 'opening' ? '문선' : o.kind === 'glass2' ? '프레임' : '문틀', 'frameC', o.frameC || D.frameC, FRAME_K, GP.FINISH, true)
     + (D.glass ? finRow('유리', 'glass', o.glass || D.glass, Object.keys(GP.GLASS), GP.GLASS) : '')
-    + (D.hw && o.kind !== 'glass2' ? finRow('손잡이', 'hw', o.hw || D.hw, Object.keys(GP.HW), GP.HW) : '') + `</div>`;
+    + (D.hw && o.kind !== 'glass2' && o.kind !== 'auto' && o.wtype !== 'fixed' ? finRow('손잡이', 'hw', o.hw || D.hw, Object.keys(GP.HW), GP.HW) : '') + `</div>`;
 }
 function inspOpening(o) {
   const win = o.kind === 'window', hs = GP.hostSeg(o), sp = hs && GP.openingSpan(o, hs);
+  const wt = win ? `<div class="sec"><span class="lbl">창 종류</span><div class="mount" style="grid-template-columns:1fr 1fr"><button class="${o.wtype === 'fixed' ? '' : 'on'}" data-act="wtype" data-v="">여닫는 창</button><button class="${o.wtype === 'fixed' ? 'on' : ''}" data-act="wtype" data-v="fixed">통유리 (고정)</button></div></div>` : '';
   insp.innerHTML = head(GP.OPENINGS[o.kind] || '문', o.host === 'room' ? '외벽' : '가벽', '#8B6A3F')
     + `<div class="sec"><span class="lbl">종류</span><select id="oKind">${Object.entries(GP.OPENINGS).map(([k, v]) => `<option value="${k}" ${o.kind === k ? 'selected' : ''}>${v}</option>`).join('')}</select></div>`
     + `<div class="row2"><label class="fld"><span>폭</span>${num('oW', U.cm(o.w), 5, 'cm', 'min="30"')}</label><label class="fld"><span>높이</span>${num('oH', U.cm(o.h ?? (win ? 1.2 : 2.1)), 5, 'cm')}</label></div>`
     + `<div class="row2"><label class="fld"><span>벽 시작점에서</span>${num('oL', sp ? U.cm(sp.s0) : 0, 5, 'cm', 'min="0"')}</label>${win ? `<label class="fld"><span>바닥에서 창 높이</span>${num('oS', U.cm(o.sill ?? .9), 5, 'cm')}</label>` : `<label class="fld"><span>벽 끝점까지</span>${num('oR', sp && hs ? U.cm(hs.L - sp.s1) : 0, 5, 'cm', 'min="0"')}</label>`}</div>`
     + (!win && o.kind !== 'opening' ? `<div class="acts"><button class="btn sm" data-act="oflip">안·밖 방향 바꾸기</button>${o.kind === 'door' || o.kind === 'slide' ? '<button class="btn sm" data-act="ohinge">좌·우 바꾸기</button>' : ''}</div>` : '')
-    + openingColours(o)
+    + wt + openingColours(o)
     + (GP.calc.doorSwing(o) ? `<div class="sec"><span class="lbl">문 앞 고무블럭</span>${GP.calc.doorMats(o).length ? '<p class="insp-warn" style="margin:0">문이 열리는 자리에 고무블럭(25T)이 깔려 있어서 문이 걸릴 수 있어요.</p><button class="btn sm primary" data-act="odoormat">문 열리는 자리 비우기</button>' : `<p class="note" style="margin:0">${o.underCut ? '문 아래를 잘라 내고 그대로 까는 것으로 해 뒀어요.' : '문이 열리는 자리에 고무블럭이 없어요.'}</p>`}<label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="oUnder" style="width:auto;flex:none" ${o.underCut ? 'checked' : ''}><span style="margin:0">문 아래를 잘라 내고 그대로 깔기</span></label></div>` : '')
     + `<p class="note">도면에서 양 끝의 점을 끌면 폭이 바뀌고, 가운데를 끌면 벽을 따라 움직여요.</p><div class="acts"><button class="btn sm danger" data-act="odel">삭제</button></div>`;
 }

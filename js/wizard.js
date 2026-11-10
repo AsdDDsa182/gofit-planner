@@ -109,12 +109,12 @@ R.part = {
   },
   refresh() { R.part.render($('#wzBody')); },
 };
-const OPEN_KINDS = [['glass2', '유리 자동문'], ['door2', '양개문'], ['door', '여닫이 문'], ['slide', '미닫이 문']];
+const OPEN_KINDS = [['auto', '자동문'], ['glass2', '유리 양개문'], ['door2', '양개문'], ['door', '여닫이 문'], ['slide', '미닫이 문']];
 R.door = {
   render(b) {
     const L = GP.L(), P = GP.P, ops = L.openings.filter(o => o.host === 'room'), cols = L.items.filter(it => it.type === 'column'), waiting = ui.tool === 'opening';
     b.innerHTML = head('출입문은 어디에 있나요?', '버튼을 누른 뒤 도면에서 문이 있는 벽을 클릭하면 놓여요. 놓은 문은 끌어서 옮길 수 있어요.') +
-      `<div class="fld"><span>문 종류</span><div class="seg full sm" id="wzOk">${OPEN_KINDS.map(([k, n]) => `<button data-ok="${k}" class="${(W.doorKind || 'glass2') === k ? 'on' : ''}">${n}</button>`).join('')}</div></div>
+      `<div class="fld"><span>문 종류</span><div class="seg full sm" id="wzOk">${OPEN_KINDS.map(([k, n]) => `<button data-ok="${k}" class="${(W.doorKind || 'auto') === k ? 'on' : ''}">${n}</button>`).join('')}</div></div>
       <div class="row2"><button class="btn${waiting && ui.openingKind !== 'window' ? ' primary' : ''}" data-op="door">${IC.door}출입문 놓기</button><button class="btn${waiting && ui.openingKind === 'window' ? ' primary' : ''}" data-op="window">${IC.door}창문 놓기</button></div>
       ${waiting ? `<p class="wz-wait">도면에서 ${ui.openingKind === 'window' ? '창문' : '문'}이 있는 <b>벽을 클릭</b>하세요</p>` : ''}
       ${ops.length ? `<div class="wz-list">${ops.map(o => `<div class="wz-li"><span>${GP.OPENINGS[o.kind] || '문'} · 폭 ${o.w.toFixed(2)}m · ${o.seg + 1}번 벽</span><button class="btn xs ghost danger" data-odel="${o.id}">지우기</button></div>`).join('')}</div>` : '<p class="note">출입문이 있어야 비상 동선(대피로)을 점검할 수 있어요.</p>'}
@@ -122,7 +122,7 @@ R.door = {
       <div class="fld wz-ceil"><span>천장 높이</span><div class="chips">${[2.6, 2.8, 3.0, 3.3, 4.0].map(h => `<button class="chip${Math.abs(P.settings.wallH - h) < .001 ? ' on' : ''}" data-ch="${h}">${h.toFixed(1)}m</button>`).join('')}</div><div class="unit" style="max-width:140px"><input id="wzCh" type="number" step="0.05" min="2" max="8" value="${P.settings.wallH}"><em>m</em></div><small class="note">트레드밀·스텝밀처럼 높이가 필요한 기구를 점검하는 데 써요.</small></div>`;
     b.onclick = e => {
       const k = e.target.closest('[data-ok]'); if (k) { W.doorKind = k.dataset.ok; if (ui.tool === 'opening' && ui.openingKind !== 'window') ui.openingKind = W.doorKind; R.door.render(b); return; }
-      const o = e.target.closest('[data-op]'); if (o) { const a = o.dataset.op; if (a === 'column') { GP.tools.startPlacing([{ it: { type: 'column' } }]); return; } ui.openingKind = a === 'window' ? 'window' : (W.doorKind || 'glass2'); ui.setTool('opening'); R.door.render(b); return; }
+      const o = e.target.closest('[data-op]'); if (o) { const a = o.dataset.op; if (a === 'column') { GP.tools.startPlacing([{ it: { type: 'column' } }]); return; } ui.openingKind = a === 'window' ? 'window' : (W.doorKind || 'auto'); ui.setTool('opening'); R.door.render(b); return; }
       const d = e.target.closest('[data-odel]'); if (d) { const L = GP.L(); L.openings = L.openings.filter(x => x.id !== d.dataset.odel); GP.changed('openings'); R.door.render(b); return; }
       const c = e.target.closest('[data-ch]'); if (c) { setCeil(+c.dataset.ch); R.door.render(b); }
     };

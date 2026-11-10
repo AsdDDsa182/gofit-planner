@@ -152,13 +152,13 @@ panels.pushRecent = (t) => { panels.recent = [t].concat(panels.recent.filter(x =
 function allTypes() { const out = Object.keys(GP.CAT).filter(k => !GP.lib.hidden.includes(k)); Object.keys(GP.lib.customTypes).forEach(k => out.push(k)); return out; }
 /* categories in four groups: the group row, then only that group's categories (with how many items each has) */
 const PL_GROUPS = [
-  { id: 'mine', name: '자주 쓰는', cats: ['fav', 'custom', 'sets'] },
+  { id: 'mine', name: '즐겨찾기', cats: ['fav', 'custom', 'sets'] },
   { id: 'cardio', name: '유산소', cats: ['cardio', 'air'] },
   { id: 'strength', name: '근력', cats: ['machine', 'plate', 'cable', 'rack', 'bench', 'storage'] },
   { id: 'etc', name: '존·기타', cats: ['func', 'stretch', 'facility', 'special'] },
 ];
 const plGroupOf = c => PL_GROUPS.find(g => g.cats.includes(c)) || PL_GROUPS[0];
-const plCatName = c => c === 'sets' ? '존 세트' : c === 'fav' ? '즐겨찾기' : (GP.lib.catNames[c] || (GP.CATS.find(x => x.id === c) || {}).name || c);
+const plCatName = c => c === 'sets' ? '존 세트' : c === 'fav' ? '기구' : (GP.lib.catNames[c] || (GP.CATS.find(x => x.id === c) || {}).name || c);
 function plCount(c) {
   if (c === 'sets') return GP.SETS.length + GP.lib.sets.length;
   if (c === 'fav') return new Set(GP.lib.favorites.concat(panels.recent).filter(k => GP.getDef(k))).size;
@@ -182,7 +182,7 @@ function renderGrid() {
   else list = list.filter(k => GP.getDef(k).cat === pl.cat);
   let html = list.map(k => card(k)).join('');
   if (pl.cat === 'custom' || pl.cat === 'special') html = `<button class="card" data-build="1"><span class="thumb" style="display:grid;place-items:center;color:var(--ink-2)">${IC.build}</span><span class="c-name"><span>직접 조립해서 만들기</span></span><span class="c-size">상자·원기둥 조합</span></button>` + html;
-  if (pl.cat === 'fav' && !q && !list.length) html = '<p class="empty">★를 눌러 자주 쓰는 기구를 모아 두세요.</p>';
+  if (pl.cat === 'fav' && !q && !list.length) html = '<p class="empty">기구 카드의 ★를 누르면 여기에 모여요.</p>';
   g.innerHTML = html || '<p class="empty">찾는 기구가 없어요. 다른 이름으로 검색해 보세요.</p>';
 }
 function card(k) {

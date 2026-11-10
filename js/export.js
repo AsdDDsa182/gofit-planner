@@ -258,7 +258,7 @@ exp.shareDialog = async (kind) => {
    <label class="tg on" style="justify-content:flex-start" id="shPrice"><i></i><span><b>가격 표시</b> <small class="note">(끄면 가격 없이 보내요)</small></span></label>
    <label class="tg" style="justify-content:flex-start" id="shNotes"><i></i>메모 포함 (내부용 메모는 빼는 게 좋아요)</label>
    ${isLink ? '<textarea id="shOut" rows="3" readonly placeholder="아래 버튼을 누르면 링크가 만들어져요" style="width:100%;font:12px var(--f-mono)"></textarea>' : ''}${location.protocol === 'file:' ? '<p class="note" style="color:var(--amber)">지금은 파일로 열어서 링크·HTML이 이 컴퓨터에서만 열려요. 앱을 인터넷 주소(호스팅)에 올린 뒤 만들어 주세요.</p>' : ''}`,
-    `<button class="btn" data-close>닫기</button><button class="btn primary" id="shGo">${isLink ? '링크 만들고 복사' : 'HTML 파일 저장'}</button>`, { size: 'narrow' });
+    `<button class="btn" data-close>닫기</button><button class="btn" id="shShare" hidden>${IC.share}<span>공유하기</span></button><button class="btn primary" id="shGo">${isLink ? '링크 만들고 복사' : 'HTML 파일 저장'}</button>`, { size: 'narrow' }); GP.fillIcons && GP.fillIcons($('#modal'));
   let price = true, notes = false;
   $('#shPrice').onclick = e => { e.preventDefault(); price = !price; $('#shPrice').classList.toggle('on', price); };
   $('#shNotes').onclick = e => { e.preventDefault(); notes = !notes; $('#shNotes').classList.toggle('on', notes); };
@@ -266,6 +266,7 @@ exp.shareDialog = async (kind) => {
     if (price) GP.quote.issue(isLink ? '고객용 링크' : 'HTML 파일'); else GP.addVersion(`보냄 · ${isLink ? '고객용 링크' : 'HTML 파일'} (가격 없이)`);
     if (!isLink) { GP.closeModal(); await exp.syncMediaFirst(); exp.htmlFile({ price, notes }); return; }
     await exp.syncMediaFirst(); const url = await exp.shareLink({ price, notes }); $('#shOut').value = url; const ok = await U.copyText(url); GP.toast(ok ? `링크를 복사했어요 · ${price ? '가격 표시' : '가격 숨김'}` : '링크를 선택해서 복사해 주세요'); $('#shOut').select();
+    if (navigator.share) { const sb = $('#shShare'); sb.hidden = false; sb.onclick = () => navigator.share({ title: GP.P.name, text: `${GP.P.name} 공간 배치안`, url }).catch(() => { }); }
   };
 };
 

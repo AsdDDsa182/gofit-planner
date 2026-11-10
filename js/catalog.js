@@ -50,7 +50,7 @@ GP.FINISH = {
 };
 GP.GLASS = { clear: { n: '투명', c: '#cfe3ee', o: .22 }, smoke: { n: '스모크', c: '#4f555b', o: .55 }, bronze: { n: '브론즈', c: '#7a5b40', o: .5 }, frost: { n: '불투명', c: '#f1f4f5', o: .86, r: .7 } };
 GP.HW = { steel: { n: '스테인리스', c: '#c3c7cc', m: .9, r: .28 }, black: { n: '블랙', c: '#25272a', m: .5, r: .45 }, gold: { n: '골드', c: '#c9a45c', m: .9, r: .3 } };
-GP.OPEN_DEF = { door: { leafC: 'charcoal', frameC: 'black', hw: 'steel' }, door2: { leafC: 'charcoal', frameC: 'black', hw: 'steel' }, glass2: { frameC: 'silver', glass: 'clear', hw: 'steel' }, slide: { leafC: 'oak', frameC: 'white', hw: 'black' }, window: { frameC: 'white', glass: 'clear', hw: 'steel' }, opening: { frameC: 'white' } };
+GP.OPEN_DEF = { door: { leafC: 'charcoal', frameC: 'black', hw: 'steel' }, door2: { leafC: 'charcoal', frameC: 'black', hw: 'steel' }, glass2: { frameC: 'silver', glass: 'clear', hw: 'steel' }, auto: { frameC: 'silver', glass: 'clear', hw: 'steel' }, slide: { leafC: 'oak', frameC: 'white', hw: 'black' }, window: { frameC: 'white', glass: 'clear', hw: 'steel' }, opening: { frameC: 'white' } };
 GP.logoImage = (it) => {
   const im = it && it.img && GP.P && GP.P.images[it.img]; if (!im) return null;
   if (im.cut === undefined && !im._cutting) { im._cutting = true; U.knockout(im.src).then(r => { im.cut = r; delete im._cutting; GP.S.invalidate(); if (GP.V3 && GP.V3.on) GP.V3.rebuild(); GP.emit('dirty'); }).catch(() => { im.cut = null; delete im._cutting; }); }

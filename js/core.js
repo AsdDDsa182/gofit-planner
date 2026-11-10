@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.6.0';
+GP.VERSION = '2.7.0';
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
 window.addEventListener('unhandledrejection', e => { GP.errors.push('promise: ' + String(e.reason && e.reason.message || e.reason)); });
@@ -129,8 +129,6 @@ G.overlap = (A, B, tol = .01) => {
   }
   return true;
 };
-/* gap between two convex polygons (0 if overlapping) */
-G.polyGap = (A, B) => { if (G.overlap(A, B, 0)) return 0; let d = Infinity; for (const P of [[A, B], [B, A]]) for (const v of P[0]) for (let i = 0; i < P[1].length; i++) d = Math.min(d, G.closest(v[0], v[1], P[1][i], P[1][(i + 1) % P[1].length]).d); return d; };
 G.rectInside = (C, P, shrink = .012) => {
   let cx = 0, cz = 0; for (const c of C) { cx += c[0]; cz += c[1]; } cx /= C.length; cz /= C.length;
   const S = C.map(([x, z]) => { const dx = cx - x, dz = cz - z, l = Math.hypot(dx, dz) || 1; return [x + dx / l * shrink, z + dz / l * shrink]; });
@@ -138,7 +136,6 @@ G.rectInside = (C, P, shrink = .012) => {
   const n = P.length; for (let i = 0; i < S.length; i++) for (let j = 0; j < n; j++) if (G.segX(S[i], S[(i + 1) % S.length], P[j], P[(j + 1) % n])) return false;
   return true;
 };
-G.segHitsPoly = (a, b, P) => { for (let i = 0; i < P.length; i++) if (G.segX(a, b, P[i], P[(i + 1) % P.length])) return true; return false; };
 /* ray from point along direction; returns distance to first hit among segments */
 G.rayHit = (x, z, dx, dz, segs, maxD = 50) => {
   let best = maxD;
@@ -225,7 +222,7 @@ GP.BLOCKS = {
 GP.TRIM_W = .06; /* 25T trim: 60 mm slope, 25 mm high */
 GP.TRIMS = { rubber: '경사형 고무 마감재', alu: '경사형 알루미늄 몰딩', none: '마감재 없음' };
 GP.PARTS = { wall: '일반 가벽', glass: '유리 파티션', half: '허리 높이 반벽' };
-GP.OPENINGS = { door: '여닫이 문', door2: '양개문', glass2: '유리 자동문', slide: '미닫이 문', opening: '개구부(문 없음)', window: '창문' };
+GP.OPENINGS = { door: '여닫이 문', door2: '양개문', auto: '자동문 (미닫이)', glass2: '유리 양개문', slide: '미닫이 문', opening: '개구부(문 없음)', window: '창문' };
 
 GP.DEFAULT_ROOM = [[0, 0], [10, 0], [10, 8], [0, 8]];     // a new project starts with one plain 10 x 8 m room
 GP.newLayout = (pts) => ({
@@ -259,8 +256,8 @@ function sDeep(o, depth) {      // custom equipment definitions: text stays text
 function sanitizeLayout(L) {
   L.room = { pts: sPts(L.room && L.room.pts, 3) || GP.DEFAULT_ROOM.map(q => q.slice()) };
   L.partitions = L.partitions.filter(q => q && sPts(q.pts, 2)).map(q => { q.pts = sPts(q.pts, 2); q.id = sWord(q.id) || U.uid('pt'); q.thick = U.clamp(sNum(q.thick, .1), .03, .6); q.kind = GP.PARTS[q.kind] ? q.kind : 'wall'; sKeys(q, ['color', 'frameC', 'glass']); sNums(q, ['height']); return q; });
-  L.openings = L.openings.filter(o => o && sNum(o.t) !== undefined && sNum(o.w) !== undefined && Number.isInteger(+o.seg)).map(o => { o.id = sWord(o.id) || U.uid('o'); o.host = sWord(o.host) || 'room'; o.seg = +o.seg; o.t = +o.t; o.w = U.clamp(+o.w, .3, 8); o.kind = GP.OPENINGS[o.kind] ? o.kind : 'door'; sNums(o, ['h', 'sill']); sKeys(o, ['leafC', 'frameC', 'glass', 'hw', 'hinge']); return o; });
-  L.items = L.items.filter(it => sWord(String(it.type))).map(it => { it.type = String(it.type); it.uid = sWord(String(it.uid)) || U.uid(); it.x = +it.x; it.z = +it.z; sNums(it, ['w', 'd', 'h', 'elev']); sKeys(it, ['grp', 'mount', 'img']); if (it.name != null) it.name = sTxt(it.name, 80) || undefined;
+  L.openings = L.openings.filter(o => o && sNum(o.t) !== undefined && sNum(o.w) !== undefined && Number.isInteger(+o.seg)).map(o => { o.id = sWord(o.id) || U.uid('o'); o.host = sWord(o.host) || 'room'; o.seg = +o.seg; o.t = +o.t; o.w = U.clamp(+o.w, .3, 8); o.kind = GP.OPENINGS[o.kind] ? o.kind : 'door'; sNums(o, ['h', 'sill']); sKeys(o, ['leafC', 'frameC', 'glass', 'hw', 'hinge', 'wtype']); return o; });
+  L.items = L.items.filter(it => sWord(String(it.type))).map(it => { it.type = String(it.type); it.uid = sWord(String(it.uid)) || U.uid(); it.x = +it.x; it.z = +it.z; sNums(it, ['w', 'd', 'h', 'elev']); sKeys(it, ['grp', 'mount', 'img']); if (it.load != null) it.load = it.load === true || undefined; if (it.name != null) it.name = sTxt(it.name, 80) || undefined;
     if (it.params && typeof it.params === 'object') { for (const k of Object.keys(it.params)) { const v = it.params[k]; if (!(typeof v === 'boolean' || (typeof v === 'number' && isFinite(v)) || sWord(v) !== undefined) || !WORD.test(k)) delete it.params[k]; } } else delete it.params; return it; });
   L.mats = L.mats.filter(m => m && sPts(m.pts, 3)).map(m => { m.pts = sPts(m.pts, 3); m.id = sWord(m.id) || U.uid('m'); if (!GP.TRIMS[m.trim]) m.trim = 'rubber'; return m; });
   L.zones = L.zones.filter(z => z && sPts(z.pts, 3)).map(z => { z.pts = sPts(z.pts, 3); z.id = sWord(z.id) || U.uid('z'); z.color = sHex(z.color, '#2f6bd8'); z.name = sTxt(z.name, 60); return z; });

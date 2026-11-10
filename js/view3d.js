@@ -15,8 +15,8 @@ V3.init = () => {
   R.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); R.outputEncoding = THREE.sRGBEncoding; R.toneMapping = THREE.ACESFilmicToneMapping; R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap;
   sc = new THREE.Scene(); sc.background = new THREE.Color('#E6E9E6');
   cam = new THREE.PerspectiveCamera(40, 1, .05, 600);
-  sc.add(new THREE.HemisphereLight(0xffffff, 0x8d9399, .55));
-  const dl = V3.dir = new THREE.DirectionalLight(0xffffff, 1.1); dl.castShadow = true; dl.shadow.mapSize.set(2048, 2048); dl.shadow.bias = -.0004; dl.shadow.normalBias = .025; sc.add(dl, dl.target);
+  sc.add(new THREE.HemisphereLight(0xffffff, 0x8d9399, .42));      // with the environment map on top, more than this washes white walls and floors out
+  const dl = V3.dir = new THREE.DirectionalLight(0xffffff, .9); dl.castShadow = true; dl.shadow.mapSize.set(2048, 2048); dl.shadow.bias = -.0004; dl.shadow.normalBias = .025; sc.add(dl, dl.target);
   const pm = new THREE.PMREMGenerator(R); const env = new THREE.Scene(); const eg = new THREE.BoxGeometry(1, 1, 1);
   env.add(new THREE.Mesh(new THREE.BoxGeometry(12, 6, 12), new THREE.MeshBasicMaterial({ color: '#7d8388', side: THREE.BackSide })));
   [[0, 2.9, 0, 7, .1, 7, 3.2], [5.9, 1.6, 0, .1, 2, 5, 1.8], [-5.9, 1.6, 0, .1, 2, 5, 1.4], [0, 1.6, 5.9, 5, 2, .1, 1.2]].forEach(([x, y, z, w, h, d, i]) => { const m = new THREE.Mesh(eg, new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffffff').multiplyScalar(i) })); m.position.set(x, y, z); m.scale.set(w, h, d); env.add(m); });
@@ -28,7 +28,8 @@ V3.init = () => {
   T.concrete = canvasTex(256, (x, s) => { const Rn = rng(11); x.fillStyle = '#b9bbb8'; x.fillRect(0, 0, s, s); for (let i = 0; i < 700; i++) { const v = Rn() < .5 ? 255 : 40; x.fillStyle = `rgba(${v},${v},${v},.04)`; x.beginPath(); x.arc(Rn() * s, Rn() * s, 3 + Rn() * 16, 0, 7); x.fill(); } }, 1 / 3);
   new ResizeObserver(() => V3.resize()).observe($('#stage'));
   cv.addEventListener('pointerdown', lookDown, true); cv.addEventListener('pointermove', lookMove, true); cv.addEventListener('pointerup', lookUp, true); cv.addEventListener('pointerdown', grab, true); cv.addEventListener('pointermove', onMove); cv.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; }); cv.addEventListener('pointerup', onUp); cv.addEventListener('pointercancel', e => { if (mv) endDrag(e); }); cv.addEventListener('dblclick', e => { const uid = pick(e), it = uid && GP.findItem(uid); if (it) GP.M3.open(it); }); cv.addEventListener('pointerleave', () => { setHover(null); GP.tip.hide(); });
-  GP.on('changed', () => { if (V3.on) V3.rebuild(); });
+  GP.on('changed', (P) => { if (V3.on) V3.rebuild(P); else built = false; });      // changed while 3D was closed: the next open rebuilds everything
+  GP.on('project', () => { built = false; }); GP.on('restore', () => { built = false; if (V3.on) V3.rebuild(); });
   GP.on('selection', () => { if (V3.on) markSel(); });
   GP.on('placing', () => { ghostBuild(); if (R) R.domElement.style.cursor = GP.ui.placing ? 'crosshair' : ''; });
   return true;
@@ -77,7 +78,8 @@ V3.zoomBy = (f) => { if (!R) return; const off = cam.position.clone().sub(ctl.ta
 /* ---------------- geometry helpers ---------------- */
 const V2 = (p) => new THREE.Vector2(p[0], -p[1]);
 function prismGeo(quad, y0, y1) { const g = new THREE.ExtrudeGeometry(new THREE.Shape(quad.map(V2)), { depth: Math.max(.001, y1 - y0), bevelEnabled: false }); g.rotateX(-Math.PI / 2); g.translate(0, y0, 0); return g; }
-function clear(g) { for (const ch of [...g.children]) { g.remove(ch); ch.traverse(o => { if (o.geometry && o.userData.own) o.geometry.dispose(); }); } }
+/* geometry made for this build is freed; so are its one-off materials (those not kept in matCache / marked keep: shared ones stay) */
+function clear(g) { const shared = new Set(Object.values(matCache)); for (const ch of [...g.children]) { g.remove(ch); ch.traverse(o => { if (!o.userData.own) return; if (o.geometry) o.geometry.dispose(); const m = o.material; if (m && !shared.has(m) && !m.userData.keep) m.dispose(); }); } }
 function mat(key, f) { return matCache[key] || (matCache[key] = f()); }
 /* finish images (GP.TEX): loaded once, repeated per metre (the floor's and the wall planes' UVs are in metres) */
 const texCache = {}; let texLoading = 0;
@@ -99,13 +101,27 @@ function addEdges(mesh) { const l = new THREE.LineSegments(edgesOf(mesh.geometry
 function toLine(obj, keepMat) { const ms = []; obj.traverse(n => { if (n.isMesh) ms.push(n); }); ms.forEach(n => { if (!keepMat) n.material = CADM(); n.castShadow = false; addEdges(n); }); return obj; }
 
 /* ---------------- build ---------------- */
-V3.rebuild = () => { if (!R || !GP.P) return; LINE = GP.S.style === 'line'; sc.background.set(LINE ? '#F7F8F7' : '#E6E9E6'); V3.dir.castShadow = !LINE; buildRoom(); buildMats(); buildItems(); markSel(); dirty = true; };
+const NO3D = new Set(['annot', 'zones', 'zone', 'note', 'dim']), MATS = new Set(['mats', 'mat']);
+V3.rebuild = (P) => {
+  if (!R || !GP.P) return; const line = GP.S.style === 'line', parts = P instanceof Set ? [...P] : null, full = !parts || line !== LINE || !built || parts.some(k => !NO3D.has(k) && !MATS.has(k) && k !== 'items');
+  LINE = line; sc.background.set(LINE ? '#F7F8F7' : '#E6E9E6'); V3.dir.castShadow = !LINE;
+  if (full) { buildRoom(); buildMats(); buildItems(); built = true; }
+  else if (parts.some(k => MATS.has(k))) { buildMats(); buildItems(); }      // machines stand on the blocks
+  else if (parts.includes('items')) buildItems();
+  markSel(); dirty = true;
+};
+let built = false;
 let wallMeshes = [];
 function buildRoom() {
   const g = groups.room; clear(g); wallMeshes = [];
   const L = GP.L(), st = GP.P.settings, P = L.room.pts; if (P.length < 3) return;
-  const fg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); fg.rotateX(-Math.PI / 2); const fd = finishOf(st.floorBase), floor = new THREE.Mesh(fg, LINE ? CADM() : fd ? mat('floor:' + fd.id, () => new THREE.MeshLambertMaterial({ color: '#d0d0d0', map: finishTex(fd.id) })) : mat('floor', () => std('#ffffff', { map: V3.tex.concrete, roughness: .85 }))); floor.receiveShadow = true; floor.position.y = -.001; floor.userData.own = true; g.add(floor);
+  const fg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); fg.rotateX(-Math.PI / 2); const fd = finishOf(st.floorBase), floor = new THREE.Mesh(fg, LINE ? CADM() : fd ? mat('floor:' + fd.id, () => new THREE.MeshLambertMaterial({ color: '#d0d0d0', map: finishTex(fd.id) })) : mat('floor', () => std('#dcdcdc', { map: V3.tex.concrete, roughness: .85 }))); floor.receiveShadow = true; floor.position.y = -.001; floor.userData.own = true; g.add(floor);
   const H = V3.cut ? Math.min(1.1, st.wallH) : st.wallH, O = G.offset(P, WALL_T, true), n = P.length, marks = L.wallMarks || {};
+  if (!LINE && !V3.cut) {
+    const cg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); cg.rotateX(-Math.PI / 2); const ceil = new THREE.Mesh(cg, mat('ceil', () => new THREE.MeshBasicMaterial({ color: '#c4c8c6', side: THREE.BackSide }))); ceil.position.y = H; ceil.userData.own = true; g.add(ceil);
+    const bb0 = G.bounds(P), nx = Math.max(1, Math.round(bb0.sx / 2.6)), nz = Math.max(1, Math.round(bb0.sz / 2.6)), lg = mat('lampGeo', () => new THREE.PlaneGeometry(1.2, .3)), lm = mat('lamp', () => new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false })); let made = 0;
+    for (let i = 0; i < nx && made < 80; i++) for (let j = 0; j < nz && made < 80; j++) { const x = bb0.minX + bb0.sx * (i + .5) / nx, z = bb0.minZ + bb0.sz * (j + .5) / nz; if (!G.pip(x, z, P)) continue; const lp = new THREE.Mesh(lg, lm); lp.rotation.x = Math.PI / 2; lp.position.set(x, H - .012, z); g.add(lp); made++; }
+  }
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n, a = P[i], b = P[j], Ls = G.len(a, b); if (Ls < 1e-3) continue;
     const e = G.edge(P, i), ops = L.openings.filter(o => o.host === 'room' && o.seg === i);
@@ -230,6 +246,11 @@ function buildOpenings(g, H) {
       const sill = o.sill ?? .9, hh = Math.min(o.h ?? 1.2, H - sill); if (hh <= .1) continue; const gl = glassMat(o.glass || D.glass), fw = .055, fd = .09;
       // outer frame in the wall, the stool (sill board) on the room side, trim round it inside
       rb(w, fw, fd, .006, frM, 0, sill + fw / 2, 0, og); rb(w, fw, fd, .006, frM, 0, sill + hh - fw / 2, 0, og); rb(fw, hh, fd, .006, frM, -w / 2 + fw / 2, sill + hh / 2, 0, og); rb(fw, hh, fd, .006, frM, w / 2 - fw / 2, sill + hh / 2, 0, og);
+      if (o.wtype === 'fixed') {      // one fixed pane (shop-front glass): slim frame, a post about every 1.5 m, no sash or handle
+        const n = Math.max(1, Math.round((w - 2 * fw) / 1.5)), pw = (w - 2 * fw) / n; put(new THREE.BoxGeometry(w - 2 * fw + .01, hh - 2 * fw + .01, .01), gl, 0, sill + hh / 2, 0, og, true);
+        for (let k = 1; k < n; k++) rb(.04, hh - 2 * fw, fd * .7, .004, frM, -w / 2 + fw + pw * k, sill + hh / 2, 0, og);
+        continue;
+      }
       rb(w + .12, .025, T / 2 + .06, .006, finM('white'), 0, sill - .0125, zin * (T / 4 + .03), og);
       casing(og, T, -w / 2, w / 2, sill + .025, sill + hh, frM, [zin], .05);
       // sashes: two sliding sashes on their own tracks when wide, one sash when narrow; the lever on the room side of the inner sash
@@ -244,6 +265,16 @@ function buildOpenings(g, H) {
     }
     const dh = Math.min(o.h ?? 2.1, H - .05); if (dh <= .1) continue;
     if (o.kind === 'opening') { casing(og, T, -w / 2, w / 2, 0, dh, frM, [1, -1]); continue; }
+    if (o.kind === 'auto') {      // automatic sliding door: operator header with a sensor on each face, two glass leaves in slim stiles (shown closed)
+      const hh = .16, gl = glassMat(o.glass || D.glass), jw = .05, iw = w - 2 * jw, lh = dh - hh - .012, y0 = .012, st2 = .035, dz = .03;
+      rb(jw, dh, T + .012, .004, frM, -w / 2 + jw / 2, dh / 2, 0, og); rb(jw, dh, T + .012, .004, frM, w / 2 - jw / 2, dh / 2, 0, og); rb(iw, hh, T + .07, .01, frM, 0, dh - hh / 2, 0, og);
+      rb(iw, .012, .05, .002, finM('silver'), 0, .006, 0, og);
+      [-1, 1].forEach(s2 => { const lw = iw / 2 - .004, x = s2 * iw / 4;
+        rb(st2, lh, dz, .003, frM, x - lw / 2 + st2 / 2, y0 + lh / 2, 0, og); rb(st2, lh, dz, .003, frM, x + lw / 2 - st2 / 2, y0 + lh / 2, 0, og); rb(lw - 2 * st2, st2, dz, .003, frM, x, y0 + lh - st2 / 2, 0, og); rb(lw - 2 * st2, .07, dz, .003, frM, x, y0 + .035, 0, og);
+        put(new THREE.BoxGeometry(lw - 2 * st2 + .01, lh - st2 - .07 + .01, .008), gl, x, y0 + .07 + (lh - st2 - .07) / 2, 0, og, true); });
+      [1, -1].forEach(fs => part('sensor', og, 0, dh - hh + .045, fs * (T + .07) / 2, fs > 0 ? 0 : Math.PI, 0, hw, body));
+      continue;
+    }
     const leafM = finM(o.leafC, D.leafC || 'white');
     if (o.kind === 'slide') {
       // a surface sliding door on the swing side: track above, rollers, two flush pulls; it covers the opening (closed)
@@ -283,7 +314,7 @@ function blockMat(k) {
   const LOOK = { basic: ['#3a3f3c', ['#454b47', '#2e3230', '#566059', '#262a28'], 1800], coat: ['#18181a', ['#d9dadb', '#8d9195', '#232326'], 700], arena: ['#c48a55', ['#cf9660', '#b87e4b', '#d9a26d', '#ad7442'], 1500], topblack: ['#2b2c2e', ['#333437', '#252628'], 600], stone: ['#4f5153', ['#6b6d70', '#3a3c3e', '#8b8e91', '#2e3032', '#a7aaad'], 2000] }[k] || ['#18181a', ['#d9dadb'], 700];
   const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d'); const Rn = rng(k.length * 97 + 13); x.fillStyle = LOOK[0]; x.fillRect(0, 0, 256, 256); for (let i = 0; i < LOOK[2]; i++) { x.fillStyle = LOOK[1][(Rn() * LOOK[1].length) | 0]; x.beginPath(); x.arc(Rn() * 256, Rn() * 256, .6 + Rn() * 1.2, 0, 7); x.fill(); } x.strokeStyle = 'rgba(0,0,0,.6)'; x.lineWidth = 2; x.strokeRect(1, 1, 254, 254);
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; t.repeat.set(2, 2);
-  return (blockTex[k] = std('#ffffff', { map: t, roughness: k === 'topblack' ? .6 : .9 }));
+  const bm = std('#ffffff', { map: t, roughness: k === 'topblack' ? .6 : .9 }); bm.userData.keep = true; return (blockTex[k] = bm);
 }
 function cadBlockMat() {
   return mat('cadBlock', () => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#ffffff'; x.fillRect(0, 0, 128, 128); x.strokeStyle = '#9aa0a6'; x.lineWidth = 2; x.strokeRect(1, 1, 126, 126); const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; t.repeat.set(2, 2); return new THREE.MeshLambertMaterial({ map: t, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }); });
@@ -318,7 +349,7 @@ function buildItems() {
     const src = modelSrc(it.type, def); if (src) (want[it.type + '|' + src] = want[it.type + '|' + src] || []).push({ it, root, proc, dm });
   }
   const keys = Object.keys(want); loadTotal = keys.length; loadDone = 0; loading = keys.length; setLoad();
-  keys.forEach(k => { const [t, src] = k.split('|'), b = src === 'basic'; GP.R3.glb(t, null, b).then(scene => { for (const q of want[k]) { if (roots.get(q.it.uid) !== q.root) continue; q.root.remove(q.proc); const gm = GP.R3.fitGlb(t, scene, q.dm, b); if (LINE) toLine(gm); q.root.add(gm); } dirty = true; }).catch(() => { }).finally(() => { loading--; loadDone++; setLoad(); }); });
+  keys.forEach(k => { const [t, src] = k.split('|'), b = src === 'basic'; GP.R3.glb(t, null, b).then(scene => { for (const q of want[k]) { if (roots.get(q.it.uid) !== q.root) continue; q.root.remove(q.proc); const gm = GP.R3.fitGlb(t, scene, q.dm, b, q.it, LINE ? toLine : null); if (LINE) toLine(gm); q.root.add(gm); } dirty = true; }).catch(() => { }).finally(() => { loading--; loadDone++; setLoad(); }); });
 }
 /* which 3D file an item shows: 'reg' (the user's registered file), 'basic' (generic model) or null (procedural only) */
 function modelSrc(t, def) {
@@ -350,9 +381,9 @@ async function pump(total) {
 GP.on('booted', () => GP.SYM.ready.then(() => setTimeout(V3.prefetch, 1500))); // start after the plan pictures, so the first screen stays quick
 GP.on('changed', U.debounce(() => V3.prefetch(), 1500));
 GP.on('project', () => setTimeout(V3.prefetch, 800));
-V3.whenLoaded = (ms) => new Promise(res => { const t0 = performance.now(); const chk = () => { if ((loading <= 0 && texLoading <= 0 && !archLoading) || performance.now() - t0 > (ms || 25000)) res(); else setTimeout(chk, 200); }; chk(); });
+V3.whenLoaded = (ms) => new Promise(res => { const t0 = performance.now(); const chk = () => { if ((loading <= 0 && texLoading <= 0 && !archLoading && !GP.R3.pending) || performance.now() - t0 > (ms || 25000)) res(); else setTimeout(chk, 200); }; chk(); });
 function markSel() {
-  const sel = GP.ui.selSet(); if (V3.selBox) { sc.remove(V3.selBox); V3.selBox = null; }
+  const sel = GP.ui.selSet(); if (V3.selBox) { sc.remove(V3.selBox); V3.selBox.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); V3.selBox = null; }
   const ids = [...sel].filter(k => k.startsWith('item:')).map(k => k.slice(5)); if (!ids.length) { dirty = true; return; }
   const grp = new THREE.Group(); for (const id of ids) { const r = roots.get(id); if (!r) continue; const dm = r.userData.dm; const bx = new THREE.Box3(new THREE.Vector3(-dm.w / 2, 0, -dm.d / 2), new THREE.Vector3(dm.w / 2, dm.h, dm.d / 2)); const h = new THREE.Box3Helper(bx, new THREE.Color('#2450E0')), at = new THREE.Group(); at.position.copy(r.position); at.rotation.copy(r.rotation); at.add(h); grp.add(at); }   // Box3Helper moves itself to its box's centre every frame: the outer group carries the item's place and turn
   V3.selBox = grp; sc.add(grp); dirty = true;

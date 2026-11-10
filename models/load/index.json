@@ -1,0 +1,26 @@
+{
+ "dbrack2": {
+  "file": "dbrack2.glb",
+  "label": "덤벨 올리기",
+  "sx": 2.295,
+  "sz": 0.5981
+ },
+ "dbrack3": {
+  "file": "dbrack3.glb",
+  "label": "덤벨 올리기",
+  "sx": 2.1861,
+  "sz": 0.7112
+ },
+ "platetree": {
+  "file": "platetree.glb",
+  "label": "원판 걸기",
+  "sx": 0.779,
+  "sz": 0.595
+ },
+ "barbellrack": {
+  "file": "barbellrack.glb",
+  "label": "바벨 걸기",
+  "sx": 1.0231,
+  "sz": 0.864
+ }
+}

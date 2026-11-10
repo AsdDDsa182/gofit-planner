@@ -199,7 +199,7 @@ tools.cancel = () => {
   draw = null; drag = null; press = null; hover = null; tools.preview = null; if (GP.S.canvas) GP.S.canvas.style.cursor = ''; $('#ovMarquee').hidden = true; GP.emit('overlay'); ui.setHint(); GP.S.invalidate();
 };
 tools.getDraw = () => draw; tools.getHover = () => hover;
-tools.openingWidth = k => ({ door: .9, door2: 1.6, glass2: 1.8, slide: 1.0, opening: 1.0, window: 1.2 }[k] || .9);
+tools.openingWidth = k => ({ door: .9, door2: 1.6, glass2: 1.8, auto: 1.8, slide: 1.0, opening: 1.0, window: 1.2 }[k] || .9);
 const canvas = () => GP.S.canvas;
 
 /* ---------------- placing (catalog / sets / paste) ---------------- */
@@ -526,7 +526,7 @@ tools.handleDown = (e, el) => {
   if (h === 'e' && target && !e.altKey) { startSide(target, +el.dataset.i, GP.S.floorAt(e.clientX, e.clientY)); cap(el, e); return; }
   if ((h === 'm' || h === 'e') && target) { const i = +el.dataset.i, pts = target.pts, n = pts.length, a = pts[i], b = pts[(i + 1) % n]; const old0 = pts.map(p => p.slice()); pts.splice(i + 1, 0, [U.r3((a[0] + b[0]) / 2), U.r3((a[1] + b[1]) / 2)]); tools.reindex(target, 'ins', i, old0); selOnly(i + 1); GP.S.dataChanged(); hd = { type: 'v', target, i: i + 1, moved: true }; GP.emit('overlay'); return; }
   const it = ui.selItems()[0];
-  if (h === 'rs' && it) { const [cx, cz] = [+el.dataset.cx, +el.dataset.cz]; const d = GP.dims(it); const opp = G.l2w(it.x, it.z, it.rot, -cx * d.w / 2, -cz * d.d / 2); hd = { type: 'rs', it, cx, cz, opp }; cap(el, e); return; }
+  if (h === 'rs' && it) { const [cx, cz] = [+el.dataset.cx, +el.dataset.cz]; const d = GP.dims(it); const opp = G.l2w(it.x, it.z, it.rot, -cx * d.w / 2, -cz * d.d / 2); { const line = GP.S.style === 'line'; GP.R3.freeze = { uid: it.uid, line, tv: GP.R3.topView(it, null, line) }; } hd = { type: 'rs', it, cx, cz, opp }; cap(el, e); return; }
   if (h === 'grot') {
     const its = ui.selItems(); if (its.length < 2) return; const pts = []; its.forEach(q => pts.push(...GP.footprint(q))); const b = G.bounds(pts), fp = GP.S.floorAt(e.clientX, e.clientY), c = { x: b.cx, z: b.cz };
     hd = { type: 'grot', cx: b.cx, cz: b.cz, R: Math.max(.2, Math.hypot(fp.x - b.cx, fp.z - b.cz)), a0: ptrAng(c, fp), last: ptrAng(c, fp), acc: 0, d: 0, start: its.map(q => ({ it: q, x: q.x, z: q.z, rot: q.rot })), moved: false }; cap(el, e); return;
@@ -580,7 +580,7 @@ tools.handleMove = (e) => {
 /* while several items are being turned: the pivot, the handle's distance from it and its current angle (the overlay draws the handle there) */
 tools.groupRotState = () => hd && hd.type === 'grot' ? { cx: hd.cx, cz: hd.cz, R: hd.R, ang: hd.a0 + hd.d } : null;
 tools.handleUp = () => {
-  if (!hd) return; const h = hd; hd = null;
+  if (!hd) return; const h = hd; hd = null; if (GP.R3.freeze) { GP.R3.freeze = null; GP.S.invalidate(); }
   if (h.type === 'grot' || h.type === 'rot') { ui.setHint(); if (h.moved) GP.changed('items'); ui.renderInspector(); GP.emit('overlay'); return; }
   if (h.type === 'e' || h.type === 'c') {
     canvas().style.cursor = ''; ui.setHint();
@@ -684,6 +684,7 @@ act.dupSel = () => {
 };
 /* Shift+D: one more copy, as far on and in the same direction as the last copy is from its original right now
    (like Photoshop's duplicate-again; a copy that was moved or nudged after copying counts where it is now) */
+act.canDupAgain = () => { const its = ui.selItems(), ld = act.lastDup; if (!its.length || !ld || !ld.pairs || ld.pairs.length !== its.length || !its.every(it => ld.pairs.some(p => p[1] === it.uid))) return false; const a = GP.findItem(ld.pairs[0][0]), b = GP.findItem(ld.pairs[0][1]); return !!(a && b && Math.hypot(b.x - a.x, b.z - a.z) >= .01); };
 act.dupAgain = () => {
   const its = ui.selItems(), ld = act.lastDup; if (!its.length) return;
   const pairs = ld && ld.pairs && ld.pairs.length === its.length && its.every(it => ld.pairs.some(p => p[1] === it.uid)) ? ld.pairs : null;
@@ -779,10 +780,11 @@ act.inspAction = async (a, b) => {
   if (a === 'alignF') return act.align('F'); if (a === 'alignC') return act.align('C'); if (a === 'alignB') return act.align('B');
   if (a === 'gap') return act.gap(+$('#mGap').value || 0); if (a === 'even') return act.gap(0, true);
   if (a === 'grot') return act.groupRotate(90);
-  if (a === 'group') return act.group(); if (a === 'ungroup') return act.ungroup();
+  if (a === 'group') return act.group(); if (a === 'ungroup') return act.ungroup(); if (a === 'dupAgain') return act.dupAgain();
   if (a === 'saveset') return GP.panels.saveSetDialog(ui.selItems());
   if (so && so.k === 'part' && a === 'pkind') { so.obj.kind = b.dataset.v; GP.changed('parts'); ui.renderInspector(); return; }
   if (a === 'fin' && so && (so.k === 'opening' || so.k === 'part')) { so.obj[b.dataset.k] = b.dataset.v; GP.changed(so.k === 'opening' ? 'openings' : 'parts'); ui.renderInspector(); return; }
+  if (so && so.k === 'opening' && a === 'wtype') { const o = so.obj; if (b.dataset.v === 'fixed') { o.wtype = 'fixed'; if ((o.sill ?? .9) > .3) { o.sill = .1; o.h = U.r2(Math.max(1.2, GP.P.settings.wallH - .6)); } } else { delete o.wtype; if ((o.sill ?? .9) < .3) { o.sill = .9; o.h = 1.2; } } GP.changed('openings'); ui.renderInspector(); return; }
   if (so && so.k === 'opening' && a === 'odoormat') { if (act.clearDoorMats(so.obj)) { GP.changed('mats'); GP.toast('문 열리는 자리의 고무블럭을 비웠어요. 잘린 변에는 경사 마감재가 둘러져요'); } ui.renderInspector(); return; }
   if (so && so.k === 'mat' && a === 'mdoor') { if (act.clearDoorMats()) { GP.changed('mats'); GP.toast('문 열리는 자리의 고무블럭을 비웠어요'); } ui.renderInspector(); return; }
   if (so && so.k === 'opening') { if (a === 'oflip') so.obj.flip = !so.obj.flip; if (a === 'ohinge') so.obj.hinge = so.obj.hinge === 'R' ? 'L' : 'R'; GP.changed('openings'); return; }
@@ -799,6 +801,12 @@ act.inspChange = (el, live) => {
   if (id === 'iPrice' && el.dataset.pk) { GP.quote.setPrice(el.dataset.pk, Math.max(0, v || 0)); ui.renderInspector(); ui.renderSummary(); GP.emit('library'); return; }
   if (it && (ui.sel.length === 1)) {
     if (id === 'iName') { it.name = el.value.trim() || undefined; if (!live) GP.changed('items'); else GP.S.invalidate(); return; }
+    if (id === 'iLoad') {
+      it.load = el.checked || undefined; GP.changed('items'); ui.renderInspector();
+      const rest = GP.L().items.filter(q => q !== it && GP.R3.canLoad(q.type) && !q.load);
+      if (it.load && rest.length) GP.toast('거치대에 올린 모습으로 바꿨어요', { ms: 6000, action: `다른 거치대 ${rest.length}개도 올리기`, onAction: () => { rest.forEach(q => { q.load = true; }); GP.changed('items'); } });
+      return;
+    }
     if (id === 'iLogoBg') { it.bgKeep = !el.checked || undefined; GP.changed('items'); ui.renderInspector(); return; }
     if (el.dataset.param) { it.params = Object.assign({}, it.params || {}); it.params[el.dataset.param] = el.type === 'number' ? v : el.value; if (it.type === 'desk' && el.dataset.param === 'shape') { const d = GP.dims(it); if ((el.value === 'L' || el.value === 'U') && d.d < 1.2) it.d = 1.6; if (el.value === 'round' && d.d < .9) it.d = 1.0; if (el.value === 'straight' || el.value === 'two') it.d = .7; } GP.changed('items'); ui.renderInspector(); return; }
     if (!isFinite(v)) return;

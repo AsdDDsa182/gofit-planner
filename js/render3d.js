@@ -29,8 +29,9 @@ R3.procModel = (it, defOverride) => {
   }
   const out = new THREE.Group(), lg = it.type === 'logo' && GP.logoImage(it);
   if (lg) {      // a logo is only its picture, a few mm off the wall (no board, so no frame round it)
-    const k = Math.min(d.w / lg.w, d.h / lg.h), pw = lg.w * k, ph = lg.h * k, tx = new THREE.TextureLoader().load(lg.src, () => GP.V3 && GP.V3.invalidate()); tx.encoding = THREE.sRGBEncoding; tx.anisotropy = 8;
-    const pl = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), new THREE.MeshStandardMaterial({ map: tx, transparent: true, alphaTest: .03, roughness: .55 })); pl.position.set(0, d.h / 2, -d.d / 2 + .006); pl.receiveShadow = true; out.add(pl); return out;
+    const k = Math.min(d.w / lg.w, d.h / lg.h), pw = lg.w * k, ph = lg.h * k, LG = R3._logos || (R3._logos = new Map()); let lm = LG.get(lg.src);
+    if (!lm) { if (LG.size >= 6) { const [k0, m0] = LG.entries().next().value; m0.map.dispose(); m0.dispose(); LG.delete(k0); } const tx = new THREE.TextureLoader().load(lg.src, () => GP.V3 && GP.V3.invalidate()); tx.encoding = THREE.sRGBEncoding; tx.anisotropy = 8; lm = new THREE.MeshStandardMaterial({ map: tx, transparent: true, alphaTest: .03, roughness: .55 }); LG.set(lg.src, lm); }
+    const pl = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), lm); pl.position.set(0, d.h / 2, -d.d / 2 + .006); pl.receiveShadow = true; out.add(pl); return out;
   }
   parts.forEach(q => { const me = new THREE.Mesh(q.geometry, q.material); me.castShadow = true; me.receiveShadow = true; out.add(me); });
   return out;
@@ -39,7 +40,18 @@ R3.procModel = (it, defOverride) => {
 /* ---------------- GLB models: generic Blender-made models (models/basic) and 3D files the user registered (GP.media) ---------------- */
 const glbCache = new Map(); // key -> Promise<scene>
 R3.basic = {}; // type -> 'category/type.glb'
-R3.loadBasic = () => fetch(R3.base() + 'models/basic/index.json').then(r => r.ok ? r.json() : {}).then(j => { R3.basic = j || {}; }).catch(() => { });
+R3.loads = {}; // rack type -> { file, label, sx, sz }: the rack's size in its own model (the load is scaled exactly like the rack)
+R3.loadBasic = () => Promise.all([fetch(R3.base() + 'models/basic/index.json').then(r => r.ok ? r.json() : {}).then(j => { R3.basic = j || {}; }).catch(() => { }),
+  fetch(R3.base() + 'models/load/index.json').then(r => r.ok ? r.json() : {}).then(j => { R3.loads = j || {}; }).catch(() => { })]);
+R3.pending = 0;      // load files on their way (pictures wait for them)
+const loadCache = new Map();
+R3.loadGlb = (type) => {
+  let p = loadCache.get(type); if (p) return p; const L = R3.loads[type]; if (!L) return Promise.reject(new Error('no load')); R3.pending++;
+  p = R3.loaders().then(() => new Promise((res, rej) => R3._gl.load(R3.base() + 'models/load/' + L.file + '?v=1', g => { g.scene.traverse(n => { if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; } }); res(g.scene); }, undefined, rej))).finally(() => { R3.pending--; });
+  p.catch(() => loadCache.delete(type)); loadCache.set(type, p); return p;
+};
+/* can this item show a load? (the generic model only: a 3D file the user registered has other saddles) */
+R3.canLoad = (type) => !!R3.loads[type] && !(GP.media && GP.media.model(type));
 R3.hasBasic = (type) => !!R3.basic[type];
 let loaderP = null;
 function loadScript(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('script ' + src)); document.head.appendChild(s); }); }
@@ -81,8 +93,10 @@ R3.box = (obj) => {
   return box;
 };
 /* place a GLB inside an item's footprint: plan orientation from the manifest, bottom on the floor, uniform scale that fits w × d */
-R3.fitGlb = (type, scene, dm, basic) => {
+R3.fitGlb = (type, scene, dm, basic, it, onLoad) => {
   const holder = new THREE.Group(), inner = new THREE.Group(); const m = R3.cloneRig(scene); inner.add(m);
+  // the rack's load comes in the rack's own frame, centred like the rack is below: added beside it, it gets the same scale
+  if (it && it.load && R3.canLoad(type)) R3.loadGlb(type).then(sc => { const ld = sc.clone(true); ld.userData.load = true; if (onLoad) onLoad(ld); inner.add(ld); if (GP.V3) GP.V3.invalidate(); }).catch(() => { });
   const bb = R3.box(m), c = bb.getCenter(new THREE.Vector3()); m.position.set(-c.x, -bb.min.y, -c.z);
   const reg = !basic && GP.media && GP.media.model(type); const rot = reg ? (reg.rot || 0) : 0; inner.rotation.y = rot * Math.PI / 180; holder.add(inner); holder.updateMatrixWorld(true);
   const b2 = R3.box(holder), s2 = b2.getSize(new THREE.Vector3()); const k = Math.min(dm.w / Math.max(s2.x, 1e-3), dm.d / Math.max(s2.z, 1e-3)); holder.scale.setScalar(k);
@@ -128,6 +142,21 @@ R3.topView = (it, defOverride, line) => {
   } catch (e) { console.warn('topView', it.type, e); }
   if (sig) { topCache.set(sig, res); if (topCache.size > 400) topCache.delete(topCache.keys().next().value); }
   return res;
+};
+const loadTops = new Map();
+R3.loadTop = (type, line) => {
+  const L = R3.loads[type]; if (!L || !R3.ok) return null; const key = type + (line ? '|L' : ''); if (loadTops.has(key)) return loadTops.get(key);
+  loadTops.set(key, null);
+  R3.loadGlb(type).then(sc => {
+    const { r, sc: scene } = offscreen(); let obj = sc.clone(true); obj.updateMatrixWorld(true); const bb = new THREE.Box3().setFromObject(obj), x0 = bb.min.x, x1 = bb.max.x, z0 = bb.min.z, z1 = bb.max.z;
+    if (line) obj = R3.lineify(obj);
+    const ppm = line ? 160 : 220; let W = Math.round((x1 - x0) * ppm), H = Math.round((z1 - z0) * ppm); const k = Math.min(1, 640 / Math.max(W, H, 1)); W = Math.max(8, Math.round(W * k)); H = Math.max(8, Math.round(H * k));
+    const cam = new THREE.OrthographicCamera(x0, x1, -z0, -z1, .1, 60); cam.up.set(0, 0, -1); cam.position.set(0, 30, 0); cam.lookAt(0, 0, 0); cam.updateProjectionMatrix();
+    const tm = r.toneMapping; if (line) r.toneMapping = THREE.NoToneMapping; r.setSize(W, H, false); r.setClearColor(0x000000, 0); scene.add(obj); r.render(scene, cam); scene.remove(obj); r.toneMapping = tm;
+    const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').drawImage(r.domElement, 0, 0); if (line) outline(c);
+    loadTops.set(key, { canvas: c, ext: [x0 / L.sx, x1 / L.sx, z0 / L.sz, z1 / L.sz] }); if (GP.S && GP.S.invalidate) GP.S.invalidate();
+  }).catch(() => loadTops.delete(key));
+  return null;
 };
 const thumbCache = new Map();
 R3.thumb = (type) => {

@@ -12,7 +12,6 @@ M3.lib = () => libP || (libP = (async () => { if (!window.THREE) await loadScrip
 async function loadModel(type, onProgress) { const sc = await GP.R3.glb(type, onProgress, !GP.media.model(type)); return sc.clone(true); }
 
 let cur = null; // active viewer
-function disposeTree() { }
 function stop() { if (!cur) return; cancelAnimationFrame(cur.raf); cur.ro && cur.ro.disconnect(); if (cur.ctl) cur.ctl.dispose(); if (cur.r) { cur.r.dispose(); cur.r.forceContextLoss && cur.r.forceContextLoss(); } if (cur.env) cur.env.dispose(); cur = null; }
 
 /* popup for one equipment type: 3D model (registered or generic) → photos → "nothing yet" (+ register buttons in the editor) */
@@ -86,10 +85,10 @@ async function view3d(type, d) {
 /* download every model once so the service worker keeps them for offline sites */
 M3.prefetchAll = async (statEl) => {
   if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) { if (statEl) statEl.textContent = '인터넷 주소(호스팅)나 설치한 앱에서 열었을 때만 받아둘 수 있어요.'; return; }
-  const list = Object.values(GP.R3.basic); let ok = 0, fail = 0;
+  const list = Object.values(GP.R3.basic).map(f => 'models/basic/' + f).concat(Object.values(GP.R3.loads).map(l => 'models/load/' + l.file + '?v=1'), ['models/arch/parts.glb?v=1']); let ok = 0, fail = 0;
   for (let i = 0; i < list.length; i++) {
     if (statEl) statEl.textContent = `받는 중… ${i + 1} / ${list.length}`;
-    try { const r = await fetch(M3.base() + 'models/basic/' + list[i]); if (r.ok) { await r.arrayBuffer(); ok++; } else fail++; } catch (e) { fail++; }
+    try { const r = await fetch(M3.base() + list[i]); if (r.ok) { await r.arrayBuffer(); ok++; } else fail++; } catch (e) { fail++; }
   }
   for (const f of ['vendor/three.min.js', 'vendor/OrbitControls.js', 'vendor/GLTFLoader.js', 'vendor/DRACOLoader.js', 'vendor/draco/draco_decoder.wasm', 'vendor/draco/draco_wasm_wrapper.js', 'vendor/draco/draco_decoder.js']) { try { await (await fetch(M3.base() + f)).arrayBuffer(); } catch (e) { } }
   if (statEl) statEl.textContent = fail ? `${ok}개 받음 · ${fail}개 실패 (인터넷 확인 후 다시 눌러 주세요)` : `완료! ${ok}개 모델을 이 기기에 받아뒀어요`;

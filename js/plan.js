@@ -38,7 +38,6 @@ GP.hostSeg = (o) => {
 GP.openingSpan = (o, hs) => { hs = hs || GP.hostSeg(o); if (!hs) return null; const w = Math.min(o.w, hs.L - .02), c = U.clamp(o.t, w / 2, hs.L - w / 2); return { w, c, s0: c - w / 2, s1: c + w / 2 }; };
 
 const S = GP.S = { view: '2d', style: (() => { try { return localStorage.getItem('gofit:style') || 'color'; } catch (e) { return 'color'; } })(), layers: { items: true, labels: true, clear: true, mats: true, dims: true, notes: true, zones: true, aisle: false, egress: false, parts: true }, cam: { x: 6, z: 4, s: 40 }, W: 1, H: 1, dpr: 1 };
-S.is2D = () => true;
 const FONT = '"Pretendard","Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",sans-serif', MONO = 'Consolas,"SFMono-Regular",ui-monospace,monospace';
 S.FONT = FONT; S.MONO = MONO;
 
@@ -313,6 +312,7 @@ function drawWalls(x, L, px, sel, hov, scr) {
     seg([-w / 2, -T / 2], [-w / 2, T / 2]); seg([w / 2, -T / 2], [w / 2, T / 2]);
     if (o.kind === 'window') { [-T / 2, 0, T / 2].forEach(v => seg([-w / 2, v], [w / 2, v], v || S._line ? line : '#3B7FC4', v ? 1.1 : 1.6)); }
     else if (o.kind === 'opening') seg([-w / 2, 0], [w / 2, 0], soft, 1, true);
+    else if (o.kind === 'auto') { const gc = S._line ? line : '#3B7FC4'; seg([-w / 2, 0], [-.03, 0], gc, 2.4); seg([.03, 0], [w / 2, 0], gc, 2.4); seg([-w * .3, flip * .09], [-w * .08, flip * .09], soft, 1); seg([w * .08, flip * .09], [w * .3, flip * .09], soft, 1); }
     else if (o.kind === 'slide') { seg([-w / 2, flip * .03], [w * .45, flip * .03], line, 2); seg([-w * .45, -flip * .03], [w / 2, -flip * .03], line, 2); }
     else {
       const dbl = o.kind === 'door2' || o.kind === 'glass2'; const leaves = dbl ? [[-w / 2, w / 2, -1], [w / 2, w / 2, 1]] : [[hinge * w / 2, w, hinge]];
