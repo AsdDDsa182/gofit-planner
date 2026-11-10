@@ -478,7 +478,7 @@ tools.key = (e) => {
   const nv = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[k], tg = nv && tools.polyTarget();
   if (nv && tg && tools.selVs.size && (ui.tool === 'vertex' || tools.selVs.size > 1)) { const st = e.shiftKey ? .5 : .05; tools.selVs.forEach(q => { const p = tg.pts[q]; if (p) tg.pts[q] = [U.r3(p[0] + nv[0] * st), U.r3(p[1] + nv[1] * st)]; }); e.preventDefault(); GP.changed(tg.kind === 'room' ? 'room' : tg.kind); return true; }
   if (ui.placing && (k === 'r' || k === 'R')) { tools.rotateGhost(e.shiftKey ? -90 : 90); return true; }
-  if (ui.placing && (k === 'q' || k === 'e')) { tools.rotateGhost(k === 'e' ? 15 : -15); return true; }
+  const kq = (k || '').toLowerCase(); if (ui.placing && (kq === 'q' || kq === 'e')) { const st = e.shiftKey ? 1 : 15; tools.rotateGhost(kq === 'e' ? st : -st); return true; }
   return false;
 };
 
@@ -495,6 +495,11 @@ function startMulti(target, i, fp, wall, fromHandle) {
   const idx = [...tools.selVs]; hd = { type: 'vs', target, i, idx, start: idx.map(k => target.pts[k].slice()), fx: fp.x, fz: fp.z, moved: false, wall, fromHandle };
 }
 const ptrAng = (it, fp) => -Math.atan2(fp.x - it.x, fp.z - it.z) / DEG;      // the item rotation that would put its front towards the pointer
+const fineKey = e => e.shiftKey || e.ctrlKey || e.metaKey;
+/* how far the pointer has turned round (cx, cz) since the press: added up move by move, at a quarter speed while Shift / Ctrl is held */
+function turnBy(h, c, fp, e) { const a = ptrAng(c, fp); let d = a - h.last; d = ((d % 360) + 540) % 360 - 180; h.last = a; h.acc += fineKey(e) ? d * .25 : d; return h.acc; }
+const rotSnap = (a, e) => e.altKey ? Math.round(a * 10) / 10 : U.snap(a, fineKey(e) ? 1 : 15);
+const rotHint = (txt, e) => ui.setHint(`${txt} · ${fineKey(e) ? '<b>미세 1°</b>' : '15° 단위'} · <kbd>Shift</kbd>/<kbd>Ctrl</kbd> 미세 · <kbd>Alt</kbd> 자유`);
 tools.handleDown = (e, el) => {
   e.preventDefault(); e.stopPropagation(); const h = el.dataset.h;
   const target = tools.polyTarget();
@@ -513,7 +518,11 @@ tools.handleDown = (e, el) => {
   if ((h === 'm' || h === 'e') && target) { const i = +el.dataset.i, pts = target.pts, n = pts.length, a = pts[i], b = pts[(i + 1) % n]; pts.splice(i + 1, 0, [U.r3((a[0] + b[0]) / 2), U.r3((a[1] + b[1]) / 2)]); selOnly(i + 1); GP.S.dataChanged(); hd = { type: 'v', target, i: i + 1, moved: true }; GP.emit('overlay'); return; }
   const it = ui.selItems()[0];
   if (h === 'rs' && it) { const [cx, cz] = [+el.dataset.cx, +el.dataset.cz]; const d = GP.dims(it); const opp = G.l2w(it.x, it.z, it.rot, -cx * d.w / 2, -cz * d.d / 2); hd = { type: 'rs', it, cx, cz, opp }; cap(el, e); return; }
-  if (h === 'rot' && it) { const fp = GP.S.floorAt(e.clientX, e.clientY); hd = { type: 'rot', it, r0: it.rot, a0: ptrAng(it, fp) }; cap(el, e); return; }
+  if (h === 'grot') {
+    const its = ui.selItems(); if (its.length < 2) return; const pts = []; its.forEach(q => pts.push(...GP.footprint(q))); const b = G.bounds(pts), fp = GP.S.floorAt(e.clientX, e.clientY), c = { x: b.cx, z: b.cz };
+    hd = { type: 'grot', cx: b.cx, cz: b.cz, R: Math.max(.2, Math.hypot(fp.x - b.cx, fp.z - b.cz)), a0: ptrAng(c, fp), last: ptrAng(c, fp), acc: 0, d: 0, start: its.map(q => ({ it: q, x: q.x, z: q.z, rot: q.rot })), moved: false }; cap(el, e); return;
+  }
+  if (h === 'rot' && it) { const fp = GP.S.floorAt(e.clientX, e.clientY); hd = { type: 'rot', it, r0: it.rot, last: ptrAng(it, fp), acc: 0 }; cap(el, e); return; }
   if (h === 'oe') { const so = ui.selObj(); if (!so || so.k !== 'opening') return; const o = so.obj, hs = GP.hostSeg(o), sp = GP.openingSpan(o, hs); hd = { type: 'oe', o, side: +el.dataset.side, fixed: +el.dataset.side > 0 ? sp.s0 : sp.s1 }; cap(el, e); return; }
 };
 tools.handleMove = (e) => {
@@ -546,7 +555,12 @@ tools.handleMove = (e) => {
     const it = hd.it; const [lx, lz] = G.w2l(hd.opp[0], hd.opp[1], it.rot, fp.x, fp.z); let w = Math.abs(lx), d = Math.abs(lz); if (!e.altKey) { w = U.snap(w, .05); d = U.snap(d, .05); } w = Math.max(.1, w); d = Math.max(.03, d);
     const c = G.l2w(hd.opp[0], hd.opp[1], it.rot, hd.cx * w / 2, hd.cz * d / 2); it.w = U.r3(w); it.d = U.r3(d); it.x = U.r3(c[0]); it.z = U.r3(c[1]); hd.moved = true; GP.checks.quick(); S.invalidate(); GP.emit('overlay'); return;
   }
-  if (hd.type === 'rot') { const it = hd.it; let a = U.normRot(hd.r0 + ptrAng(it, fp) - hd.a0); if (!e.altKey) a = U.normRot(U.snap(a, 15)); it.rot = a; hd.moved = true; GP.checks.quick(); S.invalidate(); GP.emit('overlay'); return; }
+  if (hd.type === 'grot') {
+    let d = rotSnap(turnBy(hd, { x: hd.cx, z: hd.cz }, fp, e), e); d = ((d % 360) + 540) % 360 - 180; if (d === -180) d = 180;
+    hd.d = d; for (const s of hd.start) { const [lx, lz] = G.w2l(hd.cx, hd.cz, 0, s.x, s.z), [nx, nz] = G.l2w(hd.cx, hd.cz, d, lx, lz); s.it.x = U.r3(nx); s.it.z = U.r3(nz); s.it.rot = U.normRot(s.rot + d); }
+    hd.moved = true; GP.checks.quick(); S.invalidate(); GP.emit('overlay'); rotHint(`${hd.start.length}개 함께 회전 <b>${Math.round(d * 10) / 10}°</b>`, e); return;
+  }
+  if (hd.type === 'rot') { const it = hd.it, a = U.normRot(rotSnap(hd.r0 + turnBy(hd, it, fp, e), e)); it.rot = a; hd.moved = true; GP.checks.quick(); S.invalidate(); GP.emit('overlay'); rotHint(`방향 <b>${Math.round(a * 10) / 10}°</b>`, e); return; }
   if (hd.type === 'oe') {
     const o = hd.o, hs = GP.hostSeg(o); if (!hs) return; const c = G.closest(fp.x, fp.z, hs.a, hs.b); let t = e.altKey ? c.t : U.snap(c.t, .05);
     t = hd.side > 0 ? U.clamp(t, hd.fixed + .3, hs.L) : U.clamp(t, 0, hd.fixed - .3);
@@ -554,8 +568,11 @@ tools.handleMove = (e) => {
     GP.ui.setHint(`폭 <b>${U.cm(o.w)}cm</b>`); return;
   }
 };
+/* while several items are being turned: the pivot, the handle's distance from it and its current angle (the overlay draws the handle there) */
+tools.groupRotState = () => hd && hd.type === 'grot' ? { cx: hd.cx, cz: hd.cz, R: hd.R, ang: hd.a0 + hd.d } : null;
 tools.handleUp = () => {
   if (!hd) return; const h = hd; hd = null;
+  if (h.type === 'grot' || h.type === 'rot') { ui.setHint(); if (h.moved) GP.changed('items'); ui.renderInspector(); GP.emit('overlay'); return; }
   if (h.type === 'e' || h.type === 'c') {
     canvas().style.cursor = ''; ui.setHint();
     if (h.moved) { const t = h.target; if (t.kind === 'mat') { if (isConvex(t.obj.pts)) t.obj.pts = clipToRoom(t.obj.pts); tools.snapMat(t.obj); } GP.changed(t.kind === 'mat' ? 'mats' : 'zones'); }
@@ -662,7 +679,7 @@ act.key = (e, mod, k) => {
   if (mod && k === 'a') { e.preventDefault(); ui.select(GP.L().items.map(it => ({ k: 'item', id: it.uid }))); return; }
   if (mod) return;
   if (k === 'r') { act.rotateSel(e.shiftKey ? -90 : 90); return; }
-  if (k === 'q' || k === 'e') { act.rotateSel(k === 'e' ? 15 : -15); return; }
+  if (!mod && (k === 'q' || k === 'e')) { const st = e.shiftKey ? 1 : 15; act.rotateSel(k === 'e' ? st : -st); return; }
   if (k === 'w') { act.snapSelToWall(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (tools.polyTarget() && tools.selV >= 0 && ui.tool === 'vertex') tools.deleteVertex(tools.selV); else act.delSel(); return; }
   const st = e.shiftKey ? .5 : .05; const mv = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] }[e.key];

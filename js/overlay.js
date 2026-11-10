@@ -74,7 +74,14 @@ OV.syncHandles = () => {
   if (its.length === 1 && u.sel.length === 1 && u.tool === 'select') {
     const it = its[0], d = GP.dims(it);
     [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([cx, cz]) => { const p = G.l2w(it.x, it.z, it.rot, cx * d.w / 2, cz * d.d / 2); hspecs.push({ cls: 'ov hd sq', html: '', pos: p, h: 'rs', cx, cz, title: '끌어서 크기 조절' }); });
-    const rp = G.l2w(it.x, it.z, it.rot, 0, d.d / 2 + Math.max(.3, S.mpp() * 26)); hspecs.push({ cls: 'ov hd rot', html: '↻', pos: rp, h: 'rot', title: '끌어서 회전 (15° 단위, Alt 자유)' });
+    const rp = G.l2w(it.x, it.z, it.rot, 0, d.d / 2 + Math.max(.3, S.mpp() * 26)); hspecs.push({ cls: 'ov hd rot', html: '↻', pos: rp, h: 'rot', title: '끌어서 회전 (15° 단위) · Shift/Ctrl+끌기: 1° 미세 · Alt: 자유 · Q/E 15°, Shift+Q/E 1°' });
+  }
+  // several items: one handle above the group turns them together (it follows the pointer round the pivot while dragging)
+  if (its.length > 1 && u.sel.length === its.length && u.tool === 'select') {
+    const g = GP.tools.groupRotState(); let p;
+    if (g) p = [g.cx - g.R * Math.sin(g.ang * U.DEG), g.cz + g.R * Math.cos(g.ang * U.DEG)];
+    else { const pts = []; its.forEach(it => pts.push(...GP.footprint(it))); const b = G.bounds(pts); p = [b.cx, b.minZ - Math.max(.3, S.mpp() * 26)]; }
+    hspecs.push({ cls: 'ov hd rot', html: '↻', pos: p, h: 'grot', title: '끌어서 함께 회전 (15° 단위) · Shift/Ctrl+끌기: 1° 미세 · Alt: 자유 · R: 90°' });
   }
   // opening: drag either end to change the width
   const so = u.selObj();
@@ -143,6 +150,8 @@ function drawSvg() {
     else if (d.tool === 'measure') { html += `<polyline points="${P(d.a[0], d.a[1])} ${P(d.b[0], d.b[1])}" stroke="#1F2429" stroke-width="2" fill="none"/>`; html += lbl((d.a[0] + d.b[0]) / 2, (d.a[1] + d.b[1]) / 2, G.len(d.a, d.b).toFixed(2) + ' m'); }
     else if (d.pts) { const pts = d.pts.concat(d.cur ? [d.cur] : []); html += `<polyline points="${pts.map(p => P(p[0], p[1])).join(' ')}" stroke="${d.tool === 'part' ? '#4a525b' : '#2450E0'}" stroke-width="${d.tool === 'part' ? 6 : 2}" fill="none" stroke-linejoin="round" opacity=".8"/>`; pts.forEach(p => { const q = S.toScreen(p[0], 0, p[1]); html += `<circle cx="${q[0]}" cy="${q[1]}" r="4" fill="#fff" stroke="#2450E0" stroke-width="2"/>`; }); if (d.cur && d.pts.length) { const l = d.pts[d.pts.length - 1]; html += lbl((l[0] + d.cur[0]) / 2, (l[1] + d.cur[1]) / 2, (d.num ? d.num : G.len(l, d.cur).toFixed(2)) + ' m'); } }
   }
+  const gr = t.groupRotState();
+  if (gr) { const [px, py] = S.toScreen(gr.cx, 0, gr.cz), [hx, hy] = S.toScreen(gr.cx - gr.R * Math.sin(gr.ang * U.DEG), 0, gr.cz + gr.R * Math.cos(gr.ang * U.DEG)); html += `<line x1="${px}" y1="${py}" x2="${hx}" y2="${hy}" stroke="#E0622B" stroke-width="1.5" stroke-dasharray="4 4"/><circle cx="${px}" cy="${py}" r="4" fill="#E0622B"/>`; }
   if (hv && hv.snap && !d) { const [sx, sy] = S.toScreen(hv.snap[0], 0, hv.snap[1]); html += `<circle cx="${sx}" cy="${sy}" r="5" fill="none" stroke="#2450E0" stroke-width="2"/>`; }
   if (t.preview && GP.ui.tool === 'opening') { const pv = t.preview; const hs = GP.hostSeg({ host: pv.host, seg: pv.seg }); if (hs) { const w = GP.tools.openingWidth(GP.ui.openingKind); const c = U.clamp(pv.t, w / 2, hs.L - w / 2); const a = [hs.a[0] + hs.dx * (c - w / 2) + hs.nx * hs.mid, hs.a[1] + hs.dz * (c - w / 2) + hs.nz * hs.mid], b = [hs.a[0] + hs.dx * (c + w / 2) + hs.nx * hs.mid, hs.a[1] + hs.dz * (c + w / 2) + hs.nz * hs.mid]; html += `<polyline points="${P(a[0], a[1])} ${P(b[0], b[1])}" stroke="#E0622B" stroke-width="9" opacity=".75" fill="none"/>`; } }
   if (hv && hv.a && GP.ui.tool === 'fillwall') { html += `<polyline points="${P(hv.a[0], hv.a[1])} ${P(hv.b[0], hv.b[1])}" stroke="#13906F" stroke-width="8" opacity=".7" fill="none"/>` + lbl((hv.a[0] + hv.b[0]) / 2 + hv.nx * .5, (hv.a[1] + hv.b[1]) / 2 + hv.nz * .5, hv.L.toFixed(2) + ' m'); }
