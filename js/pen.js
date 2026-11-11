@@ -108,14 +108,105 @@ CV.bend = (L, i, a, b, nFix) => {
   const C = L.room.curves || {}, out = {}; for (const k of Object.keys(C)) out[+k > i ? +k + d : +k] = C[k];
   out[i] = { n, a: r3v(a), b: r3v(b) }; L.room.curves = out; return CV.list(L).find(c => c.s === i);
 };
-/* a curved wall as one glass wall (a shop front): v = a GP.GLASS id, or '' to make it a wall again */
-CV.setGlass = (L, s, v) => { const c = (L.room.curves || {})[s]; if (!c) return false; if (v) c.glass = GP.GLASS[v] ? v : 'clear'; else delete c.glass; return true; };
-document.addEventListener('click', e => {
-  const b = e.target.closest('[data-cglass]'); if (!b || GP.viewOnly) return; const s = +b.dataset.s, v = b.dataset.cglass;
-  if (CV.setGlass(GP.L(), s, v)) { GP.changed('room'); GP.toast(v ? '곡선 벽을 통유리로 바꿨어요' : '통유리를 벽으로 되돌렸어요'); ui().renderInspector(); GP.closePop(); }
-});
-const glassRow = (c) => `<div class="mount" style="grid-template-columns:repeat(${Object.keys(GP.GLASS).length + 1},1fr)"><button class="${c.ref.glass ? '' : 'on'}" data-cglass="" data-s="${c.s}">벽</button>${Object.entries(GP.GLASS).map(([k, g]) => `<button class="${c.ref.glass === k ? 'on' : ''}" data-cglass="${k}" data-s="${c.s}" title="통유리 · ${g.n}">유리 ${g.n}</button>`).join('')}</div>`;
+/* glass on a curved wall (a shop front). c.glass: the kind of glass; c.gr: [[t0, t1], …] the stretches that are glass, as parts
+   of the curve's length (none: the whole curve); c.gw: the width of a pane in m (0: one pane, no posts between) */
+CV.glassR = c => { const r = c.ref || c; if (!r || !r.glass) return []; return Array.isArray(r.gr) && r.gr.length ? r.gr : [[0, 1]]; };
+CV.glassAll = c => { const g = CV.glassR(c); return g.length === 1 && g[0][0] < .003 && g[0][1] > .997; };
+CV.setRanges = (ref, rs, kind) => {
+  const a = rs.map(([x, y]) => [U.clamp(Math.min(x, y), 0, 1), U.clamp(Math.max(x, y), 0, 1)]).filter(([x, y]) => y - x > .002).sort((p, q) => p[0] - q[0]), out = [];
+  for (const r of a) { const l = out[out.length - 1]; if (l && r[0] <= l[1] + .001) l[1] = Math.max(l[1], r[1]); else out.push(r.slice()); }
+  if (!out.length) { delete ref.glass; delete ref.gr; return; }
+  ref.glass = ref.glass || kind || 'clear';
+  if (out.length === 1 && out[0][0] < .003 && out[0][1] > .997) delete ref.gr; else ref.gr = out.map(r => [+r[0].toFixed(4), +r[1].toFixed(4)]);
+};
+CV.setGlass = (L, s, v) => { const c = (L.room.curves || {})[s]; if (!c) return false; if (v) c.glass = GP.GLASS[v] ? v : 'clear'; else { delete c.glass; delete c.gr; } return true; };
+/* the curve's pieces as one line: its points, metres along each, its length; a point some metres along; the metres along nearest q */
+CV.poly = (L, c) => { const P = L.room.pts, N = P.length, Q = [], us = [0]; for (let k = 0; k <= c.n; k++) Q.push(P[(c.s + k) % N]); for (let k = 1; k < Q.length; k++) us.push(us[k - 1] + G.len(Q[k - 1], Q[k])); return { Q, us, L: us[us.length - 1] || 1, c, N }; };
+CV.polyNear = (pl, q) => { let best = 0, bd = Infinity; for (let j = 0; j < pl.Q.length - 1; j++) { const r = G.closest(q[0], q[1], pl.Q[j], pl.Q[j + 1]); if (r.d < bd) { bd = r.d; best = pl.us[j] + r.t; } } return best; };
+/* the middle of the wall from u0 to u1 m along (for lines and handles), and its direction at u */
+CV.midLine = (L, pl, u0, u1) => { const P = L.room.pts, out = []; for (let j = 0; j < pl.Q.length - 1; j++) { const a = Math.max(u0, pl.us[j]), b = Math.min(u1, pl.us[j + 1]); if (b - a < 1e-5 && !(u0 === u1 && a <= b + 1e-9)) continue; const e = G.edge(P, (pl.c.s + j) % pl.N), d = GP.WALL_T / 2; for (const u of [a, b]) out.push([pl.Q[j][0] + e.dx * (u - pl.us[j]) - e.nx * d, pl.Q[j][1] + e.dz * (u - pl.us[j]) - e.nz * d]); if (u0 === u1) break; } return out; };
+CV.edgeAt = (L, pl, u) => { let j = 0; while (j < pl.Q.length - 2 && pl.us[j + 1] < u) j++; return G.edge(L.room.pts, (pl.c.s + j) % pl.N); };
+/* the glass on wall piece w of a curve, in metres along that piece (null: no glass on that curve) */
+CV.segGlass = (L, w) => { const c = CV.of(L, w); if (!c || !c.ref.glass) return null; const pl = CV.poly(L, c), k = (w - c.s + pl.N) % pl.N, a = pl.us[k], b = pl.us[k + 1], out = []; for (const [t0, t1] of CV.glassR(c)) { const u0 = Math.max(a, t0 * pl.L), u1 = Math.min(b, t1 * pl.L); if (u1 - u0 > 1e-4) out.push([u0 - a, u1 - a]); } return out; };
+/* the door tool on a curve: a pane 2.4 m wide where it was pressed (fitted between the glass already there), or, on glass, that
+   stretch back to wall */
+CV.GLASS_NEW = 2.4;
+CV.glassAt = (L, h) => {
+  const c = CV.of(L, h.seg); if (!c) return null; const pl = CV.poly(L, c), u = pl.us[(h.seg - c.s + pl.N) % pl.N] + U.clamp(h.t, 0, G.len(pl.Q[(h.seg - c.s + pl.N) % pl.N], pl.Q[(h.seg - c.s + pl.N) % pl.N + 1])), R = CV.glassR(c).map(r => [r[0] * pl.L, r[1] * pl.L]);
+  const on = R.findIndex(r => u >= r[0] - .02 && u <= r[1] + .02); if (on >= 0) return { c, pl, del: on, u0: R[on][0], u1: R[on][1] };
+  let lo = 0, hi = pl.L; for (const r of R) { if (r[1] <= u) lo = Math.max(lo, r[1]); if (r[0] >= u) hi = Math.min(hi, r[0]); }
+  const w = Math.min(CV.GLASS_NEW, hi - lo); if (w < .3) return null; let u0 = U.clamp(u - w / 2, lo, hi - w); if (u0 < lo + .3) u0 = lo; if (u0 + w > hi - .3) u0 = hi - w;
+  return { c, pl, u0, u1: u0 + w };
+};
+CV.glassClick = (L, h) => {
+  const g = CV.glassAt(L, h); if (!g) { GP.toast('여기는 유리를 넣을 자리가 없어요', { bad: true }); return; } const ref = g.c.ref, Lb = CV.len(L, g.c);
+  if (g.del != null) { const R = CV.glassR(g.c).filter((_, k) => k !== g.del); CV.setRanges(ref, R); GP.toast('그 유리를 벽으로 되돌렸어요', { ms: 3000 }); }
+  else { CV.setRanges(ref, [...CV.glassR(g.c), [g.u0 / g.pl.L, g.u1 / g.pl.L]], 'clear'); GP.toast(`곡선 벽 ${((g.u1 - g.u0) / g.pl.L * Lb).toFixed(2)} m를 통유리로 바꿨어요 · 도면의 주황 막대를 끌어 범위를 바꿔요 · 유리를 다시 누르면 벽으로`, { ms: 5500 }); }
+  GP.changed('room'); ui().setTool('select'); ui().select([{ k: 'wall', id: h.seg }]);
+};
+/* the menu: wall / kinds of glass, the whole curve or parts (each from … to … m), the pane width */
+const gwRow = (id, v, attrs) => `<div class="rng"><span>유리 칸</span><input type="range" id="${id}" min="0" max="5" step="0.1" value="${v}" ${attrs || ''}><b id="${id}V">${GP.gwTxt(v)}</b></div>`;
+CV.gwRow = gwRow;
+const glassRow = (c) => {
+  const L = GP.L(), all = CV.glassAll(c), Lb = CV.len(L, c), gw = c.ref.gw ?? GP.GLASS_GW;
+  let h = `<div class="mount" style="grid-template-columns:repeat(${Object.keys(GP.GLASS).length + 1},1fr)"><button class="${c.ref.glass ? '' : 'on'}" data-cglass="" data-s="${c.s}">벽</button>${Object.entries(GP.GLASS).map(([k, g]) => `<button class="${c.ref.glass === k ? 'on' : ''}" data-cglass="${k}" data-s="${c.s}" title="통유리 · ${g.n}">${g.n}</button>`).join('')}</div>`;
+  if (!c.ref.glass) return h + `<p class="note" style="margin:4px 0 0">유리를 고르면 곡선 전체가 통유리가 돼요. 일부만 하려면 문·창문 도구로 곡선의 그 자리를 누르세요.</p>`;
+  h += `<div class="rng"><span>범위</span><div class="seg sm"><button data-cgall="1" data-s="${c.s}" class="${all ? 'on' : ''}">곡선 전체</button><button data-cgpart="1" data-s="${c.s}" class="${all ? '' : 'on'}">일부만</button></div></div>`;
+  if (!all) h += `<div class="cg-list">${CV.glassR(c).map((r, k) => `<div class="cg-r"><b>유리 ${k + 1}</b><input type="number" step="0.01" min="0" data-cgr="${k}" data-e="0" data-s="${c.s}" value="${(r[0] * Lb).toFixed(2)}"><i>~</i><input type="number" step="0.01" min="0" data-cgr="${k}" data-e="1" data-s="${c.s}" value="${(r[1] * Lb).toFixed(2)}"><em>m</em><button class="icon-btn sm" data-cgdel="${k}" data-s="${c.s}" title="이 유리를 벽으로">✕</button></div>`).join('')}
+    <button class="btn sm" data-cgadd="1" data-s="${c.s}">+ 유리 구간 추가</button><p class="note" style="margin:2px 0 0">점 ${CV.num(L, c.s)}에서부터 잰 거리예요. 도면에서 유리 양 끝의 주황 막대를 끌거나 가운데 이름표를 끌어 옮길 수 있어요.</p></div>`;
+  return h + gwRow('cgW', gw, `data-s="${c.s}"`);
+};
 CV.glassRow = glassRow;
+const glassDone = (msg) => { GP.changed('room'); if (msg) GP.toast(msg, { ms: 2500 }); ui().renderInspector(); const pop = $('#pop'); if (pop && !pop.hidden && pop.querySelector('[data-cgall],[data-cglass]')) GP.closePop(); };
+document.addEventListener('click', e => {
+  if (GP.viewOnly) return; const b = e.target.closest('[data-cglass],[data-cgall],[data-cgpart],[data-cgadd],[data-cgdel]'); if (!b) return;
+  const L = GP.L(), c = CV.list(L).find(q => q.s === +b.dataset.s); if (!c) return; const ref = c.ref;
+  if (b.dataset.cglass != null) { const v = b.dataset.cglass; if (CV.setGlass(L, c.s, v)) glassDone(v ? '곡선 벽에 통유리를 넣었어요' : '통유리를 벽으로 되돌렸어요'); return; }
+  if (b.dataset.cgall) { delete ref.gr; glassDone('곡선 전체를 통유리로'); return; }
+  if (b.dataset.cgpart) { if (CV.glassAll(c)) ref.gr = [[.25, .75]]; glassDone('가운데 절반만 유리로 바꿨어요 · 양 끝 막대를 끌어 맞춰요'); return; }
+  if (b.dataset.cgdel != null) { CV.setRanges(ref, CV.glassR(c).filter((_, k) => k !== +b.dataset.cgdel)); glassDone('그 유리를 벽으로 되돌렸어요'); return; }
+  if (b.dataset.cgadd) {      // in the longest stretch of wall
+    const R = CV.glassR(c), gaps = []; let u = 0; for (const r of R) { gaps.push([u, r[0]]); u = r[1]; } gaps.push([u, 1]); const g = gaps.sort((p, q) => (q[1] - q[0]) - (p[1] - p[0]))[0], Lb = CV.len(L, c), w = Math.min(CV.GLASS_NEW / Lb, (g[1] - g[0]) * .8);
+    if (!(w * Lb >= .3)) { GP.toast('유리를 더 넣을 벽이 없어요', { bad: true }); return; } const m = (g[0] + g[1]) / 2; CV.setRanges(ref, [...R, [m - w / 2, m + w / 2]]); glassDone('유리 구간을 하나 더 넣었어요');
+  }
+});
+document.addEventListener('change', e => {
+  const t = e.target; if (GP.viewOnly) return;
+  if (t.dataset && t.dataset.cgr != null) { const L = GP.L(), c = CV.list(L).find(q => q.s === +t.dataset.s); if (!c) return; const Lb = CV.len(L, c), R = CV.glassR(c).map(r => r.slice()), k = +t.dataset.cgr, v = parseFloat(t.value); if (!R[k] || !isFinite(v)) return; R[k][+t.dataset.e] = U.clamp(v / Lb, 0, 1); if (R[k][1] - R[k][0] < .3 / Lb) { GP.toast('유리는 30cm 이상으로 넣어 주세요', { bad: true }); ui().renderInspector(); return; } CV.setRanges(c.ref, R); glassDone(); return; }
+  if (t.id === 'cgW') { const L = GP.L(), c = CV.list(L).find(q => q.s === +t.dataset.s); if (!c) return; c.ref.gw = GP.gwVal(+t.value); GP.changed('room'); }
+});
+document.addEventListener('input', e => { const t = e.target; if (t.id === 'cgW' || t.id === 'pGw') { const l = $('#' + t.id + 'V'); if (l) l.textContent = GP.gwTxt(GP.gwVal(+t.value)); } });
+/* the plan: a selected curve with glass shows an orange bar at each end of each stretch (drag: resize) and a label in its
+   middle (drag: move the stretch). Ctrl 1 cm · Alt free · near the curve's ends they snap to them. */
+CV.glassHandles = () => {
+  const u = ui(), L = GP.L(); if (GP.viewOnly || !L || (GP.V3 && GP.V3.on) || u.tool !== 'select') return [];
+  const so = u.selObj(), c = so && so.k === 'wall' ? CV.of(L, so.id) : null; if (!c || !c.ref.glass) return [];
+  const pl = CV.poly(L, c), Lb = CV.len(L, c), out = [];
+  CV.glassR(c).forEach((r, k) => {
+    for (const sd of [0, 1]) { const uu = r[sd] * pl.L, p = CV.midLine(L, pl, uu, uu)[0], e = CV.edgeAt(L, pl, uu); let a = Math.atan2(e.dz, e.dx) / U.DEG; if (a > 90) a -= 180; if (a <= -90) a += 180; out.push({ cls: 'ov hd oe cge', html: '', pos: p, h: 'cge', i: c.s, side: k + ':' + sd, rot: a, title: '끌어서 유리 범위 바꾸기 · Ctrl 1cm · Alt 자유' }); }
+    const um = (r[0] + r[1]) / 2 * pl.L, pm = CV.midLine(L, pl, um, um)[0], e = CV.edgeAt(L, pl, um), io = GP.WALL_T / 2 + GP.S.mpp() * 18;
+    out.push({ cls: 'ov hd cgm', html: `유리 ${((r[1] - r[0]) * Lb).toFixed(2)} m`, pos: [pm[0] + e.nx * io, pm[1] + e.nz * io], h: 'cgm', i: c.s, side: k + ':m', title: '끌어서 유리를 통째로 옮기기' });
+  });
+  return out;
+};
+CV.glassDown = (e, el) => {
+  e.preventDefault(); e.stopPropagation(); const L = GP.L(), c = CV.list(L).find(q => q.s === +el.dataset.i); if (!c || !c.ref.glass) return;
+  const [ks, sd] = el.dataset.side.split(':'), ki = +ks, pl = CV.poly(L, c), Lb = CV.len(L, c), R0 = CV.glassR(c).map(r => r.slice()), r0 = R0[ki]; if (!r0) return;
+  try { el.setPointerCapture(e.pointerId); } catch (_) { }
+  const tOf = ev => { const fp = GP.S.floorAt(ev.clientX, ev.clientY); return CV.polyNear(pl, [fp.x, fp.z]) / pl.L; }, t0 = tOf(e), lo = ki > 0 ? R0[ki - 1][1] : 0, hi = ki < R0.length - 1 ? R0[ki + 1][0] : 1, minT = .3 / Lb;
+  const snapT = (t, ev) => { const g = GP.tools.gridOf(ev), tol = GP.S.mpp() * 10 / Lb; if (t < tol) return 0; if (t > 1 - tol) return 1; return g.free ? t : Math.round(t * Lb / g.g) * g.g / Lb; };
+  let moved = false;
+  const mv = ev => {
+    const t = tOf(ev), r = r0.slice();
+    if (sd === 'm') { let d = U.clamp(t - t0, lo - r0[0], hi - r0[1]); d = U.clamp(snapT(r0[0] + d, ev) - r0[0], lo - r0[0], hi - r0[1]); r[0] = r0[0] + d; r[1] = r0[1] + d; }
+    else if (sd === '0') r[0] = U.clamp(snapT(t, ev), lo, r0[1] - minT); else r[1] = U.clamp(snapT(t, ev), r0[0] + minT, hi);
+    const R = R0.map(q => q.slice()); R[ki] = r; c.ref.gr = R; moved = true;
+    ui().setHint(`유리 <b>${((r[1] - r[0]) * Lb).toFixed(2)} m</b> · 점 ${CV.num(L, c.s)}에서 ${(r[0] * Lb).toFixed(2)} ~ ${(r[1] * Lb).toFixed(2)} m · ${GP.tools.gridOf(ev).label}`);
+    GP.S.dataChanged(); GP.emit('overlay');
+  };
+  const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); ui().setHint(); if (moved) { CV.setRanges(c.ref, c.ref.gr || [[0, 1]]); GP.changed('room'); ui().renderInspector(); } GP.emit('overlay'); };
+  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
+};
 /* corner i rounded with radius r (a second point is added for where the arc meets the next wall) */
 CV.round = (L, i, r) => {
   const P = L.room.pts, N = P.length; if (CV.inner(L).has(i) || CV.ends(L).has(i)) return null;
@@ -136,10 +227,16 @@ CV.unround = (L, s) => {
 CV.splitAt = (L, c, q) => {
   const P = L.room.pts, N = P.length; if (c.ref.rc || c.n < 4) return false;
   let j = 2, bd = Infinity; for (let k = 2; k <= c.n - 2; k++) { const p = P[(c.s + k) % N], d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d < bd) { bd = d; j = k; } }
-  const k = CV.ctrl(L, c), t = CV.nearT(k, P[(c.s + j) % N]), lp = (u, v) => [u[0] + (v[0] - u[0]) * t, u[1] + (v[1] - u[1]) * t];
+  const k = CV.ctrl(L, c), t = CV.nearT(k, P[(c.s + j) % N]), lp = (u, v) => [u[0] + (v[0] - u[0]) * t, u[1] + (v[1] - u[1]) * t], gk = c.ref.glass, gR = CV.glassR(c), gw = c.ref.gw;
   const Q0 = lp(k.p0, k.c1), Q1 = lp(k.c1, k.c2), Q2 = lp(k.c2, k.p3), R0 = lp(Q0, Q1), R1 = lp(Q1, Q2), M = lp(R0, R1), m = (c.s + j) % N;
   P[m] = r3v(M); const C = L.room.curves; C[c.s] = { n: j, a: r3v(sub(Q0, k.p0)), b: r3v(sub(R0, M)) }; C[m] = { n: c.n - j, a: r3v(sub(R1, M)), b: r3v(sub(Q2, k.p3)) };
-  CV.resample(L); return true;
+  CV.resample(L);
+  if (gk && C[c.s] && C[m]) {      // the glass stays where it was: each half gets its share
+    const l1 = CV.len(L, CV.list(L).find(q => q.s === c.s)), l2 = CV.len(L, CV.list(L).find(q => q.s === m)), f = l1 / ((l1 + l2) || 1);
+    C[c.s].glass = C[m].glass = gk; CV.setRanges(C[c.s], gR.map(r => [r[0] / f, Math.min(r[1], f) / f]).filter(r => r[1] > r[0])); CV.setRanges(C[m], gR.map(r => [(Math.max(r[0], f) - f) / (1 - f), (r[1] - f) / (1 - f)]).filter(r => r[1] > r[0]));
+    if (gw != null) { if (C[c.s].glass) C[c.s].gw = gw; if (C[m].glass) C[m].gw = gw; }
+  }
+  return true;
 };
 /* the curve s back to one straight wall (its inner points go; doors on its pieces move onto the wall) */
 CV.flatten = (L, s) => {

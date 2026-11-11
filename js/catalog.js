@@ -78,6 +78,25 @@ GP.TEX = {
     { id: 'ceil_glow', name: '바리솔 (빛 천장)', size: 2, rough: .9 },
   ],
 };
+/* glass walls: the width of one pane (m) unless one is chosen; 0 = one pane, no posts between */
+GP.GLASS_GW = 2;
+GP.gwVal = v => !(v >= .3) ? 0 : Math.min(8, Math.max(.5, Math.round(v * 10) / 10));
+GP.gwTxt = v => v > 0 ? v.toFixed(1) + ' m마다' : '나누지 않음';
+/* ceiling lights (dev/blender/hq_lights.py → models/light/<id>.glb, picture assets/light/<id>.png): a design, the light's colour and
+   the body's colour (the files name the parts g_lhouse / g_lemit), set out on the ceiling every `gap` m; line = its length when it
+   runs in rows */
+GP.LIGHTS = [
+  { id: 'panel_rect', name: '평판 1200×300', gap: 2.6, len: 1.2 }, { id: 'panel_sq', name: '평판 600각', gap: 2.4, w: .6 },
+  { id: 'linear', name: '라인 (직부)', gap: 2.4, line: 1.2 }, { id: 'linear_pend', name: '라인 펜던트', gap: 2.6, line: 1.8 },
+  { id: 'down', name: '매립 다운라이트', gap: 1.6 }, { id: 'surface', name: '원형 직부등', gap: 2.4 },
+  { id: 'track', name: '트랙 스포트', gap: 3, line: 1.5 }, { id: 'dome', name: '산업용 갓 펜던트', gap: 2.6 },
+  { id: 'globe', name: '구형 펜던트', gap: 2.2 }, { id: 'ring', name: '링 펜던트', gap: 3.4, w: .95 },
+  { id: 'highbay', name: '하이베이 (공장형)', gap: 4 }, { id: 'hexgrid', name: '육각 그리드', gap: 3.8, w: 2.1 },
+  { id: 'none', name: '조명 없음' },
+];
+GP.LIGHT_TONE = { day: { n: '주광색', k: '6500K', c: '#eef4ff' }, neutral: { n: '주백색', k: '4000K', c: '#fff5e4' }, warm: { n: '전구색', k: '3000K', c: '#ffd29a' } };
+GP.LIGHT_BODY = { white: { n: '화이트', c: '#eeeeec', m: .1, r: .45 }, black: { n: '블랙', c: '#1f2124', m: .3, r: .5 }, silver: { n: '실버', c: '#c4c8cc', m: .85, r: .3 }, gold: { n: '골드', c: '#c9a45c', m: .85, r: .3 } };
+GP.lightOf = (st) => { const l = (st && st.light) || {}, d = GP.LIGHTS.find(q => q.id === l.type) || GP.LIGHTS[0]; return { d, tone: GP.LIGHT_TONE[l.tone] ? l.tone : 'neutral', body: GP.LIGHT_BODY[l.body] ? l.body : 'white', gap: l.gap > .6 ? l.gap : d.gap }; };
 /* finish adjustments per surface (settings.texAdj[floor|wall|ceil]): brightness, contrast, saturation, warmth, each −60..60 */
 GP.TEX_ADJ = [['b', '밝기'], ['c', '대비'], ['s', '채도'], ['w', '색감']];
 /* colours for doors, windows, partitions (frame / leaf), glass and handles; a hex string works too */

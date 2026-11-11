@@ -434,7 +434,7 @@ function inspPart(p) {
   insp.innerHTML = head(GP.PARTS[p.kind || 'wall'], `총 길이 ${len.toFixed(2)} m`, '#4a525b')
     + `<div class="sec"><span class="lbl">종류</span><div class="mount">${Object.entries(GP.PARTS).map(([k, v]) => `<button class="${(p.kind || 'wall') === k ? 'on' : ''}" data-act="pkind" data-v="${k}">${v.replace('허리 높이 ', '')}</button>`).join('')}</div></div>`
     + `<label class="fld"><span>두께</span>${num('pT', U.cm(p.thick || .1), 1, 'cm', 'min="3"')}</label>`
-    + `<div class="sec"><span class="lbl">색상 <small class="note">(3D · 제안서)</small></span>${p.kind === 'glass' ? finRow('프레임', 'frameC', p.frameC || 'silver', FRAME_K, GP.FINISH, true) + finRow('유리', 'glass', p.glass || 'clear', Object.keys(GP.GLASS), GP.GLASS) : finRow('벽', 'color', p.color || '', ['white', 'ivory', 'grey', 'charcoal', 'black', 'oak'], GP.FINISH, true) + (p.kind === 'half' ? finRow('윗면', 'frameC', p.frameC || 'oak', ['white', 'grey', 'black', 'ash', 'oak', 'teak', 'walnut', 'silver'], GP.FINISH, true) : '')}</div>`
+    + `<div class="sec"><span class="lbl">색상 <small class="note">(3D · 제안서)</small></span>${p.kind === 'glass' ? finRow('프레임', 'frameC', p.frameC || 'silver', FRAME_K, GP.FINISH, true) + finRow('유리', 'glass', p.glass || 'clear', Object.keys(GP.GLASS), GP.GLASS) + GP.CV.gwRow('pGw', p.gw ?? GP.GLASS_GW) : finRow('벽', 'color', p.color || '', ['white', 'ivory', 'grey', 'charcoal', 'black', 'oak'], GP.FINISH, true) + (p.kind === 'half' ? finRow('윗면', 'frameC', p.frameC || 'oak', ['white', 'grey', 'black', 'ash', 'oak', 'teak', 'walnut', 'silver'], GP.FINISH, true) : '')}</div>`
     + `<p class="note">꼭짓점을 끌어 모양을 바꿔요. 문·창문 도구로 가벽에도 문을 낼 수 있어요.</p><div class="acts"><button class="btn sm danger" data-act="odel">가벽 삭제</button></div>`;
 }
 /* a row of colour chips (+ any colour) for doors, windows and partitions */
@@ -483,9 +483,10 @@ function inspDim(d) { insp.innerHTML = head('치수', `${G.len(d.a, d.b).toFixed
 function inspWall(i) {
   const L = GP.L(), e = G.edge(L.room.pts, i), mk = (L.wallMarks || {})[i], cv = GP.CV && GP.CV.of(L, i);
   if (cv && !cv.ref.rc) {      // a piece of a curved wall: the curve as a whole
-    insp.innerHTML = head(cv.ref.glass ? '통유리 곡선 벽' : '곡선 벽', `길이 ${GP.CV.len(L, cv).toFixed(2)} m`, cv.ref.glass ? '#3B7FC4' : '#2B3036')
-      + `<div class="sec"><span class="lbl">벽 / 통유리</span>${GP.CV.glassRow(cv)}<p class="note" style="margin:0">곡선 벽에는 문 · 창문 대신 통유리를 쓸 수 있어요(곡선 전체). 모양은 벽 모양 도구에서 바꿔요.</p></div>`
-      + (cv.ref.glass ? '' : `<div class="sec"><span class="lbl">벽 재질 <small class="note">(3D에 보여요)</small></span>${ui.texGrid('wall', (L.wallTex || {})[i] || '', { inherit: '공간 기본', wall: i })}</div>`);
+    const all = cv.ref.glass && GP.CV.glassAll(cv);
+    insp.innerHTML = head(all ? '통유리 곡선 벽' : cv.ref.glass ? '곡선 벽 · 유리 일부' : '곡선 벽', `길이 ${GP.CV.len(L, cv).toFixed(2)} m`, cv.ref.glass ? '#3B7FC4' : '#2B3036')
+      + `<div class="sec"><span class="lbl">벽 / 통유리</span>${GP.CV.glassRow(cv)}<p class="note" style="margin:4px 0 0">곡선 벽에는 문 · 창문 대신 통유리를 넣어요. 모양은 벽 모양 도구에서 바꿔요.</p></div>`
+      + (all ? '' : `<div class="sec"><span class="lbl">벽 재질 <small class="note">(3D에 보여요)</small></span>${ui.texGrid('wall', (L.wallTex || {})[i] || '', { inherit: '공간 기본', wall: i })}</div>`);
     GP.fillIcons(insp); return;
   }
   insp.innerHTML = head(`벽 ${i + 1}`, `길이 ${e.L.toFixed(2)} m`, '#2B3036')

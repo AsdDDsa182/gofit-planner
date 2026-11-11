@@ -18,7 +18,7 @@ OV.sync = () => {
   if (u.tool === 'vertex' && !GP.viewOnly) {
     const P = L.room.pts, CV = GP.CV, inner = CV ? CV.inner(L) : new Set(), ends = CV ? CV.ends(L) : new Set();
     if (CV) for (const c of CV.list(L)) { const k = CV.ctrl(L, c), m = CV.at(k.p0, k.c1, k.c2, k.p3, .5), e = G.edge(P, (c.s + Math.floor(c.n / 2)) % P.length), off = GP.WALL_T + .38; if (c.ref.rc) { const io = Math.max(.6, GP.S.mpp() * 30); spec('c' + c.s, 'ov wl edit curve', `R ${U.cm(c.ref.rc.r)}cm`, [m[0] + e.nx * io, m[1] + e.nz * io], { data: { curve: c.s }, interactive: true }); continue; }      // a rounded corner: its radius, inside (its corner point is outside)
-      spec('c' + c.s, 'ov wl edit curve', (c.ref.glass ? '통유리 ' : '곡선 ') + CV.len(L, c).toFixed(2) + ' m', [m[0] - e.nx * off, m[1] - e.nz * off], { rotSeg: [e.a, e.b], data: { curve: c.s }, interactive: true }); }
+      spec('c' + c.s, 'ov wl edit curve', (c.ref.glass && CV.glassAll(c) ? '통유리 ' : '곡선 ') + CV.len(L, c).toFixed(2) + ' m' + (c.ref.glass && !CV.glassAll(c) ? ' · 유리 일부' : ''), [m[0] - e.nx * off, m[1] - e.nz * off], { rotSeg: [e.a, e.b], data: { curve: c.s }, interactive: true }); }
     for (let i = 0; i < P.length; i++) { if (CV && CV.of(L, i)) continue; const e = G.edge(P, i), off = GP.WALL_T + .38; spec('w' + i, 'ov wl edit' + ((OV.hiWall && OV.hiWall.has(i)) ? ' hi' : ''), e.L.toFixed(2) + ' m', [(e.a[0] + e.b[0]) / 2 - e.nx * off, (e.a[1] + e.b[1]) / 2 - e.nz * off], { rotSeg: [e.a, e.b], minLen: 34, data: { wall: i }, interactive: true }); }
     // corner angles: press to type an angle
     for (let i = 0; i < P.length; i++) { if (inner.has(i) || ends.has(i)) continue; const a = G.interior(P, i), q = angPos(P, i); if (!q) continue; const right = [90, 180, 270].some(v => Math.abs(a - v) < .3); spec('a' + i, 'ov ang edit' + (right ? ' right' : ''), (Math.round(a * 10) / 10) + '°', q, { data: { ang: i }, interactive: true }); }
@@ -76,6 +76,7 @@ OV.syncHandles = () => {
   }
   if (GP.XF) hspecs.push(...GP.XF.handles());
   if (GP.ARC) hspecs.push(...GP.ARC.handles());
+  if (GP.CV && GP.CV.glassHandles) hspecs.push(...GP.CV.glassHandles());
   const its = u.selItems();
   if (its.length === 1 && u.sel.length === 1 && u.tool === 'select') {
     const it = its[0], d = GP.dims(it);
@@ -163,7 +164,8 @@ function drawSvg() {
   const gr = t.groupRotState();
   if (gr) { const [px, py] = S.toScreen(gr.cx, 0, gr.cz), [hx, hy] = S.toScreen(gr.cx - gr.R * Math.sin(gr.ang * U.DEG), 0, gr.cz + gr.R * Math.cos(gr.ang * U.DEG)); html += `<line x1="${px}" y1="${py}" x2="${hx}" y2="${hy}" stroke="#E0622B" stroke-width="1.5" stroke-dasharray="4 4"/><circle cx="${px}" cy="${py}" r="4" fill="#E0622B"/>`; }
   if (hv && hv.snap && !d) { const [sx, sy] = S.toScreen(hv.snap[0], 0, hv.snap[1]); html += `<circle cx="${sx}" cy="${sy}" r="5" fill="none" stroke="#2450E0" stroke-width="2"/>`; }
-  if (t.preview && GP.ui.tool === 'opening') { const pv = t.preview; const hs = GP.hostSeg({ host: pv.host, seg: pv.seg }); if (hs) { const w = GP.tools.openingWidth(GP.ui.openingKind); const c = U.clamp(pv.t, w / 2, hs.L - w / 2); const a = [hs.a[0] + hs.dx * (c - w / 2) + hs.nx * hs.mid, hs.a[1] + hs.dz * (c - w / 2) + hs.nz * hs.mid], b = [hs.a[0] + hs.dx * (c + w / 2) + hs.nx * hs.mid, hs.a[1] + hs.dz * (c + w / 2) + hs.nz * hs.mid]; html += `<polyline points="${P(a[0], a[1])} ${P(b[0], b[1])}" stroke="#E0622B" stroke-width="9" opacity=".75" fill="none"/>`; } }
+  if (t.preview && GP.ui.tool === 'opening' && t.preview.host === 'room' && GP.CV && GP.CV.of(GP.L(), t.preview.seg)) { const L = GP.L(), g = GP.CV.glassAt(L, t.preview); if (g) { const pts = GP.CV.midLine(L, g.pl, g.u0, g.u1); html += `<polyline points="${pts.map(p => P(p[0], p[1])).join(' ')}" stroke="${g.del != null ? '#D64545' : '#3B7FC4'}" stroke-width="9" opacity=".7" fill="none" stroke-linecap="butt"/>`;; } }
+  else if (t.preview && GP.ui.tool === 'opening') { const pv = t.preview; const hs = GP.hostSeg({ host: pv.host, seg: pv.seg }); if (hs) { const w = GP.tools.openingWidth(GP.ui.openingKind); const c = U.clamp(pv.t, w / 2, hs.L - w / 2); const a = [hs.a[0] + hs.dx * (c - w / 2) + hs.nx * hs.mid, hs.a[1] + hs.dz * (c - w / 2) + hs.nz * hs.mid], b = [hs.a[0] + hs.dx * (c + w / 2) + hs.nx * hs.mid, hs.a[1] + hs.dz * (c + w / 2) + hs.nz * hs.mid]; html += `<polyline points="${P(a[0], a[1])} ${P(b[0], b[1])}" stroke="#E0622B" stroke-width="9" opacity=".75" fill="none"/>`; } }
   if (hv && hv.a && GP.ui.tool === 'fillwall') { html += `<polyline points="${P(hv.a[0], hv.a[1])} ${P(hv.b[0], hv.b[1])}" stroke="#13906F" stroke-width="8" opacity=".7" fill="none"/>` + lbl((hv.a[0] + hv.b[0]) / 2 + hv.nx * .5, (hv.a[1] + hv.b[1]) / 2 + hv.nz * .5, hv.L.toFixed(2) + ' m'); }
   if (GP.pen) html += GP.pen.svg(P);
   svg.innerHTML = html;

@@ -443,7 +443,7 @@ function toolDown(t, e, fp) {
   if (t === 'measure') { const p = snapPoint(fp.x, fp.z, { e, alt: e.altKey, prev: draw && draw.a, shift: e.shiftKey }); if (!draw) { draw = { tool: 'measure', a: p, b: p }; } else { const d = { id: U.uid('d'), a: draw.a, b: p }; if (G.len(d.a, d.b) > .02) { L.dims.push(d); draw = null; GP.changed('annot'); ui.select([{ k: 'dim', id: d.id }]); GP.toast(`길이 ${G.len(d.a, d.b).toFixed(2)} m`); } } GP.emit('overlay'); return true; }
   if (t === 'note') { const n = { id: U.uid('n'), x: U.r3(fp.x), z: U.r3(fp.z), text: '', _new: true }; L.notes.push(n); GP.changed('annot'); ui.setTool('select'); ui.select([{ k: 'note', id: n.id }]); return true; }
   if (t === 'roomlabel') { if (!G.pip(fp.x, fp.z, L.room.pts)) { GP.toast('방 안쪽을 눌러 주세요', { bad: true }); return true; } const r = { id: U.uid('r'), x: U.r3(fp.x), z: U.r3(fp.z), name: '공간 이름', _new: true }; L.rooms.push(r); GP.changed('annot'); ui.setTool('select'); ui.select([{ k: 'room', id: r.id }]); return true; }
-  if (t === 'opening') { const h = openingHover(fp); if (!h) { GP.toast('벽이나 가벽 가까이를 눌러 주세요', { bad: true }); return true; } if (h.host === 'room' && GP.CV && GP.CV.of(L, h.seg)) { const c = GP.CV.of(L, h.seg), on = !c.ref.glass; GP.CV.setGlass(L, c.s, on ? 'clear' : ''); GP.changed('room'); GP.toast(on ? '곡선 벽을 통유리로 바꿨어요 · 다시 누르면 벽으로 돌아가요 (곡선에는 문 · 창문 대신 통유리만 돼요)' : '통유리를 벽으로 되돌렸어요', { ms: 4500 }); return true; } const k = ui.openingKind; const w = tools.openingWidth(k); const o = { id: U.uid('o'), host: h.host, seg: h.seg, t: U.r3(U.clamp(U.snap(h.t, .05), w / 2, h.L - w / 2)), w, h: k === 'window' ? 1.2 : 2.1, sill: .9, kind: k }; L.openings.push(o); tools.preview = null; GP.changed('openings'); ui.setTool('select'); ui.select([{ k: 'opening', id: o.id }]); return true; }
+  if (t === 'opening') { const h = openingHover(fp); if (!h) { GP.toast('벽이나 가벽 가까이를 눌러 주세요', { bad: true }); return true; } if (h.host === 'room' && GP.CV && GP.CV.of(L, h.seg)) { tools.preview = null; GP.CV.glassClick(L, h); return true; } const k = ui.openingKind; const w = tools.openingWidth(k); const o = { id: U.uid('o'), host: h.host, seg: h.seg, t: U.r3(U.clamp(U.snap(h.t, .05), w / 2, h.L - w / 2)), w, h: k === 'window' ? 1.2 : 2.1, sill: .9, kind: k }; L.openings.push(o); tools.preview = null; GP.changed('openings'); ui.setTool('select'); ui.select([{ k: 'opening', id: o.id }]); return true; }
   if (t === 'fillwall') { const h = wallHover(fp); if (!h) { GP.toast('벽 가까이를 눌러 주세요', { bad: true }); return true; } GP.panels.fillWallDialog(h); return true; }
   return false;
 }
@@ -475,7 +475,7 @@ function toolHover(e) {
   const S = GP.S, fp = S.floorAt(e.clientX, e.clientY);
   if (draw) { toolMove(e); return; }
   if (ui.tool === 'vertex') { setHoverSeg(hoverWallSeg(fp)); return; }
-  if (ui.tool === 'opening') { tools.preview = openingHover(fp); GP.emit('overlay'); }
+  if (ui.tool === 'opening') { tools.preview = openingHover(fp); const pv = tools.preview, cg = pv && pv.host === 'room' && GP.CV && GP.CV.of(GP.L(), pv.seg) ? GP.CV.glassAt(GP.L(), pv) : null; if (cg) ui.setHint(cg.del != null ? '누르면 이 유리를 <b>벽으로</b> 되돌려요' : `누르면 여기 <b>${((cg.u1 - cg.u0) / cg.pl.L * GP.CV.len(GP.L(), cg.c)).toFixed(2)} m</b>를 통유리로 · 곡선 벽에는 문 · 창문 대신 통유리를 넣어요`); else if (tools._cgHint) ui.setHint(); tools._cgHint = !!cg; GP.emit('overlay'); }
   else if (ui.tool === 'fillwall') { hover = wallHover(fp); GP.emit('overlay'); }
   else if (['part', 'matPoly', 'measure'].includes(ui.tool)) { hover = { snap: snapPoint(fp.x, fp.z, { e, alt: e.altKey }) }; GP.emit('overlay'); }
 }
@@ -523,7 +523,7 @@ dbar.addEventListener('click', e => {
 GP.on('overlay', drawBar); GP.on('tool', drawBar); GP.on('step', drawBar);
 function openingHover(fp) {
   const L = GP.L(), tol = .45; let best = null;
-  const P = L.room.pts; for (let i = 0; i < P.length; i++) { const e = G.edge(P, i); const c = G.closest(fp.x, fp.z, e.a, e.b); const s = (fp.x - e.a[0]) * e.nx + (fp.z - e.a[1]) * e.nz; const d = Math.abs(s + GP.WALL_T / 2); if (d < tol && (!best || d < best.d)) best = { host: 'room', seg: i, t: c.t, L: e.L, d }; }
+  const P = L.room.pts, h = GP.WALL_T / 2; for (let i = 0; i < P.length; i++) { const e = G.edge(P, i); if (e.L < 1e-4) continue; const c = G.closest(fp.x, fp.z, [e.a[0] - e.nx * h, e.a[1] - e.nz * h], [e.b[0] - e.nx * h, e.b[1] - e.nz * h]), d = c.d; if (d < tol && (!best || d < best.d - 1e-6)) best = { host: 'room', seg: i, t: c.t, L: e.L, d }; }
   for (const p of L.partitions) for (let i = 0; i < p.pts.length - 1; i++) { const c = G.closest(fp.x, fp.z, p.pts[i], p.pts[i + 1]); if (c.d < tol && (!best || c.d < best.d)) best = { host: p.id, seg: i, t: c.t, L: c.L, d: c.d }; }
   return best;
 }
@@ -571,6 +571,7 @@ tools.handleDown = (e, el) => {
   if ((h === 'rr' || h === 'rcv') && GP.CV) { GP.CV.rcDown(e, el); return; }
   if ((h === 'xf' || h === 'xfr') && GP.XF) { GP.XF.handleDown(e, el); return; }
   if ((h === 'arcp' || h === 'arca' || h === 'arcr') && GP.ARC) { GP.ARC.pivotDown(e, el); return; }
+  if ((h === 'cge' || h === 'cgm') && GP.CV) { GP.CV.glassDown(e, el); return; }
   const target = tools.polyTarget();
   if (h === 'v' && target) {
     const i = +el.dataset.i, S = tools.selVs;
@@ -925,7 +926,7 @@ act.inspChange = (el, live) => {
   }
   if (!so) return; const o = so.obj;
   if (el.dataset.fc && (so.k === 'opening' || so.k === 'part')) { o[el.dataset.fc] = el.value; GP.changed(so.k === 'opening' ? 'openings' : 'parts'); ui.renderInspector(); return; }
-  if (so.k === 'part') { if (id === 'pT' && isFinite(v)) o.thick = U.clamp(v, 3, 60) / 100; GP.changed('parts'); return; }
+  if (so.k === 'part') { if (id === 'pGw') { o.gw = GP.gwVal(v); GP.changed('parts'); return; } if (id === 'pT' && isFinite(v)) o.thick = U.clamp(v, 3, 60) / 100; GP.changed('parts'); return; }
   if (so.k === 'opening') {
     const hs = GP.hostSeg(o);
     if (id === 'oUnder') { o.underCut = el.checked || undefined; GP.changed('openings'); ui.renderInspector(); return; }

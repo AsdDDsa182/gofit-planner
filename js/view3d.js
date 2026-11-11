@@ -73,6 +73,7 @@ V3.presets = () => {
   const off = (x, y, z) => { const v = new THREE.Vector3(x, y, z).normalize().multiplyScalar(dist); return [b.cx + v.x, v.y, b.cz + v.z]; };
   return { persp: { pos: off(-.42, .8, .9), target: [b.cx, 0, b.cz] }, persp2: { pos: off(.55, .7, -.8), target: [b.cx, .3, b.cz] }, top: { pos: [b.cx, size * 1.35 / Math.max(.8, Math.min(a, 1.6)) + 2, b.cz + .01], target: [b.cx, 0, b.cz] }, front: { pos: off(0, .35, 1), target: [b.cx, .6, b.cz] } };
 };
+V3.look = (pos, target) => { if (!R) return; cam.position.set(...pos); ctl.target.set(...target); ctl.update(); dirty = true; };      // (tests, tours)
 V3.view = (k) => { if (!R) return; const p = V3.presets()[k] || V3.presets().persp; cam.position.set(...p.pos); ctl.target.set(...p.target); ctl.update(); dirty = true; };
 V3.zoomBy = (f) => { if (!R) return; const off = cam.position.clone().sub(ctl.target); off.setLength(U.clamp(off.length() / f, ctl.minDistance, ctl.maxDistance)); cam.position.copy(ctl.target).add(off); ctl.update(); dirty = true; };
 
@@ -110,6 +111,34 @@ const CADL = () => mat('cadl', () => new THREE.LineBasicMaterial({ color: '#1b1f
 function edgesOf(geo) { return geo.userData.edges30 || (geo.userData.edges30 = new THREE.EdgesGeometry(geo, 30)); }
 /* (wall finishes sit 4 mm in front of the wall: far away the depth buffer cannot tell them apart and the white wall flickered
    through in specks; polygonOffset draws the finish in front) */
+/* ceiling lights: the chosen design set out on the ceiling — rows along the room's long side for line lights, a grid for the
+   rest (at least 45 cm from the walls); the body and the glow recoloured by their material names (g_lhouse / g_lemit) */
+const lightScenes = {};
+function lightScene(id) { return lightScenes[id] || (lightScenes[id] = GP.R3.loaders().then(gl => new Promise((res, rej) => gl.load(GP.R3.base() + 'models/light/' + id + '.glb', r => res(r.scene), undefined, rej))).catch(e => { delete lightScenes[id]; throw e; })); }
+function lightSpots(P, d, gap) {
+  const b = G.bounds(P), alongX = b.sx >= b.sz, Lw = alongX ? b.sx : b.sz, Sw = alongX ? b.sz : b.sx, o0 = alongX ? b.minX : b.minZ, s0 = alongX ? b.minZ : b.minX, out = [];
+  const inside = (u, v) => { const [x, z] = alongX ? [u, v] : [v, u]; if (!G.pip(x, z, P)) return null; for (let i = 0; i < P.length; i++) if (G.closest(x, z, P[i], P[(i + 1) % P.length]).d < .45) return null; return [x, z]; };
+  const rows = Math.max(1, Math.round(Sw / gap)), half = (d.line || d.len || d.w || 0) / 2;
+  for (let r = 0; r < rows; r++) {
+    const v = s0 + Sw * (r + .5) / rows;
+    const fit = u => { const p = inside(u, v); return p && (!half || (inside(u - half, v) && inside(u + half, v))) ? p : null; };      // the whole fixture under the ceiling, not only its middle
+    if (d.line) { const step = d.line + .3, n = Math.max(1, Math.floor((Lw - .9) / step)), u0 = o0 + (Lw - n * step) / 2 + step / 2; for (let k = 0; k < n; k++) { const p = fit(u0 + k * step); if (p) out.push({ p, rot: alongX ? 0 : Math.PI / 2 }); } }
+    else { const cols = Math.max(1, Math.round(Lw / gap)); for (let c = 0; c < cols; c++) { const p = fit(o0 + Lw * (c + .5) / cols); if (p) out.push({ p, rot: alongX ? 0 : Math.PI / 2 }); } }
+  }
+  return out.slice(0, 220);
+}
+function buildLights(g, P, H, st) {
+  const L = GP.lightOf(st); if (L.d.id === 'none') return; const spots = lightSpots(P, L.d, L.gap); if (!spots.length) return;
+  const tone = GP.LIGHT_TONE[L.tone], body = GP.LIGHT_BODY[L.body];
+  const em = mat('lt:e:' + L.tone, () => new THREE.MeshBasicMaterial({ color: tone.c, toneMapped: false })), hm = mat('lt:h:' + L.body, () => std(body.c, { metalness: body.m, roughness: body.r }));
+  const holder = new THREE.Group(); holder.userData.own = true; g.add(holder);
+  lightScene(L.d.id).then(scene => {
+    if (!holder.parent) return;      // built again since
+    const proto = scene.clone(true); proto.traverse(n => { if (!n.isMesh) return; const nm = (n.material && n.material.name) || ''; if (/lemit/.test(nm)) n.material = em; else if (/lhouse/.test(nm)) n.material = hm; n.castShadow = false; n.receiveShadow = false; });
+    for (const s of spots) { const o = proto.clone(true); o.position.set(s.p[0], H, s.p[1]); o.rotation.y = s.rot; holder.add(o); }
+    dirty = true;
+  }).catch(() => { });
+}
 /* a curved wall in one piece. Its pieces as separate boxes and finish planes shaded in bands and met in ragged seams; one strip
    with normals averaged at each point shades smoothly and has no seams. pts: [[x, z]], nrm: [[nx, nz]] the way the face looks,
    us: metres along (texture u). up: a horizontal strip (pts = one edge, nrm = the other edge's points) facing up */
@@ -150,8 +179,7 @@ function buildRoom() {
   const H = V3.cut ? Math.min(1.1, st.wallH) : st.wallH, O = G.offset(P, WALL_T, true), n = P.length, marks = L.wallMarks || {};
   if (!LINE && !V3.cut) {
     const cg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); cg.rotateX(-Math.PI / 2); const cd = (GP.TEX.ceil || []).find(t => t.id === st.ceilTex && t.size), ck = GP.texAdjKey(TA.ceil), ceil = new THREE.Mesh(cg, cd ? mat('ceil:' + cd.id + ck, () => new THREE.MeshBasicMaterial({ color: cd.id === 'ceil_glow' ? '#ffffff' : '#d2d4d3', map: finishTex(cd.id, TA.ceil), side: THREE.BackSide })) : mat('ceil' + ck, () => new THREE.MeshBasicMaterial({ color: adjHex('#c4c8c6', TA.ceil), side: THREE.BackSide }))); ceil.position.y = H; ceil.userData.own = true; g.add(ceil);
-    const bb0 = G.bounds(P), nx = Math.max(1, Math.round(bb0.sx / 2.6)), nz = Math.max(1, Math.round(bb0.sz / 2.6)), lg = mat('lampGeo', () => new THREE.PlaneGeometry(1.2, .3)), lm = mat('lamp', () => new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false })); let made = 0;
-    for (let i = 0; i < nx && made < 80; i++) for (let j = 0; j < nz && made < 80; j++) { const x = bb0.minX + bb0.sx * (i + .5) / nx, z = bb0.minZ + bb0.sz * (j + .5) / nz; if (!G.pip(x, z, P)) continue; const lp = new THREE.Mesh(lg, lm); lp.rotation.x = Math.PI / 2; lp.position.set(x, H - .012, z); g.add(lp); made++; }
+    buildLights(g, P, H, st);
   }
   // curved walls (without doors on them): one smooth piece each
   const oneCurve = new Set();
@@ -162,23 +190,32 @@ function buildRoom() {
     const N_ = idx.map((k, q) => { const e0 = E[Math.max(0, q - 1)], e1 = E[Math.min(E.length - 1, q)], x = e0.nx + e1.nx, z = e0.nz + e1.nz, l = Math.hypot(x, z) || 1; return [x / l, z / l]; });
     const us = [0]; for (let q = 1; q < Q.length; q++) us.push(us[q - 1] + G.len(Q[q - 1], Q[q]));
     const out = N_.map(v => [-v[0], -v[1]]), mid = N_[Math.floor(N_.length / 2)];
-    if (c.ref.glass) {
-      const off = (k, d) => Q.map((p, q) => [p[0] - N_[q][0] * d, p[1] - N_[q][1] * d]), M = off(0, WALL_T / 2), A = off(0, WALL_T / 2 - .03), B = off(0, WALL_T / 2 + .03), Lc = us[us.length - 1];
-      const fm = mat('gframe', () => std('#2f3236', { roughness: .45, metalness: .35, side: THREE.DoubleSide })), own = me => { me.userData.own = true; g.add(me); return me; };
-      own(new THREE.Mesh(stripGeo(M, N_, .06, H - .06, us), LINE ? CADM() : glassMat(c.ref.glass)));
-      for (const [y0, y1] of [[0, .06], [H - .06, H]]) { const s1 = own(new THREE.Mesh(stripGeo(A, N_, y0, y1, us), fm)), s2 = own(new THREE.Mesh(stripGeo(B, out, y0, y1, us), fm)); s1.castShadow = s2.castShadow = true; own(new THREE.Mesh(capGeo(A, B, y1), fm)); if (y0 > 0) own(new THREE.Mesh(capGeo(A, B, y0), fm)); }
-      const nM = Math.max(1, Math.round(Lc / 1.2)), bx = new THREE.BoxGeometry(.05, Math.max(.1, H - .12), .06);
-      for (let k = 0; k <= nM; k++) { const sv = Lc * k / nM; let j = 1; while (j < us.length - 1 && us[j] < sv) j++; const f = (sv - us[j - 1]) / ((us[j] - us[j - 1]) || 1), p0 = M[j - 1], p1 = M[j], tx = p1[0] - p0[0], tz = p1[1] - p0[1]; const me = own(new THREE.Mesh(bx, fm)); me.position.set(p0[0] + tx * f, H / 2, p0[1] + tz * f); me.rotation.y = -Math.atan2(tz, tx); me.castShadow = true; }
-      continue;
-    }
+    const Lc = us[us.length - 1], secs = []; { let u = 0; for (const [a, b] of (GP.CV.glassR ? GP.CV.glassR(c) : []).map(r => [r[0] * Lc, r[1] * Lc])) { if (a > u + 1e-3) secs.push([u, a, false]); secs.push([a, b, true]); u = b; } if (u < Lc - 1e-3) secs.push([u, Lc, false]); }
+    const at = (arr, v, norm) => { let j = 1; while (j < us.length - 1 && us[j] < v) j++; const f = U.clamp((v - us[j - 1]) / ((us[j] - us[j - 1]) || 1), 0, 1), p = [arr[j - 1][0] + (arr[j][0] - arr[j - 1][0]) * f, arr[j - 1][1] + (arr[j][1] - arr[j - 1][1]) * f]; if (norm) { const l = Math.hypot(p[0], p[1]) || 1; p[0] /= l; p[1] /= l; } return p; };
+    const cut = (arr, u0, u1, norm) => { const r = [at(arr, u0, norm)]; us.forEach((v, q) => { if (v > u0 + 1e-4 && v < u1 - 1e-4) r.push(arr[q]); }); r.push(at(arr, u1, norm)); return r; }, cutU = (u0, u1) => [u0, ...us.filter(v => v > u0 + 1e-4 && v < u1 - 1e-4), u1];
     const wm = LINE ? new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }) : std(adjHex(st.wallColor || '#eeede8', TA.wall), { roughness: .92, transparent: true, opacity: 1 });
     const add = (geo, m, shadow) => { const me = new THREE.Mesh(geo, m); me.castShadow = !!shadow; me.receiveShadow = true; me.userData.own = true; if (LINE) addEdges(me); g.add(me); return me; };
-    add(stripGeo(Q, N_, 0, H, us), wm, true); add(stripGeo(Oq, out, 0, H, us), wm, true); add(capGeo(Q, Oq, H), wm, false);
-    wallMeshes.push({ mat: wm, nx: -mid[0], nz: -mid[1] });
-    const wd = !LINE && finishOf((L.wallTex || {})[c.s] || st.wallTex);
-    if (wd) { const tm = std('#ffffff', { map: finishTex(wd.id, TA.wall), roughness: wd.rough, transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }); add(stripGeo(Q.map((p, q) => [p[0] + N_[q][0] * .004, p[1] + N_[q][1] * .004]), N_, 0, H, us), tm, false); wallMeshes.push({ mat: tm, nx: -mid[0], nz: -mid[1] }); }
-    const bbC = { dark: '#2f3236', white: '#efefec' }[st.baseboard || 'dark'];
-    if (bbC && !LINE) { const bm = std(bbC, { roughness: .6, transparent: true, opacity: 1 }), Bq = Q.map((p, q) => [p[0] + N_[q][0] * .012, p[1] + N_[q][1] * .012]); add(stripGeo(Bq, N_, 0, .08, us), bm, false); add(capGeo(Q, Bq, .08), bm, false); wallMeshes.push({ mat: bm, nx: -mid[0], nz: -mid[1] }); }
+    const wd = !LINE && finishOf((L.wallTex || {})[c.s] || st.wallTex), tm = wd && std('#ffffff', { map: finishTex(wd.id, TA.wall), roughness: wd.rough, transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+    const bbC = { dark: '#2f3236', white: '#efefec' }[st.baseboard || 'dark'], bm = bbC && !LINE && std(bbC, { roughness: .6, transparent: true, opacity: 1 });
+    const fm = mat('gframe', () => std('#2f3236', { roughness: .45, metalness: .35, side: THREE.DoubleSide })), gw = c.ref.gw ?? GP.GLASS_GW, HB = .06, HT = .06;
+    let anyWall = false;
+    for (const [u0, u1, isG] of secs) {
+      const q = cut(Q, u0, u1), o = cut(Oq, u0, u1), nn = cut(N_, u0, u1, true), uu = cutU(u0, u1), ot = nn.map(v => [-v[0], -v[1]]);
+      if (isG) {
+        const M = q.map((p, k) => [p[0] - nn[k][0] * WALL_T / 2, p[1] - nn[k][1] * WALL_T / 2]);
+        add(stripGeo(M, nn, HB, H - HT, uu), LINE ? CADM() : glassMat(c.ref.glass), false).receiveShadow = false;
+        for (const [y0, y1] of [[0, HB], [H - HT, H]]) { add(stripGeo(q, nn, y0, y1, uu), fm, true); add(stripGeo(o, ot, y0, y1, uu), fm, true); add(capGeo(q, o, y1), fm, false); if (y0 > 0) add(capGeo(q, o, y0), fm, false); }
+        const len = u1 - u0, nM = gw > 0 ? Math.max(1, Math.round(len / gw)) : 1, bx = mat('gpost:' + Math.round(H * 100), () => new THREE.BoxGeometry(.05, Math.max(.1, H - HB - HT), .07));
+        for (let k = 0; k <= nM; k++) { const sv = len * k / nM; let j = 1; while (j < uu.length - 1 && uu[j] - u0 < sv) j++; const f = U.clamp((sv - (uu[j - 1] - u0)) / ((uu[j] - uu[j - 1]) || 1), 0, 1), p0 = M[j - 1], p1 = M[j], tx = p1[0] - p0[0], tz = p1[1] - p0[1]; const me = new THREE.Mesh(bx, fm); me.position.set(p0[0] + tx * f, HB + (H - HB - HT) / 2, p0[1] + tz * f); me.rotation.y = -Math.atan2(tz, tx); me.castShadow = true; g.add(me); }
+        continue;
+      }
+      anyWall = true;
+      add(stripGeo(q, nn, 0, H, uu), wm, true); add(stripGeo(o, ot, 0, H, uu), wm, true); add(capGeo(q, o, H), wm, false);
+      for (const [end, k, sg] of [[u0 > 1e-3, 0, -1], [u1 < Lc - 1e-3, q.length - 1, 1]]) { if (!end) continue; const k2 = sg < 0 ? 1 : q.length - 2, tx = (q[k][0] - q[k2][0]), tz = (q[k][1] - q[k2][1]), l = Math.hypot(tx, tz) || 1; add(stripGeo([q[k], o[k]], [[tx / l, tz / l], [tx / l, tz / l]], 0, H, [0, WALL_T]), wm, false); }      // where it meets glass: its end
+      if (tm) add(stripGeo(q.map((p, k) => [p[0] + nn[k][0] * .004, p[1] + nn[k][1] * .004]), nn, 0, H, uu), tm, false);
+      if (bm) { const Bq = q.map((p, k) => [p[0] + nn[k][0] * .012, p[1] + nn[k][1] * .012]); add(stripGeo(Bq, nn, 0, .08, uu), bm, false); add(capGeo(q, Bq, .08), bm, false); }
+    }
+    if (anyWall) { wallMeshes.push({ mat: wm, nx: -mid[0], nz: -mid[1] }); if (tm) wallMeshes.push({ mat: tm, nx: -mid[0], nz: -mid[1] }); if (bm) wallMeshes.push({ mat: bm, nx: -mid[0], nz: -mid[1] }); }
   }
   for (let i = 0; i < n; i++) {
     if (oneCurve.has(i)) continue;
@@ -227,7 +264,7 @@ function buildRoom() {
         // glass: tinted pane in a coloured frame (top / bottom channels, posts at the ends and about every 1.2 m)
         const gq = [off(s0, .006), off(s1, .006), off(s1, -.006), off(s0, -.006)]; prism(gq, y0 + .05, y1 - .05, pm);
         [[y0, y0 + .05], [y1 - .05, y1]].forEach(([ya, yb]) => prism(q, ya, yb, pf));
-        const n = Math.max(1, Math.round((s1 - s0) / 1.2)); for (let k = 0; k <= n; k++) { const u = s0 + (s1 - s0) * k / n, u0 = Math.max(s0, u - .02), u1 = Math.min(s1, u + .02); prism([off(u0, t / 2), off(u1, t / 2), off(u1, -t / 2), off(u0, -t / 2)], y0 + .05, y1 - .05, pf); }
+        const pgw = p.gw ?? GP.GLASS_GW, n = pgw > 0 ? Math.max(1, Math.round((s1 - s0) / pgw)) : 1; for (let k = 0; k <= n; k++) { const u = s0 + (s1 - s0) * k / n, u0 = Math.max(s0, u - .02), u1 = Math.min(s1, u + .02); prism([off(u0, t / 2), off(u1, t / 2), off(u1, -t / 2), off(u0, -t / 2)], y0 + .05, y1 - .05, pf); }
       }
     }
   }

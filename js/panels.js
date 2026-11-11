@@ -36,6 +36,11 @@ panels.renderSpace = () => {
     <span class="lbl">벽 (모든 벽)</span>${ui.texGrid('wall', st.wallTex || 'paint')}${ui.adjBlock('wall')}
     <div class="row2"><label class="fld"><span>페인트 색</span><input type="color" id="wallColor" value="${U.esc(st.wallColor || '#eeede8')}"></label><label class="fld"><span>걸레받이</span><select id="baseboard">${[['dark', '블랙'], ['white', '화이트'], ['none', '없음']].map(([k, n]) => `<option value="${k}" ${(st.baseboard || 'dark') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>
     <span class="lbl">천장 <small class="note">(3D에서 안쪽에서 볼 때 · 걸어 보기)</small></span>${ui.texGrid('ceil', st.ceilTex || 'paint')}${ui.adjBlock('ceil')}`)}
+  ${(() => { const L = GP.lightOf(st); return fold('light', '조명', L.d.id === 'none' ? '없음' : `${L.d.name} · ${GP.LIGHT_TONE[L.tone].n}`, `<p class="note" style="margin:0">3D 천장에 보여요(안쪽에서 볼 때 · 걸어 보기). 디자인 · 빛 색 · 몸체 색을 고르고 간격으로 개수를 바꿔요.</p>
+    <div class="lt-grid">${GP.LIGHTS.map(l => `<button class="lt-card${L.d.id === l.id ? ' on' : ''}" data-light="${l.id}" title="${U.esc(l.name)}">${l.id === 'none' ? '<i class="lt-none">✕</i>' : `<img src="assets/light/${l.id}.png" alt="" loading="lazy">`}<span>${U.esc(l.name)}</span></button>`).join('')}</div>
+    <div class="rng"><span>빛 색</span><div class="seg sm">${Object.entries(GP.LIGHT_TONE).map(([k, t]) => `<button data-ltone="${k}" class="${L.tone === k ? 'on' : ''}" title="${t.k}"><i class="eqc-dot" style="background:${t.c}"></i>${t.n}</button>`).join('')}</div></div>
+    <div class="rng"><span>몸체 색</span><div class="seg sm">${Object.entries(GP.LIGHT_BODY).map(([k, b]) => `<button data-lbody="${k}" class="${L.body === k ? 'on' : ''}"><i class="eqc-dot" style="background:${b.c}"></i>${b.n}</button>`).join('')}</div></div>
+    ${L.d.id === 'none' ? '' : `<div class="rng"><span>간격</span><input type="range" id="ltGap" min="1" max="6" step="0.1" value="${L.gap}"><b id="ltGapV">${L.gap.toFixed(1)} m</b></div>`}`); })()}
   ${fold('ceil', '천장 높이', `${st.wallH}m`, `<label class="fld"><span>바닥에서 천장까지</span>${numI('ceilH', st.wallH, .05, 'm', 'min="2" max="8"')}</label><p class="note" style="margin:0">기구마다 쓸 때 필요한 높이(트레드밀 위 사람 키, 스텝밀 맨 위 계단 등)를 이 높이로 점검해요. 3D 벽 높이로도 쓰여요.</p>`)}
   ${fold('trace', '고객 도면 대고 그리기', GP.S.underlay ? '도면 깔림' : '', `<p class="note">받은 평면도 사진이나 캐드 파일(DXF)을 깔고 <b>펜</b>으로 벽 모서리를 따라 찍으면 실제 모양 그대로 만들 수 있어요. 그다음 확실히 아는 벽 하나의 길이를 넣으면 전체 크기가 맞춰져요.</p>
     <div class="row2"><label class="btn file" style="position:relative;overflow:hidden">이미지·PDF 캡처<input type="file" id="ulImg" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label><label class="btn file" style="position:relative;overflow:hidden">캐드 파일 (DXF)<input type="file" id="ulDxf" accept=".dxf" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label></div>
@@ -96,6 +101,7 @@ panels.renderUL = renderUL;
 const spEl = $('#panel-space');
 spEl.addEventListener('click', e => {
   const t = e.target; if (t.closest('[data-xform]')) { ui.setTool('xform'); return; }
+  { const lb = t.closest('[data-light],[data-ltone],[data-lbody]'); if (lb) { const st = GP.P.settings, l = st.light = Object.assign({}, st.light || {}); if (lb.dataset.light) { l.type = lb.dataset.light; delete l.gap; } if (lb.dataset.ltone) l.tone = lb.dataset.ltone; if (lb.dataset.lbody) l.body = lb.dataset.lbody; GP.changed('settings'); panels.renderSpace(); if (!(GP.V3 && GP.V3.on)) GP.toast('조명은 3D 보기에서 보여요', { ms: 2500 }); return; } }
   if (t.closest('[data-clearroom]')) { GP.tools.clearRoom(true); return; }
   if (t.closest('[data-pen]')) { ui.setTool('pen'); GP.toast('모서리를 차례로 클릭하세요. 휘어진 곳은 누른 채 끌면 곡선이 돼요. 첫 점을 누르면 완성!', { ms: 5000 }); return; }
   const m = t.closest('#spMode [data-m]'); if (m) { sp.mode = m.dataset.m; if (sp.mode === 'walk') sp.walk = null; panels.renderSpace(); return; }
@@ -114,6 +120,7 @@ spEl.addEventListener('input', e => {
   if (t.id === 'pyIn' || t.id === 'pyRatio') { const P = pyRect(); if (sp.py >= 3) applyRoomLive(P, true); return; }
   if (t.id && t.id.startsWith('shp_')) { const v = +t.value; if (v > 0) { sp.vals[sp.shape][t.dataset.k] = v; shpCalc(); applyRoomLive(SHAPES[sp.shape].make(sp.vals[sp.shape])); GP.OV.hiWall = hiWallsFor(t.dataset.k); } return; }
   if (t.dataset.f && sp.walk) { const i = +t.dataset.i; if (t.dataset.f === 'len') { const v = +t.value; if (!(v > 0)) return; sp.walk[i].len = v; } else sp.walk[i].turn = +t.value; walkCalc(); applyRoomLive(walkToPts(sp.walk)); return; }
+  if (t.id === 'ltGap') { const st = GP.P.settings; st.light = Object.assign({}, st.light || {}, { gap: +t.value }); const v = $('#ltGapV'); if (v) v.textContent = (+t.value).toFixed(1) + ' m'; clearTimeout(panels._ltT); panels._ltT = setTimeout(() => GP.changed('settings'), 150); return; }
   if (t.id === 'ulOp' || t.id === 'ulW' || t.id === 'ulX' || t.id === 'ulY' || t.id === 'ulScale') { const UL = GP.S.underlay; if (!UL) return; const v = +t.value; if (!isFinite(v)) return; if (t.id === 'ulOp') UL.op = v; if (t.id === 'ulW') UL.w = Math.max(1, v); if (t.id === 'ulX') UL.x = v; if (t.id === 'ulY') UL.z = v; if (t.id === 'ulScale') UL.scale = v; GP.S.buildUnderlay(UL); panels.saveUL(); return; }
 });
 spEl.addEventListener('change', e => {
