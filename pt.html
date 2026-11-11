@@ -45,9 +45,10 @@
 <div class="top"><b>실사 렌더</b><small>블렌더 Cycles처럼 빛을 실제로 계산해요 · 처음엔 거칠다가 시간이 지날수록 깨끗해져요 · 끌면 돌리기 · 오른쪽 끌기 옮기기 · 휠 확대</small><span class="sp"></span></div>
 <div class="bar">
   <span id="st">준비 중…</span><span class="sep"></span>
-  <label>목표 <select id="goal"><option value="200">빠르게 (200)</option><option value="600" selected>보통 (600)</option><option value="1500">고품질 (1500)</option><option value="0">계속</option></select></label>
+  <label>목표 <select id="goal"><option value="100">빠르게 (100)</option><option value="300" selected>보통 (300)</option><option value="1000">고품질 (1000)</option><option value="0">계속</option></select></label>
   <label>속도 <select id="load" title="그래픽카드를 얼마나 쓸지 — 빠르게는 그동안 컴퓨터가 버벅일 수 있어요"><option value=".8" selected>빠르게</option><option value=".45">보통</option><option value=".2">조용히</option></select></label>
-  <label>해상도 <select id="res"><option value="0.5">절반 (빠름)</option><option value="1" selected>그대로</option></select></label>
+  <label>해상도 <select id="res"><option value="auto" selected>자동 (빠름)</option><option value="1">선명하게 (원본)</option><option value="0.5">절반</option></select></label>
+  <label title="샘플이 적을 때 거친 점을 부드럽게 지워요"><input type="checkbox" id="dn" checked> 노이즈 제거</label>
   <label>밝기 <input type="range" id="exp" min="-2" max="2" step="0.1" value="0"></label>
   <label>조명 세기 <input type="range" id="lit" min="0" max="3" step="0.1" value="1"></label>
   <span class="sep"></span>
@@ -58,12 +59,15 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { WebGLPathTracer, GradientEquirectTexture } from 'three-gpu-pathtracer';
+import { WebGLPathTracer, GradientEquirectTexture, DenoiseMaterial } from 'three-gpu-pathtracer';
+import { FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 
 const $ = s => document.querySelector(s), cv = $('#c'), DEG = Math.PI / 180;
 const msg = (t, p, spin = true) => { $('#msg').hidden = !t; if (!t) return; $('#msgT').textContent = t; $('#msgP').textContent = p || ''; $('.spin').style.display = spin ? '' : 'none'; };
 const post = (o) => parent.postMessage(o, location.origin);
-let renderer, pt, scene, camera, controls, running = false, goal = 600, lights = [], emits = [], D = null, GPU = '', spf = 1;
+let renderer, pt, scene, camera, controls, running = false, goal = 300, lights = [], emits = [], D = null, GPU = '', spf = 1, RES = 'auto', DENOISE = true, dnq = null;
+/* how much of the screen is computed: 'auto' keeps it near 0.9 million pixels (1280 × 720) — the time a sample takes goes with the pixel count (measured: half the size, four times the speed; bounces and the number of lights hardly matter) */
+const autoScale = () => { const dpr = renderer.getPixelRatio(), px = innerWidth * innerHeight * dpr * dpr; return RES === 'auto' ? Math.min(1, Math.sqrt(.9e6 / px)) : +RES; };
 
 try {
   renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: false, preserveDrawingBuffer: true });
@@ -71,14 +75,23 @@ try {
   renderer.toneMapping = THREE.AgXToneMapping; renderer.toneMappingExposure = 1;      // AgX: Blender's own view transform
   scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, .05, 600);
   controls = new OrbitControls(camera, cv); controls.enableDamping = false; controls.screenSpacePanning = true;
-  pt = new WebGLPathTracer(renderer); pt.tiles.set(1, 1); pt.bounces = 6; pt.transmissiveBounces = 10; pt.filterGlossyFactor = .5; pt.minSamples = 2; pt.fadeDuration = 250; pt.renderScale = 1; pt.dynamicLowRes = true; pt.lowResScale = .25;
+  pt = new WebGLPathTracer(renderer); pt.tiles.set(1, 1); pt.bounces = 5; pt.transmissiveBounces = 6; pt.filterGlossyFactor = .5; pt.minSamples = 2; pt.fadeDuration = 250; pt.renderScale = 1; pt.dynamicLowRes = true; pt.lowResScale = .25;
+  pt.renderScale = autoScale();
+  /* the picture shown with a light denoise while there are few samples (edge-keeping: textures stay, the speckle goes) */
+  dnq = new FullScreenQuad(new DenoiseMaterial({ map: null, blending: THREE.NoBlending, premultipliedAlpha: renderer.getContextAttributes().premultipliedAlpha }));
+  pt.renderToCanvasCallback = (target, r, quad) => {
+    const ac = r.autoClear; r.autoClear = false; const s = pt.samples;
+    if (DENOISE && s < 1500) { const m = dnq.material; m.uniforms.map.value = target.texture; m.uniforms.opacity.value = quad.material.opacity; m.blending = quad.material.blending; m.uniforms.sigma.value = Math.max(1.2, 4.5 - Math.log2(1 + s) * .45); m.uniforms.threshold.value = .035; m.uniforms.kSigma.value = 1; dnq.render(r); }
+    else quad.render(r);
+    r.autoClear = ac;
+  };
   controls.addEventListener('change', () => { pt.updateCamera(); spf = 1; });      // moving: one sample a frame so it follows the mouse, then it speeds up again
   { const g = renderer.getContext(), x = g.getExtension('WEBGL_debug_renderer_info'); GPU = x ? String(g.getParameter(x.UNMASKED_RENDERER_WEBGL)).replace(/^ANGLE \((.*)\)$/, '$1').split(',').slice(1, 2).join('').replace(/\(0x[0-9a-f]+\)/i, '').replace(/\s+(Direct3D|OpenGL|Vulkan|Metal).*$/i, '').trim() || g.getParameter(x.UNMASKED_RENDERER_WEBGL) : ''; }
   msg('장면을 기다리는 중…', '3D 화면의 장면을 받아요.');
   post({ type: 'pt-ready' });
 } catch (err) { msg('이 기기에서는 실사 렌더를 할 수 없어요', String(err && err.message || err), false); }
 
-window.addEventListener('resize', () => { if (!renderer) return; renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); pt.updateCamera(); });
+window.addEventListener('resize', () => { if (!renderer) return; if (pt) pt.renderScale = autoScale(); renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); pt.updateCamera(); });
 window.addEventListener('message', e => { if (e.origin !== location.origin || !e.data || e.data.type !== 'scene') return; start(e.data).catch(err => { console.error(err); msg('장면을 그리지 못했어요', String(err && err.message || err), false); }); });
 
 /* the app's materials → what the path tracer understands (standard / physical only): glass is real glass, the fixtures' glow
@@ -116,7 +129,7 @@ async function start(d) {
   const sky = await skyTexture(d.sky); scene.environment = sky; scene.background = sky; const r = -(d.sky.rot || 0) * DEG; if (scene.environmentRotation) { scene.environmentRotation.y = r; scene.backgroundRotation.y = r; }
   if (d.sun && d.sun.intensity > 0) { const s = new THREE.DirectionalLight(d.sun.color, d.sun.intensity * 3.2); s.position.fromArray(d.sun.dir).multiplyScalar(100); s.userData.base = s.intensity; scene.add(s, s.target); }
   // the ceiling lights as area lights where they glow (the path tracer samples them directly: far less noise than glowing faces alone)
-  const L = d.lights || [], n = L.length, keep = n > 48 ? 48 : n, step = n / Math.max(1, keep), share = n / Math.max(1, keep);
+  const L = d.lights || [], n = L.length, keep = n > 24 ? 24 : n, step = n / Math.max(1, keep), share = n / Math.max(1, keep);
   for (let i = 0; i < keep; i++) {
     const q = L[Math.floor(i * step)], holder = new THREE.Object3D(); holder.position.set(q.x, q.y, q.z); holder.rotation.y = q.rot || 0;
     const a = new THREE.RectAreaLight(new THREE.Color(d.glow), 9 * d.lum * share, Math.max(.12, q.w), Math.max(.12, q.d)); a.lookAt(0, -1, 0); a.userData.base = a.intensity; holder.add(a); scene.add(holder); lights.push(a);
@@ -127,28 +140,36 @@ async function start(d) {
   await new Promise(r => setTimeout(r, 30));
   pt.setScene(scene, camera); setLights(); msg(''); running = true;
 }
-/* as many samples a frame as the graphics card can do: each frame's work is timed to the end (gl.finish) and the count adjusted
-   so the work fills most of the time between frames (one sample a frame, as before, left the card mostly idle) */
-let last = -1, prevT = performance.now(), dtAvg = 16, rate = 0, rs = 0, rt = performance.now(), LOAD = .8;      // (the share of the time between frames the card works: the rest is left to the desktop and other programs)
+/* as many samples a frame as the graphics card can actually finish. A fence after each frame's work says when the card is done
+   (gl.finish does not wait under Windows' ANGLE: work piled up by the hundred, the render crawled and the computer stayed slow
+   until the pile was through): no new work while the last is unfinished, more when it finished within a frame. 보통 / 조용히 rest
+   the card for as long again / four times as long as it worked, for the rest of the computer. */
+let last = -1, prevT = performance.now(), dtAvg = 16, rate = 0, rs = 0, rt = performance.now(), LOAD = .8, fence = null, slow = 0, tSub = 0, restUntil = 0;
 function loop() {
   requestAnimationFrame(loop); const now = performance.now(), dt = now - prevT; prevT = now; dtAvg = dtAvg * .9 + Math.min(250, dt) * .1; if (!running || !pt) return;
-  const gl = renderer.getContext(), t0 = performance.now(); let n = 0;
-  for (; n < spf && (!goal || pt.samples < goal); n++) pt.renderSample();
-  if (n) { gl.finish(); const work = performance.now() - t0, aim = Math.min(45, Math.max(6, dtAvg * LOAD)); if (work < aim * .7 && spf < 256) spf = Math.min(256, Math.ceil(spf * 1.35)); else if (work > aim * 1.3 && spf > 1) spf = Math.max(1, Math.floor(spf / 1.35)); }
+  const gl = renderer.getContext();
+  if (fence) {
+    if (gl.getSyncParameter(fence, gl.SYNC_STATUS) !== gl.SIGNALED) { if (++slow >= 3 && spf > 1) { spf = Math.max(1, Math.floor(spf / 1.5)); slow = 0; } return; }      // the card is still on it
+    gl.deleteSync(fence); fence = null; const work = now - tSub; restUntil = now + work * (1 - LOAD) / LOAD; if (slow === 0 && spf < 128) spf = Math.min(128, spf + Math.max(1, Math.round(spf * .3))); slow = 0;
+  }
+  if (now < restUntil) return;      // 보통 / 조용히: the card rests in proportion to the time it worked
+  let n = 0; for (; n < spf && (!goal || pt.samples < goal); n++) pt.renderSample();
+  if (n) { fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush(); tSub = now; }
   const s = Math.floor(pt.samples); if (now - rt > 700) { rate = Math.max(0, (pt.samples - rs) / ((now - rt) / 1000)); rs = pt.samples; rt = now; }
-  if (s !== last) { last = s; const done = goal && s >= goal; $('#st').textContent = (done ? `완성 · ${s} 샘플` : `${s}${goal ? ' / ' + goal : ''} 샘플 · 초당 ${Math.round(rate)}`) + (GPU ? ` · ${GPU}` : ''); $('#prog').style.width = goal ? Math.min(100, s / goal * 100) + '%' : '0'; }
+  if (s !== last) { last = s; const done = goal && s >= goal; const cvw = renderer.domElement.width * pt.renderScale, cvh = renderer.domElement.height * pt.renderScale; $('#st').textContent = (done ? `완성 · ${s} 샘플` : `${s}${goal ? ' / ' + goal : ''} 샘플 · 초당 ${rate < 10 ? rate.toFixed(1) : Math.round(rate)}`) + ` · ${Math.round(cvw)}×${Math.round(cvh)}` + (GPU ? ` · ${GPU}` : ''); $('#prog').style.width = goal ? Math.min(100, s / goal * 100) + '%' : '0'; }
 }
 loop();
 window.PT = { get pt() { return pt; }, get scene() { return scene; }, get camera() { return camera; }, get renderer() { return renderer; } };      // (checks)
 $('#goal').onchange = e => { goal = +e.target.value; last = -1; };
-$('#res').onchange = e => { pt.renderScale = +e.target.value; pt.reset(); };
+$('#res').onchange = e => { RES = e.target.value; pt.renderScale = autoScale(); pt.reset(); };
+$('#dn').onchange = e => { DENOISE = e.target.checked; pt.reset(); };
 $('#exp').oninput = e => { renderer.toneMappingExposure = Math.pow(2, +e.target.value); pt.reset(); };
 $('#lit').oninput = () => { if (D) { setLights(); pt.reset(); } };
 $('#pause').onclick = e => { running = !running; e.target.textContent = running ? '일시정지' : '계속'; };
 $('#save').onclick = () => { cv.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `GOFIT_실사렌더_${Math.floor(pt.samples)}샘플.png`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png'); };
 $('#load').onchange = e => { LOAD = +e.target.value; spf = 1; };
 /* closing: stop, free the graphics card's memory and the context at once (not whenever the browser gets round to it) */
-function shutdown() { running = false; try { pt && pt.dispose(); } catch (_) { } try { scene && scene.traverse(o => { if (o.geometry) o.geometry.dispose(); const m = o.material; for (const q of Array.isArray(m) ? m : m ? [m] : []) { for (const k in q) if (q[k] && q[k].isTexture) q[k].dispose(); q.dispose(); } }); } catch (_) { } try { renderer && renderer.dispose(); renderer && renderer.forceContextLoss(); } catch (_) { } pt = null; }
+function shutdown() { running = false; try { fence && renderer.getContext().deleteSync(fence); fence = null; } catch (_) { } try { pt && pt.dispose(); } catch (_) { } try { scene && scene.traverse(o => { if (o.geometry) o.geometry.dispose(); const m = o.material; for (const q of Array.isArray(m) ? m : m ? [m] : []) { for (const k in q) if (q[k] && q[k].isTexture) q[k].dispose(); q.dispose(); } }); } catch (_) { } try { renderer && renderer.dispose(); renderer && renderer.forceContextLoss(); } catch (_) { } pt = null; }
 window.ptShutdown = shutdown;
 const leave = () => { shutdown(); post({ type: 'pt-close' }); };
 $('#close').onclick = leave;
