@@ -127,6 +127,7 @@ CV.polyNear = (pl, q) => { let best = 0, bd = Infinity; for (let j = 0; j < pl.Q
 CV.midLine = (L, pl, u0, u1) => { const P = L.room.pts, out = []; for (let j = 0; j < pl.Q.length - 1; j++) { const a = Math.max(u0, pl.us[j]), b = Math.min(u1, pl.us[j + 1]); if (b - a < 1e-5 && !(u0 === u1 && a <= b + 1e-9)) continue; const e = G.edge(P, (pl.c.s + j) % pl.N), d = GP.WALL_T / 2; for (const u of [a, b]) out.push([pl.Q[j][0] + e.dx * (u - pl.us[j]) - e.nx * d, pl.Q[j][1] + e.dz * (u - pl.us[j]) - e.nz * d]); if (u0 === u1) break; } return out; };
 CV.edgeAt = (L, pl, u) => { let j = 0; while (j < pl.Q.length - 2 && pl.us[j + 1] < u) j++; return G.edge(L.room.pts, (pl.c.s + j) % pl.N); };
 /* the glass on wall piece w of a curve, in metres along that piece (null: no glass on that curve) */
+CV.glassPosts = (L, w) => { const c = CV.of(L, w); if (!c || !c.ref.glass) return []; const pl = CV.poly(L, c), k = (w - c.s + pl.N) % pl.N, a = pl.us[k], b = pl.us[k + 1], gw = c.ref.gw ?? GP.GLASS_GW, out = []; for (const [t0, t1] of CV.glassR(c)) { const u0 = t0 * pl.L, len = (t1 - t0) * pl.L, n = gw > 0 ? Math.max(1, Math.round(len / gw)) : 1; for (let j = 0; j <= n; j++) { const u = u0 + len * j / n; if (u >= a - 1e-6 && u <= b + 1e-6) out.push(u - a); } } return out; };      // where the posts stand on wall piece w (m along it)
 CV.segGlass = (L, w) => { const c = CV.of(L, w); if (!c || !c.ref.glass) return null; const pl = CV.poly(L, c), k = (w - c.s + pl.N) % pl.N, a = pl.us[k], b = pl.us[k + 1], out = []; for (const [t0, t1] of CV.glassR(c)) { const u0 = Math.max(a, t0 * pl.L), u1 = Math.min(b, t1 * pl.L); if (u1 - u0 > 1e-4) out.push([u0 - a, u1 - a]); } return out; };
 /* the door tool on a curve: a pane 2.4 m wide where it was pressed (fitted between the glass already there), or, on glass, that
    stretch back to wall */
@@ -157,7 +158,7 @@ const glassRow = (c) => {
   return h + gwRow('cgW', gw, `data-s="${c.s}"`);
 };
 CV.glassRow = glassRow;
-const glassDone = (msg) => { GP.changed('room'); if (msg) GP.toast(msg, { ms: 2500 }); ui().renderInspector(); const pop = $('#pop'); if (pop && !pop.hidden && pop.querySelector('[data-cgall],[data-cglass]')) GP.closePop(); };
+const glassDone = (msg, keepPop) => { GP.changed('room'); if (msg) GP.toast(msg, { ms: 2500 }); ui().renderInspector(); const pop = $('#pop'); if (!keepPop && pop && !pop.hidden && pop.querySelector('[data-cgall],[data-cglass]')) GP.closePop(); };
 document.addEventListener('click', e => {
   if (GP.viewOnly) return; const b = e.target.closest('[data-cglass],[data-cgall],[data-cgpart],[data-cgadd],[data-cgdel]'); if (!b) return;
   const L = GP.L(), c = CV.list(L).find(q => q.s === +b.dataset.s); if (!c) return; const ref = c.ref;
@@ -172,10 +173,10 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('change', e => {
   const t = e.target; if (GP.viewOnly) return;
-  if (t.dataset && t.dataset.cgr != null) { const L = GP.L(), c = CV.list(L).find(q => q.s === +t.dataset.s); if (!c) return; const Lb = CV.len(L, c), R = CV.glassR(c).map(r => r.slice()), k = +t.dataset.cgr, v = parseFloat(t.value); if (!R[k] || !isFinite(v)) return; R[k][+t.dataset.e] = U.clamp(v / Lb, 0, 1); if (R[k][1] - R[k][0] < .3 / Lb) { GP.toast('유리는 30cm 이상으로 넣어 주세요', { bad: true }); ui().renderInspector(); return; } CV.setRanges(c.ref, R); glassDone(); return; }
+  if (t.dataset && t.dataset.cgr != null) { const L = GP.L(), c = CV.list(L).find(q => q.s === +t.dataset.s); if (!c) return; const Lb = CV.len(L, c), R = CV.glassR(c).map(r => r.slice()), k = +t.dataset.cgr, v = parseFloat(t.value); if (!R[k] || !isFinite(v)) return; R[k][+t.dataset.e] = U.clamp(v / Lb, 0, 1); if (R[k][1] - R[k][0] < .3 / Lb) { if (!GP.live.on) { GP.toast('유리는 30cm 이상으로 넣어 주세요', { bad: true }); ui().renderInspector(); } return; } CV.setRanges(c.ref, R); glassDone('', true); return; }
   if (t.id === 'cgW') { const L = GP.L(), c = CV.list(L).find(q => q.s === +t.dataset.s); if (!c) return; c.ref.gw = GP.gwVal(+t.value); GP.changed('room'); }
 });
-document.addEventListener('input', e => { const t = e.target; if (t.id === 'cgW' || t.id === 'pGw') { const l = $('#' + t.id + 'V'); if (l) l.textContent = GP.gwTxt(GP.gwVal(+t.value)); } });
+document.addEventListener('input', e => { const t = e.target; if (t.id === 'cgW' && !GP.viewOnly) { const L = GP.L(), c = CV.list(L).find(q => q.s === +t.dataset.s); if (!c) return; c.ref.gw = GP.gwVal(+t.value); const l = $('#cgWV'); if (l) l.textContent = GP.gwTxt(c.ref.gw); GP.changed('room3d', { commit: false }); } });
 /* the plan: a selected curve with glass shows an orange bar at each end of each stretch (drag: resize) and a label in its
    middle (drag: move the stretch). Ctrl 1 cm · Alt free · near the curve's ends they snap to them. */
 CV.glassHandles = () => {
@@ -294,10 +295,11 @@ CV.curvePop = (el, s) => {
     GP.popover(el, `<div class="ph">둥근 모서리</div><div class="ang-pop"><div class="unit"><input type="number" id="rcR" step="1" min="2" value="${U.cm(c.ref.rc.r)}"><em>cm</em></div>
       <button class="mi def" data-act="r"><div><b>반지름 바꾸기</b><small><kbd>Enter</kbd></small></div></button><button class="mi" data-act="sharp"><div><b>뾰족한 모서리로 되돌리기</b></div></button>
       <p class="note">모서리 안쪽 주황 점을 끌어도 반지름이 바뀌어요.</p></div>`, (act) => {
-      if (act === 'sharp') { CV.unround(GP.L(), s); GP.changed(['room', 'openings']); return false; }
-      const v = parseFloat($('#rcR').value); if (!(v >= 2)) { GP.toast('2cm 이상으로 넣어 주세요', { bad: true }); return true; } c.ref.rc.r = v / 100; GP.changed('room'); return false;
-    });
-    const ri = $('#rcR'); setTimeout(() => { ri.focus(); ri.select(); }, 20); ri.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') { const b = document.querySelector('#pop [data-act="r"]'); if (b) b.click(); } else if (ev.key === 'Escape') GP.closePop(); });
+      rtr.undo(); if (act === 'sharp') { CV.unround(GP.L(), s); GP.changed(['room', 'openings']); return false; }
+      const v = parseFloat($('#rcR').value); if (!(v >= 2)) { GP.toast('2cm 이상으로 넣어 주세요', { bad: true }); return true; } const c2 = CV.list(GP.L()).find(q => q.s === s); if (c2 && c2.ref.rc) { c2.ref.rc.r = v / 100; GP.changed('room'); } return false;
+    }, () => rtr.undo());
+    const ri = $('#rcR'), rtr = GP.tryOut(); ri.dataset.nolive = '';
+    ri.addEventListener('input', () => { const v = parseFloat(ri.value); if (!(v >= 2)) { rtr.undo(); return; } rtr.run(() => { const c2 = CV.list(GP.L()).find(q => q.s === s); if (!c2 || !c2.ref.rc) return false; c2.ref.rc.r = v / 100; GP.changed('room'); }); }); setTimeout(() => { ri.focus(); ri.select(); }, 20); ri.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') { const b = document.querySelector('#pop [data-act="r"]'); if (b) b.click(); } else if (ev.key === 'Escape') GP.closePop(); });
     return;
   }
   GP.popover(el, `<div class="ph">곡선 벽 · 길이 ${L0.toFixed(2)} m</div><div class="ang-pop"><div class="unit"><input type="number" id="cvLen" step="0.01" min="0.3" value="${L0.toFixed(2)}"><em>m</em></div>
@@ -305,10 +307,11 @@ CV.curvePop = (el, s) => {
     <button class="mi" data-act="flat"><div><b>직선으로 펴기</b><small>곡선을 한 장의 곧은 벽으로 바꿔요</small></div></button>
     <div class="ph" style="margin-top:4px">통유리</div>${glassRow(c)}
     <p class="note">모양은 곡선 양 끝의 <b style="color:#E0622B">주황 손잡이</b>를 끌거나(한쪽만 길게 당기면 그쪽이 더 휘어요), 곡선을 직접 끌어서 바꿔요(잡은 곳이 가장 많이 휘어요). 곡선을 더블클릭하면 그 자리에 점이 생겨 둘로 나뉘어요.</p></div>`, (act) => {
-    if (act === 'flat') { CV.flatten(GP.L(), s); GP.changed(['room', 'openings']); GP.toast('곡선을 곧은 벽으로 폈어요'); return false; }
+    ltr.undo(); if (act === 'flat') { CV.flatten(GP.L(), s); GP.changed(['room', 'openings']); GP.toast('곡선을 곧은 벽으로 폈어요'); return false; }
     if (act === 'len') { const v = parseFloat($('#cvLen').value); if (!(v >= .3 && v < 500)) { GP.toast('0.3m 이상으로 넣어 주세요', { bad: true }); return true; } if (Math.abs(v - L0) < .0005) return false; const k = v / L0, b = G.bounds(GP.L().room.pts); CV.scaleAll(k, [b.minX, b.minZ]); GP.S.fit(); GP.toast(`전체를 ${(k * 100).toFixed(1)}%로 맞췄어요 (Ctrl+Z로 되돌리기)`, { ms: 4000 }); return false; }
-  });
-  const inp = $('#cvLen'); setTimeout(() => { inp.focus(); inp.select(); }, 20);
+  }, () => ltr.undo());
+  const inp = $('#cvLen'), ltr = GP.tryOut(); setTimeout(() => { inp.focus(); inp.select(); }, 20); inp.dataset.nolive = '';
+  inp.addEventListener('input', () => { const v = parseFloat(inp.value); if (!(v >= .3 && v < 500) || Math.abs(v - L0) < .0005) { ltr.undo(); return; } ltr.run(() => { const b = G.bounds(GP.L().room.pts); CV.scaleAll(v / L0, [b.minX, b.minZ], { underlay: false }); }); });      // shown as typed (the plan picture follows on Enter)
   inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') { const b = document.querySelector('#pop [data-act="len"]'); if (b) b.click(); } else if (ev.key === 'Escape') GP.closePop(); });
 };
 

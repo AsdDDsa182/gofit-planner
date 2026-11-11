@@ -15,7 +15,7 @@ V3.init = () => {
   R.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); R.outputEncoding = THREE.sRGBEncoding; R.toneMapping = THREE.ACESFilmicToneMapping; R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap;
   sc = new THREE.Scene(); sc.background = new THREE.Color('#E6E9E6');
   cam = new THREE.PerspectiveCamera(40, 1, .1, 400);      // (a nearer far / farther near: more depth precision, no flicker on far walls)
-  sc.add(new THREE.HemisphereLight(0xffffff, 0x8d9399, .42));      // with the environment map on top, more than this washes white walls and floors out
+  sc.add(V3.hemi = new THREE.HemisphereLight(0xffffff, 0x8d9399, .42));      // with the environment map on top, more than this washes white walls and floors out
   const dl = V3.dir = new THREE.DirectionalLight(0xffffff, .9); dl.castShadow = true; dl.shadow.mapSize.set(2048, 2048); dl.shadow.bias = -.0004; dl.shadow.normalBias = .025; sc.add(dl, dl.target);
   const pm = new THREE.PMREMGenerator(R); const env = new THREE.Scene(); const eg = new THREE.BoxGeometry(1, 1, 1);
   env.add(new THREE.Mesh(new THREE.BoxGeometry(12, 6, 12), new THREE.MeshBasicMaterial({ color: '#7d8388', side: THREE.BackSide })));
@@ -28,7 +28,11 @@ V3.init = () => {
   T.concrete = canvasTex(256, (x, s) => { const Rn = rng(11); x.fillStyle = '#b9bbb8'; x.fillRect(0, 0, s, s); for (let i = 0; i < 700; i++) { const v = Rn() < .5 ? 255 : 40; x.fillStyle = `rgba(${v},${v},${v},.04)`; x.beginPath(); x.arc(Rn() * s, Rn() * s, 3 + Rn() * 16, 0, 7); x.fill(); } }, 1 / 3);
   new ResizeObserver(() => V3.resize()).observe($('#stage'));
   cv.addEventListener('pointerdown', lookDown, true); cv.addEventListener('pointermove', lookMove, true); cv.addEventListener('pointerup', lookUp, true); cv.addEventListener('pointerdown', grab, true); cv.addEventListener('pointermove', onMove); cv.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; }); cv.addEventListener('pointerup', onUp); cv.addEventListener('pointercancel', e => { if (mv) endDrag(e); }); cv.addEventListener('dblclick', e => { const uid = pick(e), it = uid && GP.findItem(uid); if (it) GP.M3.open(it); }); cv.addEventListener('pointerleave', () => { setHover(null); GP.tip.hide(); });
-  GP.on('changed', (P) => { if (V3.on) V3.rebuild(P); else built = false; });      // changed while 3D was closed: the next open rebuilds everything
+  GP.on('changed', (P) => {
+    if (!V3.on) { built = false; return; }
+    if (GP.live.on || GP.live.el) { const q = V3._q || (V3._q = new Set()); (P || ['all']).forEach(k => q.add(k)); if (!V3._qr) V3._qr = requestAnimationFrame(() => { const s = V3._q; V3._q = null; V3._qr = 0; V3.rebuild(s); }); return; }      // a value being dragged or typed: at most once a frame
+    V3.rebuild(P);
+  });      // changed while 3D was closed: the next open rebuilds everything
   GP.on('project', () => { built = false; }); GP.on('restore', () => { built = false; if (V3.on) V3.rebuild(); });
   GP.on('selection', () => { if (V3.on) markSel(); });
   GP.on('placing', () => { ghostBuild(); if (R) R.domElement.style.cursor = GP.ui.placing ? 'crosshair' : ''; });
@@ -40,7 +44,7 @@ V3.resize = () => {
 };
 V3.invalidate = () => { dirty = true; };
 V3.camera = () => cam;
-function loop() { raf = requestAnimationFrame(loop); if (V3.walking) walkStep(); else if (ctl.update()) dirty = true; if (!dirty) return; dirty = false; wallFade(); R.render(sc, cam); }
+function loop() { raf = requestAnimationFrame(loop); if (V3.walking) walkStep(); else if (ctl.update()) dirty = true; if (!dirty) return; dirty = false; wallFade(); lightsFor(cam.position); skyAt(cam.position); R.render(sc, cam); }
 
 /* ---------------- show / hide ---------------- */
 V3.show = (on) => {
@@ -111,9 +115,38 @@ const CADL = () => mat('cadl', () => new THREE.LineBasicMaterial({ color: '#1b1f
 function edgesOf(geo) { return geo.userData.edges30 || (geo.userData.edges30 = new THREE.EdgesGeometry(geo, 30)); }
 /* (wall finishes sit 4 mm in front of the wall: far away the depth buffer cannot tell them apart and the white wall flickered
    through in specks; polygonOffset draws the finish in front) */
+/* the world around: a sky dome that moves with the camera (so it stays at infinity) showing a gradient or a 360° photo, the light
+   that goes with it, and the ground outside the building — a big disc fading out at its rim, under the room's floor */
+let skyMesh = null; const skyTex = {}, groundTex = {};
+function skyTexOf(d) {
+  if (skyTex[d.id]) return skyTex[d.id]; let t;
+  if (d.pano) t = new THREE.TextureLoader().load(GP.R3.base() + 'assets/env/sky_' + d.pano + '.jpg', () => { dirty = true; });
+  else { const c = document.createElement('canvas'); c.width = 4; c.height = 512; const x = c.getContext('2d'), gr = x.createLinearGradient(0, 0, 0, 512); d.g.forEach(([o, col]) => gr.addColorStop(o, col)); x.fillStyle = gr; x.fillRect(0, 0, 4, 512); t = new THREE.CanvasTexture(c); }
+  t.encoding = THREE.sRGBEncoding; return (skyTex[d.id] = t);
+}
+function applyEnv() {
+  const E = GP.envOf(GP.P.settings), d = E.sky, on = !LINE && d.id !== 'studio';
+  if (on && !skyMesh) { const geo = new THREE.SphereGeometry(300, 64, 32); geo.scale(-1, 1, 1); skyMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ toneMapped: false, depthWrite: false, fog: false })); skyMesh.renderOrder = -10; skyMesh.frustumCulled = false; skyMesh.raycast = () => { }; sc.add(skyMesh); }
+  if (skyMesh) { skyMesh.visible = on; if (on) { const t = skyTexOf(d); if (skyMesh.material.map !== t) { skyMesh.material.map = t; skyMesh.material.needsUpdate = true; } skyMesh.rotation.y = -E.rot * DEG; } }
+  sc.background.set(LINE ? '#F7F8F7' : '#E6E9E6');
+  const l = (!LINE && d.light) || {}; V3.hemi.color.set(l.sky || '#ffffff'); V3.hemi.groundColor.set(l.gnd || '#8d9399'); V3.hemi.intensity = l.hi ?? .42; V3.dir.color.set(l.sun || '#ffffff'); V3.dir.intensity = l.si ?? .9;
+  for (const gd of GP.ENV_GROUND) { const m = matCache['ground:' + gd.id]; if (m) m.color.setScalar(l.gm ?? 1); }      // a dark sky, a dark ground
+  dirty = true;
+}
+const skyAt = pos => { if (skyMesh) skyMesh.position.copy(pos); };
+function buildGround(g, P) {
+  const d = GP.envOf(GP.P.settings).ground; if (LINE || d.id === 'none') return;
+  const bb = G.bounds(P), Rg = Math.max(70, Math.hypot(bb.sx, bb.sz) * 3), geo = new THREE.RingGeometry(.01, Rg, 96, 10), pos = geo.attributes.position, col = [];
+  for (let k = 0; k < pos.count; k++) { const r = Math.hypot(pos.getX(k), pos.getY(k)) / Rg, a = r < .4 ? 1 : Math.max(0, 1 - (r - .4) / .6); col.push(1, 1, 1, a * a * (3 - 2 * a)); }      // fades out towards the rim
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 4)); geo.rotateX(-Math.PI / 2);
+  const t = groundTex[d.id] || (groundTex[d.id] = (() => { const tx = new THREE.TextureLoader().load(GP.R3.base() + 'assets/env/ground_' + d.id + '.jpg', () => { dirty = true; }); tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.encoding = THREE.sRGBEncoding; tx.anisotropy = 8; return tx; })());
+  t.repeat.set(2 * Rg / d.size, 2 * Rg / d.size);
+  const m = new THREE.Mesh(geo, mat('ground:' + d.id, () => new THREE.MeshLambertMaterial({ map: t, vertexColors: true, transparent: true }))); m.position.set(bb.cx, -.02, bb.cz); m.renderOrder = -1; m.receiveShadow = true; m.raycast = () => { }; m.userData.own = true; g.add(m);
+}
 /* ceiling lights: the chosen design set out on the ceiling — rows along the room's long side for line lights, a grid for the
    rest (at least 45 cm from the walls); the body and the glow recoloured by their material names (g_lhouse / g_lemit) */
-const lightScenes = {};
+const lightScenes = {}; let lightRef = null;
+const lightsFor = (pos) => { if (lightRef) lightRef.holder.visible = V3.walking || pos.y < lightRef.H - .05; };      // only from under the ceiling
 function lightScene(id) { return lightScenes[id] || (lightScenes[id] = GP.R3.loaders().then(gl => new Promise((res, rej) => gl.load(GP.R3.base() + 'models/light/' + id + '.glb', r => res(r.scene), undefined, rej))).catch(e => { delete lightScenes[id]; throw e; })); }
 function lightSpots(P, d, gap) {
   const b = G.bounds(P), alongX = b.sx >= b.sz, Lw = alongX ? b.sx : b.sz, Sw = alongX ? b.sz : b.sx, o0 = alongX ? b.minX : b.minZ, s0 = alongX ? b.minZ : b.minX, out = [];
@@ -131,7 +164,7 @@ function buildLights(g, P, H, st) {
   const L = GP.lightOf(st); if (L.d.id === 'none') return; const spots = lightSpots(P, L.d, L.gap); if (!spots.length) return;
   const tone = GP.LIGHT_TONE[L.tone], body = GP.LIGHT_BODY[L.body];
   const em = mat('lt:e:' + L.tone, () => new THREE.MeshBasicMaterial({ color: tone.c, toneMapped: false })), hm = mat('lt:h:' + L.body, () => std(body.c, { metalness: body.m, roughness: body.r }));
-  const holder = new THREE.Group(); holder.userData.own = true; g.add(holder);
+  const holder = new THREE.Group(); holder.userData.own = true; g.add(holder); lightRef = { holder, H };
   lightScene(L.d.id).then(scene => {
     if (!holder.parent) return;      // built again since
     const proto = scene.clone(true); proto.traverse(n => { if (!n.isMesh) return; const nm = (n.material && n.material.name) || ''; if (/lemit/.test(nm)) n.material = em; else if (/lhouse/.test(nm)) n.material = hm; n.castShadow = false; n.receiveShadow = false; });
@@ -163,17 +196,20 @@ function toLine(obj, keepMat) { const ms = []; obj.traverse(n => { if (n.isMesh)
 /* ---------------- build ---------------- */
 const NO3D = new Set(['annot', 'zones', 'zone', 'note', 'dim']), MATS = new Set(['mats', 'mat']);
 V3.rebuild = (P) => {
-  if (!R || !GP.P) return; const line = GP.S.style === 'line', parts = P instanceof Set ? [...P] : null, full = !parts || line !== LINE || !built || parts.some(k => !NO3D.has(k) && !MATS.has(k) && k !== 'items');
+  if (!R || !GP.P) return; const line = GP.S.style === 'line', parts = P instanceof Set ? [...P] : null, full = !parts || line !== LINE || !built || parts.some(k => !NO3D.has(k) && !MATS.has(k) && k !== 'items' && k !== 'room3d' && k !== 'env3d');
   LINE = line; sc.background.set(LINE ? '#F7F8F7' : '#E6E9E6'); V3.dir.castShadow = !LINE;
   if (full) { buildRoom(); buildMats(); buildItems(); built = true; }
-  else if (parts.some(k => MATS.has(k))) { buildMats(); buildItems(); }      // machines stand on the blocks
-  else if (parts.includes('items')) buildItems();
-  markSel(); dirty = true;
+  else {
+    if (parts.includes('room3d')) buildRoom();      // finishes, lights, glass panes: the room alone
+    if (parts.some(k => MATS.has(k))) { buildMats(); buildItems(); }      // machines stand on the blocks
+    else if (parts.includes('items')) buildItems();
+  }
+  applyEnv(); markSel(); dirty = true;
 };
 let built = false;
 let wallMeshes = [];
 function buildRoom() {
-  const g = groups.room; clear(g); wallMeshes = [];
+  const g = groups.room; clear(g); wallMeshes = []; lightRef = null;
   const L = GP.L(), st = GP.P.settings, P = L.room.pts; if (P.length < 3) return;
   const fg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); fg.rotateX(-Math.PI / 2); const fd = finishOf(st.floorBase), TA = st.texAdj || {}, fk = GP.texAdjKey(TA.floor), floor = new THREE.Mesh(fg, LINE ? CADM() : fd ? mat('floor:' + fd.id + fk, () => new THREE.MeshLambertMaterial({ color: '#d0d0d0', map: finishTex(fd.id, TA.floor) })) : mat('floor' + fk, () => std(adjHex('#dcdcdc', TA.floor), { map: V3.tex.concrete, roughness: .85 }))); floor.receiveShadow = true; floor.position.y = -.001; floor.userData.own = true; g.add(floor);
   const H = V3.cut ? Math.min(1.1, st.wallH) : st.wallH, O = G.offset(P, WALL_T, true), n = P.length, marks = L.wallMarks || {};
@@ -181,6 +217,7 @@ function buildRoom() {
     const cg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); cg.rotateX(-Math.PI / 2); const cd = (GP.TEX.ceil || []).find(t => t.id === st.ceilTex && t.size), ck = GP.texAdjKey(TA.ceil), ceil = new THREE.Mesh(cg, cd ? mat('ceil:' + cd.id + ck, () => new THREE.MeshBasicMaterial({ color: cd.id === 'ceil_glow' ? '#ffffff' : '#d2d4d3', map: finishTex(cd.id, TA.ceil), side: THREE.BackSide })) : mat('ceil' + ck, () => new THREE.MeshBasicMaterial({ color: adjHex('#c4c8c6', TA.ceil), side: THREE.BackSide }))); ceil.position.y = H; ceil.userData.own = true; g.add(ceil);
     buildLights(g, P, H, st);
   }
+  buildGround(g, P);
   // curved walls (without doors on them): one smooth piece each
   const oneCurve = new Set();
   if (GP.CV) for (const c of GP.CV.list(L)) {
@@ -679,7 +716,7 @@ V3.snapshot = async (w, h, preset) => {
   const view = typeof preset === 'object' && preset ? preset : null, shot = new THREE.PerspectiveCamera(view && view.fov || 40, w / h, .1, 400);
   if (view) { shot.position.set(...view.pos); shot.lookAt(new THREE.Vector3(...view.target)); }
   else if (preset) { const p = V3.presets()[preset]; shot.position.set(...p.pos); shot.lookAt(new THREE.Vector3(...p.target)); } else { shot.position.copy(cam.position); shot.quaternion.copy(cam.quaternion); }
-  const pr = R.getPixelRatio(); R.setPixelRatio(1); R.setSize(w, h, false); const keep = cam.position.clone(); cam.position.copy(shot.position); solid = !!view; wallFade(); solid = false; cam.position.copy(keep); R.render(sc, shot);
+  const pr = R.getPixelRatio(); R.setPixelRatio(1); R.setSize(w, h, false); const keep = cam.position.clone(); cam.position.copy(shot.position); solid = !!view; wallFade(); solid = false; cam.position.copy(keep); lightsFor(shot.position); skyAt(shot.position); R.render(sc, shot); lightsFor(cam.position); skyAt(cam.position);
   const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(R.domElement, 0, 0);
   R.setPixelRatio(pr); V3.resize(); if (selKeep) sc.add(selKeep); dirty = true; void c0; return c;
 };

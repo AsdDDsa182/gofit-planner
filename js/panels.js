@@ -23,6 +23,7 @@ function applyRoomLive(P, fit) {
   liveT = setTimeout(() => { const n = GP.pruneWalls(); if (n) { GP.changed('openings', { commit: false }); GP.toast(`벽 개수가 줄어서 문·창문 ${n}개를 지웠어요 (Ctrl+Z로 되돌릴 수 있어요)`, { ms: 4500 }); } GP.H.commit(); if (fit) GP.S.fit(); }, 700);
 }
 panels.renderSpace = () => {
+  if (GP.liveWait('space', $('#panel-space'), panels.renderSpace)) return;
   const P = GP.P, st = P.settings, L = GP.L(), A = Math.abs(G.area(L.room.pts));
   const el = $('#panel-space');
   // folds: only "make the room" is open at first; each title shows its current value so closed ones still say something
@@ -41,6 +42,11 @@ panels.renderSpace = () => {
     <div class="rng"><span>빛 색</span><div class="seg sm">${Object.entries(GP.LIGHT_TONE).map(([k, t]) => `<button data-ltone="${k}" class="${L.tone === k ? 'on' : ''}" title="${t.k}"><i class="eqc-dot" style="background:${t.c}"></i>${t.n}</button>`).join('')}</div></div>
     <div class="rng"><span>몸체 색</span><div class="seg sm">${Object.entries(GP.LIGHT_BODY).map(([k, b]) => `<button data-lbody="${k}" class="${L.body === k ? 'on' : ''}"><i class="eqc-dot" style="background:${b.c}"></i>${b.n}</button>`).join('')}</div></div>
     ${L.d.id === 'none' ? '' : `<div class="rng"><span>간격</span><input type="range" id="ltGap" min="1" max="6" step="0.1" value="${L.gap}"><b id="ltGapV">${L.gap.toFixed(1)} m</b></div>`}`); })()}
+  ${(() => { const E = GP.envOf(st); return fold('env', '3D 배경 · 바깥', E.sky.name + (E.ground.id !== 'none' ? ' · ' + E.ground.name : ''), `<p class="note" style="margin:0">3D 보기 · 걸어 보기 · 제안서 3D 그림에서 건물 밖으로 보이는 하늘과 바닥이에요. 빛 색도 하늘에 맞춰 바뀌어요. 실사 배경은 360° 사진이에요(Poly Haven, CC0).</p>
+    <div class="env-grid">${GP.ENV_SKY.map(d => `<button class="env-card${E.sky.id === d.id ? ' on' : ''}" data-envsky="${d.id}" title="${U.esc(d.name)}"><i style="background:${d.pano ? `url(assets/env/thumb/sky_${d.pano}.jpg) center/cover` : GP.envGrad(d)}"></i><span>${U.esc(d.name)}</span></button>`).join('')}</div>
+    ${E.sky.pano ? `<div class="rng"><span>배경 돌리기</span><input type="range" id="envRot" min="0" max="359" step="1" value="${E.rot}"><b id="envRotV">${E.rot}°</b></div>` : ''}
+    <span class="lbl" style="margin:2px 0 -2px">건물 밖 바닥</span>
+    <div class="env-grid g5">${GP.ENV_GROUND.map(d => `<button class="env-card${E.ground.id === d.id ? ' on' : ''}" data-envground="${d.id}" title="${U.esc(d.name)}"><i style="${d.id === 'none' ? '' : `background:url(assets/env/thumb/ground_${d.id}.jpg) center/cover`}">${d.id === 'none' ? '✕' : ''}</i><span>${U.esc(d.name)}</span></button>`).join('')}</div>`); })()}
   ${fold('ceil', '천장 높이', `${st.wallH}m`, `<label class="fld"><span>바닥에서 천장까지</span>${numI('ceilH', st.wallH, .05, 'm', 'min="2" max="8"')}</label><p class="note" style="margin:0">기구마다 쓸 때 필요한 높이(트레드밀 위 사람 키, 스텝밀 맨 위 계단 등)를 이 높이로 점검해요. 3D 벽 높이로도 쓰여요.</p>`)}
   ${fold('trace', '고객 도면 대고 그리기', GP.S.underlay ? '도면 깔림' : '', `<p class="note">받은 평면도 사진이나 캐드 파일(DXF)을 깔고 <b>펜</b>으로 벽 모서리를 따라 찍으면 실제 모양 그대로 만들 수 있어요. 그다음 확실히 아는 벽 하나의 길이를 넣으면 전체 크기가 맞춰져요.</p>
     <div class="row2"><label class="btn file" style="position:relative;overflow:hidden">이미지·PDF 캡처<input type="file" id="ulImg" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label><label class="btn file" style="position:relative;overflow:hidden">캐드 파일 (DXF)<input type="file" id="ulDxf" accept=".dxf" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label></div>
@@ -101,6 +107,7 @@ panels.renderUL = renderUL;
 const spEl = $('#panel-space');
 spEl.addEventListener('click', e => {
   const t = e.target; if (t.closest('[data-xform]')) { ui.setTool('xform'); return; }
+  { const eb = t.closest('[data-envsky],[data-envground]'); if (eb) { const st = GP.P.settings, en = st.env = Object.assign({}, st.env || {}); if (eb.dataset.envsky) en.sky = eb.dataset.envsky; if (eb.dataset.envground) en.ground = eb.dataset.envground; GP.changed(eb.dataset.envsky ? ['env3d', 'settings'] : ['room3d', 'settings']); panels.renderSpace(); if (!(GP.V3 && GP.V3.on)) GP.toast('배경은 3D 보기에서 보여요', { ms: 2500 }); return; } }
   { const lb = t.closest('[data-light],[data-ltone],[data-lbody]'); if (lb) { const st = GP.P.settings, l = st.light = Object.assign({}, st.light || {}); if (lb.dataset.light) { l.type = lb.dataset.light; delete l.gap; } if (lb.dataset.ltone) l.tone = lb.dataset.ltone; if (lb.dataset.lbody) l.body = lb.dataset.lbody; GP.changed('settings'); panels.renderSpace(); if (!(GP.V3 && GP.V3.on)) GP.toast('조명은 3D 보기에서 보여요', { ms: 2500 }); return; } }
   if (t.closest('[data-clearroom]')) { GP.tools.clearRoom(true); return; }
   if (t.closest('[data-pen]')) { ui.setTool('pen'); GP.toast('모서리를 차례로 클릭하세요. 휘어진 곳은 누른 채 끌면 곡선이 돼요. 첫 점을 누르면 완성!', { ms: 5000 }); return; }
@@ -120,12 +127,15 @@ spEl.addEventListener('input', e => {
   if (t.id === 'pyIn' || t.id === 'pyRatio') { const P = pyRect(); if (sp.py >= 3) applyRoomLive(P, true); return; }
   if (t.id && t.id.startsWith('shp_')) { const v = +t.value; if (v > 0) { sp.vals[sp.shape][t.dataset.k] = v; shpCalc(); applyRoomLive(SHAPES[sp.shape].make(sp.vals[sp.shape])); GP.OV.hiWall = hiWallsFor(t.dataset.k); } return; }
   if (t.dataset.f && sp.walk) { const i = +t.dataset.i; if (t.dataset.f === 'len') { const v = +t.value; if (!(v > 0)) return; sp.walk[i].len = v; } else sp.walk[i].turn = +t.value; walkCalc(); applyRoomLive(walkToPts(sp.walk)); return; }
-  if (t.id === 'ltGap') { const st = GP.P.settings; st.light = Object.assign({}, st.light || {}, { gap: +t.value }); const v = $('#ltGapV'); if (v) v.textContent = (+t.value).toFixed(1) + ' m'; clearTimeout(panels._ltT); panels._ltT = setTimeout(() => GP.changed('settings'), 150); return; }
+  if (t.id === 'envRot') { const st = GP.P.settings; st.env = Object.assign({}, st.env || {}, { rot: ((Math.round(+t.value) % 360) + 360) % 360 }); const v = $('#envRotV'); if (v) v.textContent = st.env.rot + '°'; GP.changed('env3d', { commit: false }); return; }
+  if (t.id === 'ltGap') { const st = GP.P.settings; st.light = Object.assign({}, st.light || {}, { gap: U.clamp(+t.value || 1, .8, 8) }); const v = $('#ltGapV'); if (v) v.textContent = st.light.gap.toFixed(1) + ' m'; GP.changed('room3d', { commit: false }); return; }
   if (t.id === 'ulOp' || t.id === 'ulW' || t.id === 'ulX' || t.id === 'ulY' || t.id === 'ulScale') { const UL = GP.S.underlay; if (!UL) return; const v = +t.value; if (!isFinite(v)) return; if (t.id === 'ulOp') UL.op = v; if (t.id === 'ulW') UL.w = Math.max(1, v); if (t.id === 'ulX') UL.x = v; if (t.id === 'ulY') UL.z = v; if (t.id === 'ulScale') UL.scale = v; GP.S.buildUnderlay(UL); panels.saveUL(); return; }
 });
 spEl.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.c != null && t.dataset.i != null && t.closest('#vtable')) { const P = GP.L().room.pts, i = +t.dataset.i, v = +t.value; if (isFinite(v) && P[i]) { if (GP.CV) GP.CV.release(GP.L(), i); P[i][+t.dataset.c] = U.r3(v); GP.changed('room'); } return; }
+  if (t.id === 'ltGap') { GP.changed('settings'); return; }
+  if (t.id === 'envRot') { GP.changed(['env3d', 'settings']); return; }
   if (t.id === 'baseboard') { GP.P.settings.baseboard = t.value; GP.changed(['room', 'settings']); return; }
   if (t.id === 'wallColor') { GP.P.settings.wallColor = t.value; GP.changed(['room', 'settings']); return; }
   if (t.id === 'ceilH') { const v = U.clamp(+t.value || 2.8, 2, 8); GP.P.settings.wallH = U.r2(v); t.value = GP.P.settings.wallH; GP.changed('all'); GP.toast(`천장 높이 ${GP.P.settings.wallH}m 기준으로 다시 점검했어요`); return; }
@@ -232,6 +242,7 @@ const brush = { block: 'coat', trim: 'rubber' };
 panels.matBrush = () => brush;
 const swatches = {}; const blockSwatch = k => swatches[k] || (swatches[k] = GP.S.blockSwatch(k));
 panels.renderFloor = () => {
+  if (GP.liveWait('floor', $('#panel-floor'), panels.renderFloor)) return;
   const el = $('#panel-floor'), L = GP.L(), sum = GP.calc.matSummary(), so = ui.selObj();
   const selMat = so && so.k === 'mat' ? so.obj : null;
   el.innerHTML = `<p class="lead">고무블럭(500×500 · 25T)을 깔 구역을 그리면 장수와 마감재 개수가 자동으로 계산돼요. 벽에 붙은 변에는 마감재가 빠져요.</p>
@@ -319,6 +330,7 @@ Q.no = () => { const q = GP.L().quote; if (!q.no) { const d = new Date(); q.no =
 const EXTRA_PRESETS = [['덤벨 세트', '2~30kg', '세트'], ['바벨·원판 세트', '', '세트'], ['케틀벨 세트', '', '세트'], ['덤벨 거치대', '', '개'], ['요가·스트레칭 매트', '', '개'], ['폼롤러', '', '개'], ['밴드·튜빙 세트', '', '세트'], ['메디신볼 세트', '', '세트'], ['짐볼', '', '개'], ['플라이오 박스', '', '개']];
 function extraChips() { const seen = new Set(EXTRA_PRESETS.map(p => p[0])); return (GP.lib.extraRecent || []).filter(n => n && !seen.has(n)).map(n => [n, '', '식']).concat(EXTRA_PRESETS); }
 panels.renderQuote = () => {
+  if (GP.liveWait('quote', $('#quoteSheet'), panels.renderQuote)) return;
   const qs = $('#quoteSheet'); if (qs.hidden) return; const R = Q.compute(), q = GP.L().quote, lib = GP.lib;
   qs.innerHTML = `<div class="qtool"><button class="btn" data-q="close">← 도면으로</button><b class="qt-title">견적서</b><div class="acts" style="flex:0"><button class="btn" data-q="prices">${IC.gear} 단가 한 번에</button><button class="btn primary" data-q="pdf">${IC.pdf} 견적서 PDF</button></div></div>
   <div class="qwrap"><aside class="qside">

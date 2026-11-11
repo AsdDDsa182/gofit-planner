@@ -942,6 +942,6 @@ act.inspChange = (el, live) => {
   if (so.k === 'zone') { if (id === 'zN') o.name = el.value; if (id === 'zC') o.color = el.value; if (live) { GP.S.invalidate(); return; } GP.changed('zones'); return; }
   if (so.k === 'room') { if (id === 'rN') o.name = el.value; if (live) { GP.S.invalidate(); return; } GP.changed('annot'); return; }
   if (so.k === 'note') { if (id === 'nT') o.text = el.value; if (live) { GP.S.invalidate(); return; } GP.changed('annot'); return; }
-  if (so.k === 'wall') { const i = o; if (id === 'wL' && isFinite(v) && v > .3) tools.setWallLength(i, v); ui.renderInspector(); return; }
+  if (so.k === 'wall') { const i = o; if (id === 'wL' && isFinite(v) && v > .3) { tools.setWallLength(i, v); ui.renderInspector(); } return; }
 };
 })();

@@ -294,6 +294,7 @@ function drawWalls(x, L, px, sel, hov, scr) {
         if (!thin) { x.beginPath(); q.forEach((p, k) => k ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); x.fillStyle = hi ? '#2450E0' : S._line ? '#FFFFFF' : '#E2EEF8'; x.fill(); }
         x.beginPath(); x.moveTo(m0[0], m0[1]); x.lineTo(m1[0], m1[1]); x.strokeStyle = hi ? '#2450E0' : S._line ? '#1B1F23' : '#3B7FC4'; x.lineWidth = (thin ? 2 : 1.4) * px; x.stroke();
       }
+      x.beginPath(); for (const u of GP.CV.glassPosts(L, i)) { const p = inner(u), q = outer(u); x.moveTo(p[0], p[1]); x.lineTo(q[0], q[1]); } x.strokeStyle = hi ? '#2450E0' : S._line ? '#1B1F23' : '#2F3236'; x.lineWidth = Math.max(1.6 * px, .05); x.stroke();
       const rest = []; let u = 0; for (const [g0, g1] of gseg) { if (g0 > u + 1e-4) rest.push([u, g0]); u = g1; } if (u < Ls - 1e-4) rest.push([u, Ls]); pieces = rest; if (!pieces.length) continue;
     }
     if (thin) { for (const [s0, s1] of pieces) { const p = inner(s0), q = inner(s1); x.beginPath(); x.moveTo(p[0], p[1]); x.lineTo(q[0], q[1]); x.strokeStyle = hi ? '#2450E0' : '#1F2429'; x.lineWidth = (hi ? 3 : 2) * px; x.lineCap = 'round'; x.stroke(); } continue; }
@@ -317,7 +318,8 @@ function drawWalls(x, L, px, sel, hov, scr) {
         const q = [lf(s0), lf(s1), rt(s1), rt(s0)]; x.beginPath(); q.forEach((pp, k) => k ? x.lineTo(pp[0], pp[1]) : x.moveTo(pp[0], pp[1])); x.closePath();
         x.fillStyle = on ? '#2450E0' : hv ? '#D9711A' : S._line ? '#FFFFFF' : kind === 'glass' ? '#DCEAF6' : kind === 'half' ? '#C9CED3' : '#4A525B'; x.fill(); if (S._line && !on && !hv && kind === 'wall') { x.save(); hatchPoly(x, q, px); x.restore(); }
         x.beginPath(); q.forEach((pp, k) => k ? x.lineTo(pp[0], pp[1]) : x.moveTo(pp[0], pp[1])); x.closePath(); x.strokeStyle = on ? '#2450E0' : S._line ? '#1B1F23' : kind === 'glass' ? '#3B7FC4' : '#2B3036'; x.lineWidth = (S._line ? 1.2 : 1) * px; x.stroke();
-        if (kind === 'glass' && !on) { const c0 = [a[0] + sI.dx * s0, a[1] + sI.dz * s0], c1 = [a[0] + sI.dx * s1, a[1] + sI.dz * s1]; x.beginPath(); x.moveTo(c0[0], c0[1]); x.lineTo(c1[0], c1[1]); x.strokeStyle = S._line ? '#1B1F23' : '#3B7FC4'; x.stroke(); }
+        if (kind === 'glass' && !on) { const c0 = [a[0] + sI.dx * s0, a[1] + sI.dz * s0], c1 = [a[0] + sI.dx * s1, a[1] + sI.dz * s1]; x.beginPath(); x.moveTo(c0[0], c0[1]); x.lineTo(c1[0], c1[1]); x.strokeStyle = S._line ? '#1B1F23' : '#3B7FC4'; x.stroke();
+          const pgw = p.gw ?? GP.GLASS_GW, np = pgw > 0 ? Math.max(1, Math.round((s1 - s0) / pgw)) : 1; x.beginPath(); for (let j = 0; j <= np; j++) { const u = s0 + (s1 - s0) * j / np; x.moveTo(a[0] + sI.dx * u + nlx * t / 2, a[1] + sI.dz * u + nlz * t / 2); x.lineTo(a[0] + sI.dx * u - nlx * t / 2, a[1] + sI.dz * u - nlz * t / 2); } x.strokeStyle = S._line ? '#1B1F23' : '#2F3236'; x.lineWidth = Math.max(1.6 * px, .04); x.stroke(); }
         if (kind === 'half' && !on) { x.save(); x.clip(); x.beginPath(); for (let u = s0; u < s1 + t; u += .12) { const p0 = lf(Math.min(u, s1)), p1 = rt(Math.max(s0, u - t)); x.moveTo(p0[0], p0[1]); x.lineTo(p1[0], p1[1]); } x.strokeStyle = '#7F8891'; x.lineWidth = px; x.stroke(); x.restore(); }
       }
     }

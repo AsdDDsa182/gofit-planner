@@ -39,7 +39,63 @@ U.jo = (w, a, b) => { const s = String(w || ''); const c = s.charCodeAt(s.length
 
 /* ---------------- toast / busy / modal / popover / confirm ---------------- */
 let toastT = 0;
+/* ---------------- live editing ----------------
+   Whatever a slider, a number box or a colour box changes shows on the plan and in 3D at once, while it is dragged or typed (not
+   when it is let go). Each 'input' runs the field's own 'change' handlers with GP.live.on set: nothing goes into the undo history
+   and no toast shows; the real 'change' (let go, Enter, leaving the box) records one step. While a field is in use the panels
+   around it are not drawn again (that ended the drag and took the caret away); they catch up when it is let go. */
+const LV = GP.live = { el: null, on: false, pend: new Map(), sel: '' };
+const LIVE_IN = 'input[type=number],input[type=range],input[type=color]';
+const OWN_LIVE = '#ltGap,#ulOp,#ulW,#ulX,#ulY,#ulScale,[data-tadj],#arcR,#arcBend,#pyIn,#pyRatio,[id^="shp_"],#panel-space [data-f],#cgW,#pGw,#envRot,[data-nolive]';      // (these do their own live work on 'input')
+const inUse = el => !!(el && el.matches && el.matches(LIVE_IN + ',input[type=text],input:not([type]),textarea'));
+GP.liveIn = box => { const el = LV.el; return !!(el && box && el.isConnected && box.contains(el)); };
+GP.liveWait = (key, box, fn) => { if (!GP.liveIn(box)) { LV.pend.delete(key); return false; } LV.pend.set(key, fn); return true; };      // a panel in use: drawn when it is let go
+const selKey = () => JSON.stringify((GP.ui && GP.ui.sel) || []);
+function liveFlush() {
+  const el = LV.el, had = !!el && document.activeElement === el, id = el && el.id, fs = [...LV.pend.values()]; LV.pend.clear(); LV.el = null;
+  fs.forEach(f => { try { f(); } catch (e) { console.error(e); } });
+  let a = document.activeElement; if (had && id && !el.isConnected) { const n = document.getElementById(id); if (n) { n.focus(); try { n.select(); } catch (_) { } a = n; } }      // drawn again: the caret goes back
+  LV.el = inUse(a) && a.type !== 'range' ? a : null;
+}
+document.addEventListener('focusin', e => { const t = e.target; if (inUse(t) && t.type !== 'range') { LV.el = t; LV.sel = selKey(); } });
+document.addEventListener('pointerdown', e => { if (e.target.type === 'range') { LV.el = e.target; LV.sel = selKey(); } }, true);
+document.addEventListener('keydown', e => { if (e.target.type === 'range' && /Arrow|Page|Home|End/.test(e.key)) { LV.el = e.target; LV.sel = selKey(); } }, true);
+document.addEventListener('focusout', e => { const t = e.target; if (t === LV.el) setTimeout(() => { if (LV.el === t && document.activeElement !== t) liveFlush(); }, 0); });
+document.addEventListener('input', e => {
+  const t = e.target; if (LV.on || GP.viewOnly || !t.matches || !t.matches(LIVE_IN) || t.matches(OWN_LIVE)) return;
+  if (t.type === 'number' && (t.value === '' || (t.validity && t.validity.badInput))) return;      // half typed ("2.", "-"): wait
+  if (!LV.el) { LV.el = t; LV.sel = selKey(); }
+  const v0 = t.value; LV.on = true;
+  try { t.dispatchEvent(new Event('change', { bubbles: true })); } catch (err) { console.error(err); } finally { LV.on = false; }
+  if (t.isConnected && t.value !== v0) t.value = v0;      // a handler tidied the number (clamped, rounded): not while it is typed
+});
+document.addEventListener('change', e => {
+  if (LV.on) return; const t = e.target; if (!inUse(t)) return;
+  if (t === LV.el && t.closest('#insp') && LV.sel !== selKey()) { e.stopImmediatePropagation(); GP.H.commit(); }      // something else got picked while it was typed: what was typed is in already; the new pick is left alone
+  setTimeout(liveFlush, 0);
+}, true);
+/* a typed value tried out on the plan while it is typed: the layout goes back before each try, and when it is cancelled */
+GP.tryOut = () => {
+  const L = GP.L(), snap = JSON.stringify(L); let used = false;
+  const back = () => { const o = JSON.parse(snap); for (const k of Object.keys(L)) delete L[k]; Object.assign(L, o); };
+  return {
+    run(f) { if (used) back(); used = true; LV.on = true; let ok = false; try { ok = f() !== false; } catch (e) { console.error(e); } finally { LV.on = false; } if (!ok) { back(); used = false; LV.on = true; try { GP.changed('all', { commit: false }); } finally { LV.on = false; } } },
+    undo() { if (!used) return; used = false; back(); LV.on = true; try { GP.changed('all', { commit: false }); } finally { LV.on = false; } },
+  };
+};
+/* the number beside a slider: click it to type one (live too; beyond the slider's ends is fine) */
+document.addEventListener('click', e => {
+  const b = e.target.closest('.rng > b'); if (!b || GP.viewOnly || b.parentElement.querySelector('.rng-in')) return; const r = b.parentElement.querySelector('input[type=range]'); if (!r || r.disabled) return;
+  const v0 = r.value, inp = document.createElement('input'); inp.type = 'number'; inp.className = 'rng-in'; inp.step = r.step || 'any'; inp.value = r.value; inp.dataset.nolive = '';
+  b.parentElement.appendChild(inp); b.style.visibility = 'hidden'; inp.focus(); inp.select(); let done = false;
+  const push = fin => { const v = parseFloat(inp.value); if (!isFinite(v)) return; if (v > +r.max) r.max = v; if (v < +r.min) r.min = v; r.value = v; r.dispatchEvent(new Event('input', { bubbles: true })); if (fin) r.dispatchEvent(new Event('change', { bubbles: true })); };
+  const end = ok => { if (done) return; done = true; if (!ok) { inp.value = v0; } push(true); inp.remove(); b.style.visibility = ''; };
+  inp.addEventListener('input', () => { if (inp.value !== '' && !inp.validity.badInput) push(false); });
+  inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') end(true); else if (ev.key === 'Escape') end(false); });
+  inp.addEventListener('blur', () => end(true));
+});
 GP.toast = (msg, o) => {
+  if (LV.on) return;
   o = o || {}; const t = $('#toast'); t.innerHTML = `<span>${U.esc(msg)}</span>` + (o.action ? `<button>${U.esc(o.action)}</button>` : '');
   t.classList.toggle('bad', !!o.bad); t.hidden = false; t.style.animation = 'none'; void t.offsetWidth; t.style.animation = '';
   if (o.action) t.querySelector('button').onclick = () => { t.hidden = true; o.onAction && o.onAction(); };
@@ -65,16 +121,16 @@ GP.prompt = (title, label, val) => new Promise(res => {
   $('#pmOk').onclick = ok; $('#pmIn').onkeydown = e => { if (e.key === 'Enter') ok(); };
 });
 const pop = $('#pop');
-GP.popover = (anchor, html, onClick) => {
+GP.popover = (anchor, html, onClick, onClose) => {
   if (!pop.hidden && pop.dataset.anchor === anchor.id) { GP.closePop(); return; }
-  pop.innerHTML = html; GP.fillIcons(pop); pop.hidden = false; pop.dataset.anchor = anchor.id || '';
+  GP.closePop(); pop._onClose = onClose || null; pop.innerHTML = html; GP.fillIcons(pop); pop.hidden = false; pop.dataset.anchor = anchor.id || '';
   const r = anchor.getBoundingClientRect(); const pw = pop.offsetWidth, ph = pop.offsetHeight;
   let x = Math.min(window.innerWidth - pw - 8, Math.max(8, r.right - pw)); if (anchor.id === 'menuBtn') x = Math.max(8, r.left);
   let y = r.bottom + 6; if (y + ph > window.innerHeight - 8) y = Math.max(8, r.top - ph - 6);
   pop.style.left = x + 'px'; pop.style.top = y + 'px';
   pop.onclick = e => { const b = e.target.closest('[data-act]'); if (b && onClick) { const keep = onClick(b.dataset.act, b, e); if (!keep) GP.closePop(); } };
 };
-GP.closePop = () => { pop.hidden = true; pop.dataset.anchor = ''; };
+GP.closePop = () => { const f = pop._onClose; pop._onClose = null; pop.hidden = true; pop.dataset.anchor = ''; if (f) f(); };
 document.addEventListener('pointerdown', e => { if (!pop.hidden && !pop.contains(e.target) && !e.target.closest('#' + (pop.dataset.anchor || 'x'))) GP.closePop(); }, true);
 
 /* ---------------- prices & info (tooltip, inspector, viewer) ---------------- */
@@ -376,7 +432,7 @@ document.addEventListener('input', e => {
   const r = e.target.closest('[data-tadj]'); if (!r || GP.viewOnly) return; const st = GP.P.settings, kind = r.dataset.tadj, k = r.dataset.k, v = +r.value;
   st.texAdj = st.texAdj || {}; st.texAdj[kind] = st.texAdj[kind] || {}; st.texAdj[kind][k] = v;
   const b = r.parentElement.querySelector('b'); if (b) b.textContent = k === 'w' ? (v > 0 ? '따뜻 +' + v : v < 0 ? '차갑 ' + v : '0') : (v > 0 ? '+' : '') + v;
-  clearTimeout(tadjT); tadjT = setTimeout(() => GP.changed('settings', { commit: false }), 120);
+  void tadjT; GP.changed('room3d', { commit: false });
 });
 document.addEventListener('change', e => { if (e.target.closest('[data-tadj]')) GP.changed('settings'); });
 document.addEventListener('click', e => { const b = e.target.closest('[data-tadjreset]'); if (!b || GP.viewOnly) return; const st = GP.P.settings; if (st.texAdj) delete st.texAdj[b.dataset.tadjreset]; GP.changed('settings'); GP.panels.renderSpace(); });
@@ -386,6 +442,7 @@ document.addEventListener('click', e => { const b = e.target.closest('.texgrid [
 const insp = $('#insp');
 const num = (id, v, step, unit, o) => `<div class="unit"><input id="${id}" type="number" step="${step}" value="${v}" ${o || ''}><em>${unit}</em></div>`;
 ui.renderInspector = () => {
+  if (GP.liveWait('insp', insp, ui.renderInspector)) return;
   if (GP.viewOnly || !$('#quoteSheet').hidden) { insp.hidden = true; return; }
   const items = ui.selItems();
   if (ui.sel.length > 1 && items.length === ui.sel.length) { renderMulti(items); return; }
@@ -498,6 +555,7 @@ function inspWall(i) {
 insp.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b) GP.act.inspAction(b.dataset.act, b); });
 insp.addEventListener('change', e => GP.act.inspChange(e.target));
 insp.addEventListener('input', e => { if (['nT', 'rN', 'zN', 'iName'].includes(e.target.id)) GP.act.inspChange(e.target, true); });
+insp.addEventListener('input', e => { if (e.target.id === 'pGw') { const so = ui.selObj(); if (so && so.k === 'part') { so.obj.gw = GP.gwVal(+e.target.value); const l = $('#pGwV'); if (l) l.textContent = GP.gwTxt(so.obj.gw); GP.changed('room3d', { commit: false }); } } });
 
 /* ---------------- checks popover ---------------- */
 /* small screens hide the summary card: the top bar shows the number of things to check instead */

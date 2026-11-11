@@ -4,7 +4,7 @@
                       not have yet (about 20 MB stayed put instead of being fetched again each time). They are still asked for
                       from the site first, so a changed picture or model arrives when online.
    MODELS (kept)      3D libraries and files that never change under the same address: cache first. */
-const CACHE = 'gofit-planner-v3.23.0', ASSETS = 'gofit-assets-v1', MODELS = 'gofit-models-v2';
+const CACHE = 'gofit-planner-v3.24.0', ASSETS = 'gofit-assets-v1', MODELS = 'gofit-models-v2';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/core.js', 'js/catalog.js', 'js/media.js', 'vendor/three.min.js', 'vendor/OrbitControls.js', 'js/m3-parts.js', 'js/m3-models-a.js', 'js/m3-models-b.js', 'js/render3d.js', 'js/symbols.js', 'js/plan.js', 'js/checks.js', 'js/ui.js', 'js/overlay.js', 'js/tools.js', 'js/pen.js', 'js/panels.js', 'js/export.js', 'js/viewer3d.js', 'js/view3d.js', 'js/backup.js', 'js/wizard.js', 'js/app.js',
@@ -13,7 +13,7 @@ const FILES = [
 ];
 const LIBS = ['vendor/GLTFLoader.js', 'vendor/DRACOLoader.js', 'vendor/draco/draco_decoder.wasm', 'vendor/draco/draco_wasm_wrapper.js', 'vendor/draco/draco_decoder.js', 'models/arch/parts.glb?v=1'];      // without these no 3D model opens offline
 const TEX = ['ceil_black', 'ceil_concrete', 'ceil_glow', 'ceil_gypsum', 'ceil_mineral', 'ceil_perforated', 'ceil_wood_louver', 'floor_carpet', 'floor_check_tile', 'floor_concrete', 'floor_concrete_dark', 'floor_epoxy', 'floor_laminate', 'floor_marble', 'floor_oak', 'floor_parquet', 'floor_parquet_diag', 'floor_porcelain', 'floor_rubber_black', 'floor_rubber_blue', 'floor_rubber_grey', 'floor_stone_beige', 'floor_terracotta', 'floor_terrazzo', 'floor_walnut', 'floor_wood_brown', 'floor_wood_dark', 'veneer_ash', 'veneer_oak', 'veneer_teak', 'veneer_walnut', 'wall_beige', 'wall_brick_blue', 'wall_brick_grey', 'wall_brick_large', 'wall_brick_red', 'wall_brick_white', 'wall_climbing', 'wall_concrete', 'wall_limestone', 'wall_metal_green', 'wall_planks_white', 'wall_plaster_dark', 'wall_plaster_grey', 'wall_plaster_white', 'wall_plywood', 'wall_sandstone', 'wall_slate', 'wall_subway_tile', 'wall_wood_panel', 'wall_wood_slat'].flatMap(t => ['assets/tex/' + t + '.jpg', 'assets/tex/thumb/' + t + '.jpg']);
-const isAsset = p => /\/assets\/(plan|plan-line|thumb|tex|light)\/.+\.(png|jpg)$/.test(p) || /\/models\/(basic|light)\/.+\.glb$/.test(p);
+const isAsset = p => /\/assets\/(plan|plan-line|thumb|tex|light|env)\/.+\.(png|jpg)$/.test(p) || /\/models\/(basic|light)\/.+\.glb$/.test(p);
 /* every address not in `name` yet: taken over from an older cache when one has it, downloaded otherwise (six at a time) */
 async function keep(name, urls) {
   const c = await caches.open(name); let i = 0;

@@ -31,7 +31,7 @@ function apply() {
 }
 function defaultStep() { const L = GP.L(); return L.items.some(eqOnly) ? 7 : 1; }
 W.onProject = () => { W.lastAuto = null; if (!GP.viewOnly) apply(); };
-W.refresh = () => { if (W.on && cur && cur.refresh) { const b = $('#wzBody'), y = b ? b.scrollTop : 0; cur.refresh(); const b2 = $('#wzBody'); if (b2) b2.scrollTop = y; } };
+W.refresh = () => { if (GP.liveWait('wiz', $('#wzBody'), W.refresh)) return; if (W.on && cur && cur.refresh) { const b = $('#wzBody'), y = b ? b.scrollTop : 0; cur.refresh(); const b2 = $('#wzBody'); if (b2) b2.scrollTop = y; } };
 
 /* ---------------- navigation ---------------- */
 let cur = null;
@@ -113,6 +113,7 @@ R.part = {
 const OPEN_KINDS = [['auto', '자동문'], ['glass2', '유리 양개문'], ['door2', '양개문'], ['door', '여닫이 문'], ['slide', '미닫이 문']];
 R.door = {
   render(b) {
+    if (GP.liveWait('wzdoor', b, () => R.door.render(b))) return;
     const L = GP.L(), P = GP.P, ops = L.openings.filter(o => o.host === 'room'), cols = L.items.filter(it => it.type === 'column'), waiting = ui.tool === 'opening';
     b.innerHTML = head('출입문은 어디에 있나요?', '버튼을 누른 뒤 도면에서 문이 있는 벽을 클릭하면 놓여요. 놓은 문은 끌어서 옮길 수 있어요.') +
       `<div class="fld"><span>문 종류</span><div class="seg full sm" id="wzOk">${OPEN_KINDS.map(([k, n]) => `<button data-ok="${k}" class="${(W.doorKind || 'auto') === k ? 'on' : ''}">${n}</button>`).join('')}</div></div>

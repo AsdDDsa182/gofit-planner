@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.21.0';
+GP.VERSION = '2.22.0';
 GP.APP_SUB = '짐 스튜디오'; GP.APP_NAME = 'GOFIT ' + GP.APP_SUB;      // the app's name: the top bar, window title, menus (manifest.webmanifest and index.html <title> say it too);
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
@@ -290,6 +290,7 @@ function sanitizeLayout(L) {
 function sanitizeProject(p) {
   const s = p.settings, d = GP.newProject().settings; s.wallColor = sHex(s.wallColor, d.wallColor); s.wallH = U.clamp(sNum(s.wallH, d.wallH), 2, 8); s.accent = sHex(s.accent, d.accent); s.shroud = sHex(s.shroud, d.shroud);
   for (const k of ['floorBase', 'wallTex', 'frameColor', 'seatColor', 'ceilTex']) s[k] = sWord(s[k]) || d[k];
+  { const e = s.env; if (e && typeof e === 'object') { const o = {}; for (const k of ['sky', 'ground']) if (sWord(e[k])) o[k] = sWord(e[k]); const r = sNum(e.rot); if (r) o.rot = ((Math.round(r) % 360) + 360) % 360; s.env = o; } else delete s.env; }
   { const l = s.light; if (l && typeof l === 'object') { const o = {}; for (const k of ['type', 'tone', 'body']) if (sWord(l[k])) o[k] = sWord(l[k]); const g = sNum(l.gap); if (g) o.gap = U.clamp(g, .8, 8); s.light = o; } else delete s.light; }
   { const a = s.texAdj, o = {}; if (a && typeof a === 'object') for (const f of ['floor', 'wall', 'ceil']) if (a[f] && typeof a[f] === 'object') { const q = {}; for (const k of ['b', 'c', 's', 'w']) { const v = sNum(a[f][k]); if (v) q[k] = U.clamp(Math.round(v), -60, 60); } if (Object.keys(q).length) o[f] = q; } if (Object.keys(o).length) s.texAdj = o; else delete s.texAdj; } if (s.baseboard != null && sWord(s.baseboard) === undefined) delete s.baseboard;
   p.id = sWord(p.id) || U.uid('p'); p.name = sTxt(p.name, 120) || '새 프로젝트'; p.client = sTxt(p.client, 120); p.consultant = sTxt(p.consultant, 60); for (const k of ['createdAt', 'updatedAt']) p[k] = sNum(p[k], Date.now());
@@ -337,6 +338,7 @@ const H = GP.H = { stack: [], idx: -1, lastVersionAt: 0 };
 H.snap = () => { const p = GP.P; return JSON.stringify({ settings: p.settings, variants: p.variants, cur: p.cur }); };      // name / client stay out: undoing a move must not bring back an old name
 H.reset = () => { H.stack = [H.snap()]; H.idx = 0; GP.emit('history'); };
 H.commit = () => {
+  if (GP.live && GP.live.on) return false;      // (a value still being dragged or typed: one step when it is let go)
   const s = H.snap(); if (H.stack[H.idx] === s) return false;
   H.stack = H.stack.slice(0, H.idx + 1); H.stack.push(s); if (H.stack.length > 200) H.stack.shift(); H.idx = H.stack.length - 1;
   GP.P.updatedAt = Date.now(); GP.emit('history'); GP.emit('dirty'); return true;

@@ -115,17 +115,21 @@ base.addEventListener('click', e => {
   const t = e.target.closest('.wl.edit:not(.side)'); if (!t || t.classList.contains('editing')) return;
   if (t.dataset.curve != null && GP.CV) { GP.CV.curvePop(t, +t.dataset.curve); return; }
   const i = +t.dataset.wall, L0 = G.edge(GP.L().room.pts, i).L;
-  t.classList.add('editing'); t.innerHTML = `<input type="number" step="0.01" min="0.3" value="${L0.toFixed(2)}" aria-label="벽 길이 (m)">`; const inp = t.firstChild; inp.focus(); inp.select(); let done = false;
-  const fin = ok => { if (done) return; done = true; t.classList.remove('editing'); const v = parseFloat(inp.value); const rec = [...els.values()].find(r => r.el === t); if (rec) rec.html = ''; OV.sync(); if (ok && v >= .3 && v < 500 && Math.abs(v - L0) > .0005) { if (GP.CV) GP.CV.askLength(t, i, v); else GP.tools.setWallLength(i, v); } };
+  t.classList.add('editing'); t.innerHTML = `<input type="number" step="0.01" min="0.3" value="${L0.toFixed(2)}" aria-label="벽 길이 (m)" data-nolive>`; const inp = t.firstChild; inp.focus(); inp.select(); let done = false;
+  const tr = GP.tryOut(), allK = !!GP.S.underlay;      // shown as typed: the way Enter would do it (with a traced plan: everything in proportion, the plan picture itself only on Enter)
+  inp.addEventListener('input', () => { const v = parseFloat(inp.value); if (!(v >= .3 && v < 500)) { tr.undo(); return; } tr.run(() => { if (allK) { const b = G.bounds(GP.L().room.pts); GP.CV.scaleAll(v / L0, [b.minX, b.minZ], { underlay: false }); } else GP.tools.setWallLength(i, v); }); });
+  const fin = ok => { if (done) return; done = true; tr.undo(); t.classList.remove('editing'); const v = parseFloat(inp.value); const rec = [...els.values()].find(r => r.el === t); if (rec) rec.html = ''; OV.sync(); if (ok && v >= .3 && v < 500 && Math.abs(v - L0) > .0005) { if (GP.CV) GP.CV.askLength(t, i, v); else GP.tools.setWallLength(i, v); } };
   inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') fin(true); else if (ev.key === 'Escape') fin(false); }); inp.addEventListener('blur', () => fin(true));
 });
 
 /* ---------------- mat / zone side length edit ---------------- */
 base.addEventListener('click', e => {
   const t = e.target.closest('.wl.side'); if (!t || t.classList.contains('editing')) return; const tg = GP.tools.polyTarget(); if (!tg) return; const i = +t.dataset.side, L0 = G.edge(tg.pts, i).L;
-  t.classList.add('editing'); t.innerHTML = `<input type="number" step="0.05" min="0.3" value="${L0.toFixed(2)}" aria-label="변 길이 (m)">`; const inp = t.firstChild; inp.focus(); inp.select(); let done = false;
+  t.classList.add('editing'); t.innerHTML = `<input type="number" step="0.05" min="0.3" value="${L0.toFixed(2)}" aria-label="변 길이 (m)" data-nolive>`; const inp = t.firstChild; inp.focus(); inp.select(); let done = false;
+  const tr = GP.tryOut();
+  inp.addEventListener('input', () => { const v = parseFloat(inp.value); if (!(v >= .3 && v < 200)) { tr.undo(); return; } tr.run(() => { const cur = GP.tools.polyTarget(); if (!cur || !GP.tools.setSideLength(cur, i, v)) return false; if (cur.kind === 'mat') GP.tools.clipMat(cur.obj); GP.changed(cur.kind === 'mat' ? 'mats' : 'zones'); }); });
   const fin = ok => {
-    if (done) return; done = true; t.classList.remove('editing'); const v = parseFloat(inp.value); const rec = [...els.values()].find(r => r.el === t); if (rec) rec.html = '';
+    if (done) return; done = true; tr.undo(); t.classList.remove('editing'); const v = parseFloat(inp.value); const rec = [...els.values()].find(r => r.el === t); if (rec) rec.html = '';
     if (ok && v >= .3 && v < 200 && Math.abs(v - L0) > .0005) { const cur = GP.tools.polyTarget(); if (cur && GP.tools.setSideLength(cur, i, v)) { if (cur.kind === 'mat') GP.tools.clipMat(cur.obj); GP.changed(cur.kind === 'mat' ? 'mats' : 'zones'); GP.ui.renderInspector(); } }
     OV.sync();
   };
@@ -142,10 +146,11 @@ base.addEventListener('click', e => {
     <button class="mi" data-act="prev"><div><b>${v(pv)}–${v(i)} 벽을 돌려서 맞추기</b><small>${v(pv)} 꼭짓점이 움직여요</small></div></button>
     <p class="note">돌리는 벽의 길이는 그대로예요. 그 다음 벽이 늘거나 줄어서 맞춰져요.</p></div>`, (act) => {
     const val = parseFloat($('#angIn').value); if (!(val > 0 && val < 360)) { GP.toast('1~359° 사이로 넣어 주세요', { bad: true }); return true; }
-    if (Math.abs(val - a0) < .05) return false;
+    tr.undo(); if (Math.abs(val - a0) < .05) return false;
     return !GP.tools.setAngle(i, val, act === 'prev' ? 'prev' : 'next');
-  });
-  const inp = $('#angIn'); setTimeout(() => { inp.focus(); inp.select(); }, 20);
+  }, () => tr.undo());
+  const inp = $('#angIn'), tr = GP.tryOut(); setTimeout(() => { inp.focus(); inp.select(); }, 20); inp.dataset.nolive = '';
+  inp.addEventListener('input', () => { const val = parseFloat(inp.value); if (!(val > 0 && val < 360) || Math.abs(val - a0) < .05) { tr.undo(); return; } tr.run(() => GP.tools.setAngle(i, val, 'next')); });      // shown as typed, the Enter way (the next wall turns)
   inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') { const b = document.querySelector('#pop [data-act="next"]'); if (b) b.click(); } else if (ev.key === 'Escape') GP.closePop(); });
 });
 
