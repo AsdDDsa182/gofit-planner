@@ -146,8 +146,10 @@ CV.glassClick = (L, h) => {
   GP.changed('room'); ui().setTool('select'); ui().select([{ k: 'wall', id: h.seg }]);
 };
 /* the menu: wall / kinds of glass, the whole curve or parts (each from … to … m), the pane width */
-const gwRow = (id, v, attrs) => `<div class="rng"><span>유리 칸</span><input type="range" id="${id}" min="0" max="5" step="0.1" value="${v}" ${attrs || ''}><b id="${id}V">${GP.gwTxt(v)}</b></div>`;
+const gwRow = (id, v, attrs) => `<div class="rng"><span>유리 칸</span><input type="range" id="${id}" min="0" max="${Math.max(10, v)}" step="0.1" value="${v}" ${attrs || ''}><b id="${id}V">${GP.gwTxt(v)}</b></div>`;
 CV.gwRow = gwRow;
+CV.ghTxt = gh => gh >= GP.P.settings.wallH - .005 ? '천장까지' : gh.toFixed(2) + ' m';
+CV.setGH = (ref, v) => { const H = GP.P.settings.wallH; if (!(v < H - .005)) delete ref.gh; else ref.gh = Math.max(.5, Math.round(v * 100) / 100); };      // up to the ceiling: no number kept
 const glassRow = (c) => {
   const L = GP.L(), all = CV.glassAll(c), Lb = CV.len(L, c), gw = c.ref.gw ?? GP.GLASS_GW;
   let h = `<div class="mount" style="grid-template-columns:repeat(${Object.keys(GP.GLASS).length + 1},1fr)"><button class="${c.ref.glass ? '' : 'on'}" data-cglass="" data-s="${c.s}">벽</button>${Object.entries(GP.GLASS).map(([k, g]) => `<button class="${c.ref.glass === k ? 'on' : ''}" data-cglass="${k}" data-s="${c.s}" title="통유리 · ${g.n}">${g.n}</button>`).join('')}</div>`;
@@ -155,7 +157,9 @@ const glassRow = (c) => {
   h += `<div class="rng"><span>범위</span><div class="seg sm"><button data-cgall="1" data-s="${c.s}" class="${all ? 'on' : ''}">곡선 전체</button><button data-cgpart="1" data-s="${c.s}" class="${all ? '' : 'on'}">일부만</button></div></div>`;
   if (!all) h += `<div class="cg-list">${CV.glassR(c).map((r, k) => `<div class="cg-r"><b>유리 ${k + 1}</b><input type="number" step="0.01" min="0" data-cgr="${k}" data-e="0" data-s="${c.s}" value="${(r[0] * Lb).toFixed(2)}"><i>~</i><input type="number" step="0.01" min="0" data-cgr="${k}" data-e="1" data-s="${c.s}" value="${(r[1] * Lb).toFixed(2)}"><em>m</em><button class="icon-btn sm" data-cgdel="${k}" data-s="${c.s}" title="이 유리를 벽으로">✕</button></div>`).join('')}
     <button class="btn sm" data-cgadd="1" data-s="${c.s}">+ 유리 구간 추가</button><p class="note" style="margin:2px 0 0">점 ${CV.num(L, c.s)}에서부터 잰 거리예요. 도면에서 유리 양 끝의 주황 막대를 끌거나 가운데 이름표를 끌어 옮길 수 있어요.</p></div>`;
-  return h + gwRow('cgW', gw, `data-s="${c.s}"`);
+  const H = GP.P.settings.wallH, gh = Math.min(c.ref.gh ?? H, H);
+  return h + gwRow('cgW', gw, `data-s="${c.s}"`) + `<div class="rng"><span>유리 높이</span><input type="range" id="cgH" data-s="${c.s}" min="1" max="${H}" step="0.05" value="${gh}"><b id="cgHV">${CV.ghTxt(gh)}</b></div>
+    <p class="note" style="margin:0">유리 위로 천장까지는 벽이 돼요(공간 높이 ${H.toFixed(2)} m).</p>`;
 };
 CV.glassRow = glassRow;
 const glassDone = (msg, keepPop) => { GP.changed('room'); if (msg) GP.toast(msg, { ms: 2500 }); ui().renderInspector(); const pop = $('#pop'); if (!keepPop && pop && !pop.hidden && pop.querySelector('[data-cgall],[data-cglass]')) GP.closePop(); };
@@ -175,8 +179,9 @@ document.addEventListener('change', e => {
   const t = e.target; if (GP.viewOnly) return;
   if (t.dataset && t.dataset.cgr != null) { const L = GP.L(), c = CV.list(L).find(q => q.s === +t.dataset.s); if (!c) return; const Lb = CV.len(L, c), R = CV.glassR(c).map(r => r.slice()), k = +t.dataset.cgr, v = parseFloat(t.value); if (!R[k] || !isFinite(v)) return; R[k][+t.dataset.e] = U.clamp(v / Lb, 0, 1); if (R[k][1] - R[k][0] < .3 / Lb) { if (!GP.live.on) { GP.toast('유리는 30cm 이상으로 넣어 주세요', { bad: true }); ui().renderInspector(); } return; } CV.setRanges(c.ref, R); glassDone('', true); return; }
   if (t.id === 'cgW') { const L = GP.L(), c = CV.list(L).find(q => q.s === +t.dataset.s); if (!c) return; c.ref.gw = GP.gwVal(+t.value); GP.changed('room'); }
+  if (t.id === 'cgH') { const L = GP.L(), c = CV.list(L).find(q => q.s === +t.dataset.s); if (!c) return; CV.setGH(c.ref, +t.value); GP.changed('room'); }
 });
-document.addEventListener('input', e => { const t = e.target; if (t.id === 'cgW' && !GP.viewOnly) { const L = GP.L(), c = CV.list(L).find(q => q.s === +t.dataset.s); if (!c) return; c.ref.gw = GP.gwVal(+t.value); const l = $('#cgWV'); if (l) l.textContent = GP.gwTxt(c.ref.gw); GP.changed('room3d', { commit: false }); } });
+document.addEventListener('input', e => { const t = e.target; if (t.id === 'cgH' && !GP.viewOnly) { const c = CV.list(GP.L()).find(q => q.s === +t.dataset.s); if (!c) return; CV.setGH(c.ref, +t.value); const l = $('#cgHV'); if (l) l.textContent = CV.ghTxt(Math.min(c.ref.gh ?? 99, GP.P.settings.wallH)); GP.changed('room3d', { commit: false }); return; } if (t.id === 'cgW' && !GP.viewOnly) { const L = GP.L(), c = CV.list(L).find(q => q.s === +t.dataset.s); if (!c) return; c.ref.gw = GP.gwVal(+t.value); const l = $('#cgWV'); if (l) l.textContent = GP.gwTxt(c.ref.gw); GP.changed('room3d', { commit: false }); } });
 /* the plan: a selected curve with glass shows an orange bar at each end of each stretch (drag: resize) and a label in its
    middle (drag: move the stretch). Ctrl 1 cm · Alt free · near the curve's ends they snap to them. */
 CV.glassHandles = () => {

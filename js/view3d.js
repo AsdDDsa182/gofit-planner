@@ -240,10 +240,12 @@ function buildRoom() {
       const q = cut(Q, u0, u1), o = cut(Oq, u0, u1), nn = cut(N_, u0, u1, true), uu = cutU(u0, u1), ot = nn.map(v => [-v[0], -v[1]]);
       if (isG) {
         const M = q.map((p, k) => [p[0] - nn[k][0] * WALL_T / 2, p[1] - nn[k][1] * WALL_T / 2]);
-        add(stripGeo(M, nn, HB, H - HT, uu), LINE ? CADM() : glassMat(c.ref.glass), false).receiveShadow = false;
-        for (const [y0, y1] of [[0, HB], [H - HT, H]]) { add(stripGeo(q, nn, y0, y1, uu), fm, true); add(stripGeo(o, ot, y0, y1, uu), fm, true); add(capGeo(q, o, y1), fm, false); if (y0 > 0) add(capGeo(q, o, y0), fm, false); }
-        const len = u1 - u0, nM = gw > 0 ? Math.max(1, Math.round(len / gw)) : 1, bx = mat('gpost:' + Math.round(H * 100), () => new THREE.BoxGeometry(.05, Math.max(.1, H - HB - HT), .07));
-        for (let k = 0; k <= nM; k++) { const sv = len * k / nM; let j = 1; while (j < uu.length - 1 && uu[j] - u0 < sv) j++; const f = U.clamp((sv - (uu[j - 1] - u0)) / ((uu[j] - uu[j - 1]) || 1), 0, 1), p0 = M[j - 1], p1 = M[j], tx = p1[0] - p0[0], tz = p1[1] - p0[1]; const me = new THREE.Mesh(bx, fm); me.position.set(p0[0] + tx * f, HB + (H - HB - HT) / 2, p0[1] + tz * f); me.rotation.y = -Math.atan2(tz, tx); me.castShadow = true; g.add(me); }
+        const GH = Math.max(HB + HT + .2, Math.min(H, c.ref.gh ?? H));
+        add(stripGeo(M, nn, HB, GH - HT, uu), LINE ? CADM() : glassMat(c.ref.glass), false).receiveShadow = false;
+        if (GH < H - .005) { anyWall = true; add(stripGeo(q, nn, GH, H, uu), wm, true); add(stripGeo(o, ot, GH, H, uu), wm, true); add(capGeo(q, o, H), wm, false); if (tm) add(stripGeo(q.map((p, k) => [p[0] + nn[k][0] * .004, p[1] + nn[k][1] * .004]), nn, GH, H, uu), tm, false); }      // above the glass: wall
+        for (const [y0, y1] of [[0, HB], [GH - HT, GH]]) { add(stripGeo(q, nn, y0, y1, uu), fm, true); add(stripGeo(o, ot, y0, y1, uu), fm, true); add(capGeo(q, o, y1), fm, false); if (y0 > 0) add(capGeo(q, o, y0), fm, false); }
+        const len = u1 - u0, nM = gw > 0 ? Math.max(1, Math.round(len / gw)) : 1, bx = mat('gpost:' + Math.round(GH * 100), () => new THREE.BoxGeometry(.05, Math.max(.1, GH - HB - HT), .07));
+        for (let k = 0; k <= nM; k++) { const sv = len * k / nM; let j = 1; while (j < uu.length - 1 && uu[j] - u0 < sv) j++; const f = U.clamp((sv - (uu[j - 1] - u0)) / ((uu[j] - uu[j - 1]) || 1), 0, 1), p0 = M[j - 1], p1 = M[j], tx = p1[0] - p0[0], tz = p1[1] - p0[1]; const me = new THREE.Mesh(bx, fm); me.position.set(p0[0] + tx * f, HB + (GH - HB - HT) / 2, p0[1] + tz * f); me.rotation.y = -Math.atan2(tz, tx); me.castShadow = true; g.add(me); }
         continue;
       }
       anyWall = true;

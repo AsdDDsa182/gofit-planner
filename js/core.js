@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.22.0';
+GP.VERSION = '2.22.1';
 GP.APP_SUB = '짐 스튜디오'; GP.APP_NAME = 'GOFIT ' + GP.APP_SUB;      // the app's name: the top bar, window title, menus (manifest.webmanifest and index.html <title> say it too);
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
@@ -262,7 +262,7 @@ const GONE = { latlong: 'latpull', multipress: 'shoulder', backext: 'abback' };
 /* curved walls: { start corner: { n pieces, a, b control offsets } } (pen.js) */
 function sCurves(c, N) {
   const out = {}; if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
-  for (const k of Object.keys(c)) { const s = +k, q = c[k], n = q ? +q.n : NaN, a = q && sPts([q.a], 1), b = q && sPts([q.b], 1); if (Number.isInteger(s) && s >= 0 && s < N && Number.isInteger(n) && n >= 2 && n < N && a && b) { out[s] = { n, a: a[0], b: b[0] }; const rp = q.rc && sPts([q.rc.p], 1), rr = q.rc && sNum(q.rc.r); if (rp && rr > 0) out[s].rc = { p: rp[0], r: rr }; if (typeof q.glass === 'string' && /^[a-z]{2,12}$/.test(q.glass)) { out[s].glass = q.glass; const gr = Array.isArray(q.gr) ? q.gr.filter(r => Array.isArray(r) && r.length === 2 && r.every(v => isFinite(+v))).map(r => [U.clamp(+r[0], 0, 1), U.clamp(+r[1], 0, 1)]).filter(r => r[1] - r[0] > .002).slice(0, 40) : null; if (gr && gr.length) out[s].gr = gr; } { const gw = sNum(q.gw); if (gw !== undefined) out[s].gw = gw < .3 ? 0 : U.clamp(gw, .5, 8); } } }
+  for (const k of Object.keys(c)) { const s = +k, q = c[k], n = q ? +q.n : NaN, a = q && sPts([q.a], 1), b = q && sPts([q.b], 1); if (Number.isInteger(s) && s >= 0 && s < N && Number.isInteger(n) && n >= 2 && n < N && a && b) { out[s] = { n, a: a[0], b: b[0] }; const rp = q.rc && sPts([q.rc.p], 1), rr = q.rc && sNum(q.rc.r); if (rp && rr > 0) out[s].rc = { p: rp[0], r: rr }; if (typeof q.glass === 'string' && /^[a-z]{2,12}$/.test(q.glass)) { out[s].glass = q.glass; const gr = Array.isArray(q.gr) ? q.gr.filter(r => Array.isArray(r) && r.length === 2 && r.every(v => isFinite(+v))).map(r => [U.clamp(+r[0], 0, 1), U.clamp(+r[1], 0, 1)]).filter(r => r[1] - r[0] > .002).slice(0, 40) : null; if (gr && gr.length) out[s].gr = gr; } { const gw = sNum(q.gw); if (gw !== undefined) out[s].gw = gw < .3 ? 0 : U.clamp(gw, .5, 12); } { const gh = sNum(q.gh); if (gh > 0) out[s].gh = U.clamp(gh, .5, 20); } } }
   return Object.keys(out).length ? out : null;
 }
 function sanitizeLayout(L) {
@@ -270,7 +270,7 @@ function sanitizeLayout(L) {
   L.room = { pts: sPts(L.room && L.room.pts, 3) || GP.DEFAULT_ROOM.map(q => q.slice()) };
   { const c = sCurves(cv, L.room.pts.length); if (c) L.room.curves = c; }
   if (L0room && L0room.empty === true) L.room.empty = true;
-  L.partitions = L.partitions.filter(q => q && sPts(q.pts, 2)).map(q => { q.pts = sPts(q.pts, 2); q.id = sWord(q.id) || U.uid('pt'); q.thick = U.clamp(sNum(q.thick, .1), .03, .6); q.kind = GP.PARTS[q.kind] ? q.kind : 'wall'; sKeys(q, ['color', 'frameC', 'glass']); sNums(q, ['height', 'gw']); if (q.gw != null) q.gw = q.gw < .3 ? 0 : U.clamp(q.gw, .5, 8); return q; });
+  L.partitions = L.partitions.filter(q => q && sPts(q.pts, 2)).map(q => { q.pts = sPts(q.pts, 2); q.id = sWord(q.id) || U.uid('pt'); q.thick = U.clamp(sNum(q.thick, .1), .03, .6); q.kind = GP.PARTS[q.kind] ? q.kind : 'wall'; sKeys(q, ['color', 'frameC', 'glass']); sNums(q, ['height', 'gw']); if (q.gw != null) q.gw = q.gw < .3 ? 0 : U.clamp(q.gw, .5, 12); return q; });
   L.openings = L.openings.filter(o => o && sNum(o.t) !== undefined && sNum(o.w) !== undefined && Number.isInteger(+o.seg)).map(o => { o.id = sWord(o.id) || U.uid('o'); o.host = sWord(o.host) || 'room'; o.seg = +o.seg; o.t = +o.t; o.w = U.clamp(+o.w, .3, 8); o.kind = GP.OPENINGS[o.kind] ? o.kind : 'door'; sNums(o, ['h', 'sill']); sKeys(o, ['leafC', 'frameC', 'glass', 'hw', 'hinge', 'wtype']); return o; });
   L.items = L.items.filter(it => sWord(String(it.type))).map(it => { it.type = GONE[it.type] || String(it.type); it.uid = sWord(String(it.uid)) || U.uid(); it.x = +it.x; it.z = +it.z; sNums(it, ['w', 'd', 'h', 'elev']); sKeys(it, ['grp', 'mount', 'img', 'fcol', 'scol']); if (it.load != null) it.load = it.load === true || undefined; if (it.name != null) it.name = sTxt(it.name, 80) || undefined;
     if (it.params && typeof it.params === 'object') { for (const k of Object.keys(it.params)) { const v = it.params[k]; if (!(typeof v === 'boolean' || (typeof v === 'number' && isFinite(v)) || sWord(v) !== undefined) || !WORD.test(k)) delete it.params[k]; } } else delete it.params; return it; });

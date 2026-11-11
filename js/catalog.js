@@ -96,7 +96,7 @@ GP.envOf = st => { const e = (st && st.env) || {}; return { sky: GP.ENV_SKY.find
 GP.envGrad = d => d.g ? 'linear-gradient(to bottom,' + d.g.filter(s => s[0] <= .56).map(([o, c]) => `${c} ${Math.round(o / .56 * 100)}%`).join(',') + ')' : 'linear-gradient(#eef0ee,#dfe3df)';
 /* glass walls: the width of one pane (m) unless one is chosen; 0 = one pane, no posts between */
 GP.GLASS_GW = 2;
-GP.gwVal = v => !(v >= .45) ? 0 : Math.min(8, Math.max(.5, Math.round(v * 10) / 10));
+GP.gwVal = v => !(v >= .45) ? 0 : Math.min(12, Math.max(.5, Math.round(v * 10) / 10));
 GP.gwTxt = v => v > 0 ? v.toFixed(1) + ' m마다' : '나누지 않음';
 /* ceiling lights (dev/blender/hq_lights.py → models/light/<id>.glb, picture assets/light/<id>.png): a design, the light's colour and
    the body's colour (the files name the parts g_lhouse / g_lemit), set out on the ceiling every `gap` m; line = its length when it
