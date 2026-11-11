@@ -142,7 +142,7 @@ S.drawPlan = (x, V, o) => {
   }
   W2S();
   // floor
-  if (P.length >= 3) { path(P); x.fillStyle = '#FFFFFF'; x.fill(); const fd = !LINE && !o.white && GP.texDef(st.floorBase), im = fd && fd.size && S.texImg(fd.id); if (im) { const pat = x.createPattern(im, 'repeat'); try { pat.setTransform(new DOMMatrix([fd.size / im.width, 0, 0, fd.size / im.height, 0, 0])); } catch (e) { } x.globalAlpha = .28; x.fillStyle = pat; x.fill(); x.globalAlpha = 1; } }
+  if (P.length >= 3 && !L.room.empty) { path(P); x.fillStyle = '#FFFFFF'; x.fill(); const fd = !LINE && !o.white && GP.texDef(st.floorBase), im = fd && fd.size && S.texImg(fd.id); if (im) { const pat = x.createPattern(im, 'repeat'); try { pat.setTransform(new DOMMatrix([fd.size / im.width, 0, 0, fd.size / im.height, 0, 0])); } catch (e) { } x.globalAlpha = .28; x.fillStyle = pat; x.fill(); x.globalAlpha = 1; } }
   // zones (under mats so they read as areas)
   if (lay.zones) for (const zn of L.zones) { if (zn.pts.length < 3) continue; path(zn.pts); if (!LINE) { x.globalAlpha = .1; x.fillStyle = zn.color || '#2f6bd8'; x.fill(); x.globalAlpha = 1; } x.setLineDash([6 * px, 4 * px]); x.lineWidth = (sel.has('zone:' + zn.id) ? 2.4 : 1.3) * px; x.strokeStyle = LINE && !sel.has('zone:' + zn.id) ? '#59626B' : zn.color || '#2f6bd8'; x.stroke(); x.setLineDash([]); }
   // rubber mats
@@ -196,12 +196,12 @@ S.drawPlan = (x, V, o) => {
   const text = (t, sx, sy, font, col, halo, align) => { x.font = font; x.textAlign = align || 'center'; x.textBaseline = 'middle'; if (halo) { x.lineJoin = 'round'; x.lineWidth = 3.4; x.strokeStyle = halo; x.strokeText(t, sx, sy); } x.fillStyle = col; x.fillText(t, sx, sy); };
   const pill = (t, sx, sy, font, bg, fg, rot, border) => { x.save(); x.translate(sx, sy); if (rot) x.rotate(rot); x.font = font; const tw = x.measureText(t).width + 10, th = 17; x.fillStyle = bg; rrect(x, -tw / 2, -th / 2, tw, th, 4); x.fill(); if (border) { x.strokeStyle = border; x.lineWidth = 1; x.stroke(); } x.fillStyle = fg; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(t, 0, 1); x.restore(); };
   // wall lengths (outside the room)
-  if (lay.dims && P.length >= 3 && !(scr && ui.tool === 'vertex') && GP.CV) for (const c of GP.CV.list(L)) {      // a curved wall: one length
+  if (lay.dims && P.length >= 3 && !L.room.empty && !(scr && ui.tool === 'vertex') && GP.CV) for (const c of GP.CV.list(L)) {      // a curved wall: one length
     const k = GP.CV.ctrl(L, c), m = GP.CV.at(k.p0, k.c1, k.c2, k.p3, .5), e = G.edge(P, (c.s + Math.floor(c.n / 2)) % P.length), off = WALL_T + .38, [ax, ay] = toS(e.a[0], e.a[1]), [bx, by] = toS(e.b[0], e.b[1]);
     let ang = Math.atan2(by - ay, bx - ax); if (ang > Math.PI / 2) ang -= Math.PI; if (ang <= -Math.PI / 2) ang += Math.PI; const [sx, sy] = toS(m[0] - e.nx * off, m[1] - e.nz * off);
     pill('곡선 ' + GP.CV.len(L, c).toFixed(2) + ' m', sx, sy, `600 11.5px ${MONO}`, 'rgba(255,255,255,.96)', '#2A3037', ang, 'rgba(40,46,52,.2)');
   }
-  if (lay.dims && P.length >= 3 && !(scr && ui.tool === 'vertex')) for (let i = 0; i < P.length; i++) {
+  if (lay.dims && P.length >= 3 && !L.room.empty && !(scr && ui.tool === 'vertex')) for (let i = 0; i < P.length; i++) {
     if (GP.CV && GP.CV.of(L, i)) continue;
     const e = G.edge(P, i), off = WALL_T + .38; const [ax, ay] = toS(e.a[0], e.a[1]), [bx, by] = toS(e.b[0], e.b[1]); if (Math.hypot(bx - ax, by - ay) < 44) continue;
     let ang = Math.atan2(by - ay, bx - ax); if (ang > Math.PI / 2) ang -= Math.PI; if (ang <= -Math.PI / 2) ang += Math.PI;
@@ -278,7 +278,7 @@ function hatchPoly(x, q, px) {
   x.strokeStyle = 'rgba(27,31,35,.55)'; x.lineWidth = .8 * px; x.stroke(); x.restore();
 }
 function drawWalls(x, L, px, sel, hov, scr) {
-  const P = L.room.pts, n = P.length, st = GP.P.settings; if (n < 3) return;
+  const P = L.room.pts, n = P.length, st = GP.P.settings; if (n < 3 || L.room.empty) return;
   const O = G.offset(P, WALL_T, true), tl = GP.ui && GP.ui.tool, thin = scr && !GP.viewOnly && (tl === 'vertex' || tl === 'pen' || GP.lib.thinWalls);      // thin lines while the walls are drawn or reshaped (a traced plan shows through)
   const marks = L.wallMarks || {};
   for (let i = 0; i < n; i++) {

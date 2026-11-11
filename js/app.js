@@ -56,7 +56,7 @@ app.newProject = async (w) => {
   else {
     let pts = GP.DEFAULT_ROOM.map(q => q.slice());
     if (w.mode === 'py') { const A = (w.py || 60) * U.PY, r = w.ratio || 1.5, d = U.snap(Math.sqrt(A / r), .05), wd = U.snap(d * r, .05); pts = [[0, 0], [wd, 0], [wd, d], [0, d]]; }
-    p = GP.newProject({ name: w.name || '새 프로젝트', pts }); p.client = w.client || ''; p.consultant = w.consultant || ''; GP.fillMe(p);
+    p = GP.newProject({ name: w.name || '새 프로젝트', pts, empty: w.mode !== 'py' }); p.client = w.client || ''; p.consultant = w.consultant || ''; GP.fillMe(p);
   }
   if (w.name) p.name = w.name; if (w.client) p.client = w.client; if (w.consultant) p.consultant = w.consultant;
   const easy = GP.wiz && GP.wiz.mode() === 'easy' && !GP.viewOnly;
@@ -155,10 +155,10 @@ app.welcome = () => {
     ui.renderTop();
     if (GP.wiz && GP.wiz.on) { GP.wiz.go(1); return; }      // easy mode: the wizard walks on from here
     ui.setStep('space');
-    GP.toast('기본 공간(10 × 8 m)이 깔려 있어요. 벽을 끌거나 크기를 입력해 바꿔 보세요', { ms: 5000 });
+    GP.toast('가운데 「공간 만들기」에서 시작하세요. 펜으로 바로 그리거나 평수 · 도면 사진으로 만들 수 있어요', { ms: 5000 });
     if (!GP.lib.guideSeen) setTimeout(() => GP.panels.guide(), 600);
   };
-  GP.modal(`${GP.APP_NAME} 시작하기`, `<div class="wiz"><p class="note">프로젝트 이름을 정하면 기본 공간(가로 10m × 세로 8m)이 깔린 상태로 시작해요. 공간의 크기와 모양은 바로 다음 화면에서 바꿀 수 있어요.</p>
+  GP.modal(`${GP.APP_NAME} 시작하기`, `<div class="wiz"><p class="note">이름을 정하면 바로 공간을 만들어요. 펜으로 벽을 그리거나, 평수 · 모양 · 도면 사진으로 시작할 수 있어요.</p>
     <label class="fld"><span>프로젝트 이름</span><input id="wcName" placeholder="예: 강남 ○○피트니스" maxlength="60" autofocus></label>
     <label class="fld"><span>고객사 <small class="note">(선택)</small></span><input id="wcClient" maxlength="60"></label>
     <label class="fld"><span>담당자 (내 이름) <small class="note">(선택 · 견적서에 들어가요)</small></span><input id="wcMe" maxlength="40" value="${U.esc((GP.lib.me || {}).name || '')}"></label>
@@ -224,7 +224,7 @@ app.boot = async () => {
   ui.step = 'place';
   /* first visit (or only the sample so far): a plain room under the name dialog; it is saved once named */
   const fresh = !p || (app.isSample(p) && !(await GP.listProjects()).some(r => !app.isSample(r.data)));
-  if (fresh) { p = GP.fillMe(GP.newProject({ name: '새 프로젝트' })); Object.defineProperty(p, 'unnamed', { value: true, writable: true, configurable: true }); ui.step = 'space'; }
+  if (fresh) { p = GP.fillMe(GP.newProject({ name: '새 프로젝트', empty: true })); Object.defineProperty(p, 'unnamed', { value: true, writable: true, configurable: true }); ui.step = 'space'; }
   await app.loadProject(p);
   S.frame(); GP.emit('booted');
   if (fresh) app.welcome();

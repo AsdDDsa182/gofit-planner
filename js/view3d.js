@@ -44,6 +44,7 @@ function loop() { raf = requestAnimationFrame(loop); if (V3.walking) walkStep();
 
 /* ---------------- show / hide ---------------- */
 V3.show = (on) => {
+  if (on && GP.roomEmpty && GP.roomEmpty()) { GP.toast('아직 공간이 없어요. 공간을 먼저 만들면 3D로 볼 수 있어요', { bad: true }); return; }
   if (on && !V3.init()) { GP.toast('이 기기에서는 3D를 켤 수 없어요 (그래픽 가속이 꺼져 있어요)', { bad: true }); return false; }
   V3.on = on; $('#app').classList.toggle('v3', on); $('#c3').hidden = !on; GP.tip.hide();
   document.querySelectorAll('#viewSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === (on ? '3d' : '2d')));

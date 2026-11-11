@@ -191,6 +191,7 @@ const IN_RACK = new Set(['bench_flat', 'bench_adj', 'bench_util']);
 const nested = (a, b) => { const rk = f => f.d.cat === 'rack' && f.it.type !== 'chindip'; const [r, bn] = rk(a) && IN_RACK.has(b.it.type) ? [a, b] : rk(b) && IN_RACK.has(a.it.type) ? [b, a] : []; return !!r && G.pip(bn.it.x, bn.it.z, r.c); };
 checks.nested = nested;
 checks.quick = () => {
+  if (GP.roomEmpty()) { checks.conflicts = new Map(); return checks.conflicts; }
   const L = GP.L(), P = L.room.pts, m = new Map(); const add = (u, r) => { if (!m.has(u)) m.set(u, new Set()); m.get(u).add(r); };
   const F = L.items.map(it => ({ it, c: GP.footprint(it), d: GP.getDef(it.type) || {}, v: vr(it), mount: GP.mountOf(it) }));
   const partPolys = [];
@@ -209,6 +210,7 @@ checks.quick = () => {
   checks.conflicts = m; return m;
 };
 checks.full = () => {
+  if (GP.roomEmpty()) { checks.list = []; if (GP.emit) GP.emit('checks'); return checks.list; }
   const L = GP.L(), st = GP.P.settings, lib = GP.lib, list = []; const P = L.room.pts;
   const push = (sev, code, msg, uids, at) => list.push({ sev, code, msg, uids: uids || [], at });
   if (G.selfX(P)) push('err', 'room', '벽 선이 서로 교차해요. 공간 단계에서 꼭짓점을 정리해 주세요.');

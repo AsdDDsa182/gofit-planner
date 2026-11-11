@@ -18,7 +18,7 @@ const sp = { mode: 'py', shape: 'rect', vals: {}, walk: null, open: new Set(['ma
 for (const k in SHAPES) sp.vals[k] = Object.fromEntries(SHAPES[k].ps.map(p => [p[0], p[2]]));
 let liveT = 0;
 function applyRoomLive(P, fit) {
-  const L = GP.L(); L.room.pts = P.map(p => [U.r3(p[0]), U.r3(p[1])]); delete L.room.curves;
+  const L = GP.L(); L.room.pts = P.map(p => [U.r3(p[0]), U.r3(p[1])]); delete L.room.curves; delete L.room.empty;
   GP.changed('room', { commit: false, fast: true }); clearTimeout(liveT);
   liveT = setTimeout(() => { const n = GP.pruneWalls(); if (n) { GP.changed('openings', { commit: false }); GP.toast(`벽 개수가 줄어서 문·창문 ${n}개를 지웠어요 (Ctrl+Z로 되돌릴 수 있어요)`, { ms: 4500 }); } GP.H.commit(); if (fit) GP.S.fit(); }, 700);
 }
@@ -29,7 +29,7 @@ panels.renderSpace = () => {
   const fold = (id, title, val, body) => `<details class="fold" data-fold="${id}" ${sp.open.has(id) ? 'open' : ''}><summary><span class="fd-t">${title}</span>${val ? `<span class="fd-v">${val}</span>` : ''}</summary><div class="fd-b">${body}</div></details>`;
   const bb = G.bounds(L.room.pts);
   el.innerHTML = `<p class="lead">고객 매장의 벽 모양과 크기를 만들어요. 문·창문·가벽은 도면 위 도구로 넣어요.</p>
-  ${fold('make', '공간 만들기', `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`, `<div class="row2" style="margin-bottom:8px"><button class="btn soft" data-pen="1" title="클릭: 모서리 · 누른 채 끌기: 곡선">${IC.pen}펜으로 그리기</button><button class="btn soft" data-xform="1" title="공간 전체를 상자 손잡이로 키우기 · 줄이기 · 돌리기 (T)">${IC.xform}크기 변형 <kbd>T</kbd></button></div><div class="seg full" id="spMode"><button data-m="py" class="${sp.mode === 'py' ? 'on' : ''}">평수로</button><button data-m="shape" class="${sp.mode === 'shape' ? 'on' : ''}">모양 템플릿</button><button data-m="walk" class="${sp.mode === 'walk' ? 'on' : ''}">실측 입력</button></div>
+  ${fold('make', '공간 만들기', L.room.empty ? '아직 없음' : `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`, `<div class="row2" style="margin-bottom:8px"><button class="btn soft" data-pen="1" title="클릭: 모서리 · 누른 채 끌기: 곡선">${IC.pen}펜으로 그리기</button><button class="btn soft" data-xform="1" title="공간 전체를 상자 손잡이로 키우기 · 줄이기 · 돌리기 (T)">${IC.xform}크기 변형 <kbd>T</kbd></button></div><button class="btn ghost sm" data-clearroom="1" style="margin:-2px 0 8px;align-self:flex-start">벽 비우고 처음부터 그리기</button><div class="seg full" id="spMode"><button data-m="py" class="${sp.mode === 'py' ? 'on' : ''}">평수로</button><button data-m="shape" class="${sp.mode === 'shape' ? 'on' : ''}">모양 템플릿</button><button data-m="walk" class="${sp.mode === 'walk' ? 'on' : ''}">실측 입력</button></div>
     <div id="spBody" class="blk" style="border:0;padding:0"></div>`)}
   ${fold('finish', '벽 · 바닥 마감', `${ui.texName(st.floorBase)} · ${ui.texName(st.wallTex || 'paint')}`, `<p class="note" style="margin:0">3D 보기와 제안서 3D 그림에 보여요. 바닥 무늬는 도면에도 연하게 보여요. 벽마다 다르게 하려면 도면에서 벽을 누르세요.</p>
     <span class="lbl">바닥</span>${ui.texGrid('floor', st.floorBase)}
@@ -47,7 +47,7 @@ panels.renderSpace = () => {
 /* the closed folds' titles keep showing the current size, ceiling and corner count */
 function foldVals() {
   const L = GP.L(), A = Math.abs(G.area(L.room.pts)), bb = G.bounds(L.room.pts), set = (id, v) => { const el = $(`#panel-space [data-fold="${id}"] .fd-v`); if (el) el.textContent = v; };
-  set('make', `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`); set('ceil', `${GP.P.settings.wallH}m`); set('vt', `${L.room.pts.length - (GP.CV ? GP.CV.inner(L).size : 0)}개`);
+  set('make', L.room.empty ? '아직 없음' : `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`); set('ceil', `${GP.P.settings.wallH}m`); set('vt', `${L.room.pts.length - (GP.CV ? GP.CV.inner(L).size : 0)}개`);
   set('finish', `${ui.texName(GP.P.settings.floorBase)} · ${ui.texName(GP.P.settings.wallTex || 'paint')}`);
 }
 panels.openFold = (id) => sp.open.add(id);
@@ -74,6 +74,8 @@ function roomToWalk(P) { const out = []; let prev = null; for (let i = 0; i < P.
 function walkToPts(rows) { const pts = [[0, 0]]; let h = 0; rows.forEach((r, i) => { if (i > 0) h += r.turn; const l = pts[pts.length - 1]; pts.push([U.r3(l[0] + Math.cos(h * U.DEG) * r.len), U.r3(l[1] + Math.sin(h * U.DEG) * r.len)]); }); const last = pts[pts.length - 1]; if (G.len(last, pts[0]) < .03) pts.pop(); return pts; }
 function walkCalc() { const pts = walkToPts(sp.walk); const gap = G.len(pts[pts.length - 1], pts[0]); const el = $('#walkCalc'); if (el) el.textContent = gap < .03 ? '시작점으로 정확히 돌아왔어요 ✓' : `마지막 점이 시작점에서 ${gap.toFixed(2)} m 떨어져 있어요 → 자동으로 이어서 닫아요`; }
 function shpCalc() { const P = SHAPES[sp.shape].make(sp.vals[sp.shape]); const A = Math.abs(G.area(P)); const el = $('#shpCalc'); if (el) el.textContent = `≈ ${A.toFixed(1)}㎡ · ${(A / U.PY).toFixed(1)}평`; }
+/* the empty-space card's 「평수로 시작」: the 평수 inputs as they are */
+panels.applyPy = () => { if (!$('#pyIn')) { sp.mode = 'py'; panels.renderSpace(); } const P = pyRect(); applyRoomLive(P, true); };
 function pyRect() { const py = +($('#pyIn').value) || 0, r = +($('#pyRatio').value) || 1.5; sp.py = py; sp.ratio = r; const A = py * U.PY, d = U.snap(Math.sqrt(A / r), .05), w = U.snap(d * r, .05); const c = $('#pyCalc'); if (c) c.textContent = `≈ ${A.toFixed(1)}㎡ · 가로 ${w.toFixed(2)} m × 세로 ${d.toFixed(2)} m`; return [[0, 0], [w, 0], [w, d], [0, d]]; }
 function hiWallsFor(k) { const V = Object.assign({}, sp.vals[sp.shape]); const P0 = SHAPES[sp.shape].make(V); V[k] = V[k] + .37; const P1 = SHAPES[sp.shape].make(V); const out = new Set(); if (P0.length === P1.length) for (let i = 0; i < P0.length; i++) if (Math.abs(G.len(P0[i], P0[(i + 1) % P0.length]) - G.len(P1[i], P1[(i + 1) % P1.length])) > 1e-6) out.add(i); return out; }
 function renderVTable() {
@@ -93,6 +95,7 @@ panels.renderUL = renderUL;
 const spEl = $('#panel-space');
 spEl.addEventListener('click', e => {
   const t = e.target; if (t.closest('[data-xform]')) { ui.setTool('xform'); return; }
+  if (t.closest('[data-clearroom]')) { GP.tools.clearRoom(true); return; }
   if (t.closest('[data-pen]')) { ui.setTool('pen'); GP.toast('모서리를 차례로 클릭하세요. 휘어진 곳은 누른 채 끌면 곡선이 돼요. 첫 점을 누르면 완성!', { ms: 5000 }); return; }
   const m = t.closest('#spMode [data-m]'); if (m) { sp.mode = m.dataset.m; if (sp.mode === 'walk') sp.walk = null; panels.renderSpace(); return; }
   const shp = t.closest('[data-shape]'); if (shp) { sp.shape = shp.dataset.shape; renderSpBody(); applyRoomLive(SHAPES[sp.shape].make(sp.vals[sp.shape]), true); return; }

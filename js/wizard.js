@@ -37,6 +37,7 @@ W.refresh = () => { if (W.on && cur && cur.refresh) { const b = $('#wzBody'), y 
 let cur = null;
 W.go = (i, quiet) => {
   i = U.clamp(i, 0, STEPS.length - 1); const s = st();
+  if (i > 1 && GP.roomEmpty()) { if (!quiet) GP.toast('먼저 공간을 만들어 주세요. 가운데 「공간 만들기」에서 펜으로 그리거나 평수로 시작할 수 있어요', { bad: true, ms: 4500 }); i = Math.min(i, 1); }
   if (cur && cur.leave) cur.leave();
   W.step = s.step = i; s.max = Math.max(s.max || 0, i);
   GP.tools && GP.tools.cancel(); if (ui.step !== STEPS[i].app) ui.setStep(STEPS[i].app); else ui.setTool('select');

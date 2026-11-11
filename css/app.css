@@ -614,6 +614,14 @@ details.more>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--i
 .eqc-dot{width:11px;height:11px;border-radius:50%;border:1px solid rgba(0,0,0,.28);flex:none}
 .app.easy .insp .sec.eqc-own{display:none}
 #ulCtl{display:flex;flex-direction:column;gap:10px}#ulCtl:not(:empty){margin-top:10px}#ulCtl .note{margin:0}
+.empty-room{position:absolute;inset:0;z-index:2;display:grid;place-items:center;background:color-mix(in srgb,var(--bg) 62%,transparent);backdrop-filter:blur(2px);pointer-events:none}
+.empty-room .er-card{pointer-events:auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 40px rgba(0,0,0,.14);padding:22px 22px 18px;width:min(380px,calc(100% - 32px));display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center}
+.empty-room .er-ic{width:46px;height:46px;border-radius:13px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center}.empty-room .er-ic svg{width:24px;height:24px}
+.empty-room .er-tx{display:flex;flex-direction:column;gap:3px}.empty-room .er-t{font-size:17px}.empty-room .er-d{margin:0;color:var(--muted);font-size:13px}
+.empty-room .er-main{width:100%;display:grid;grid-template-columns:auto 1fr;align-items:center;column-gap:8px;text-align:left;padding:10px 14px}.empty-room .er-main svg{grid-row:span 2;width:20px;height:20px}.empty-room .er-main span{font-weight:700;font-size:14px}.empty-room .er-main small{font-size:11.5px;opacity:.85}
+.empty-room .er-row{display:flex;gap:6px;width:100%}.empty-room .er-row .btn{flex:1;justify-content:center;font-size:12.5px;padding:7px 4px;white-space:nowrap}
+.empty-room.compact{inset:auto;left:50%;top:12px;transform:translateX(-50%);display:block;background:none;backdrop-filter:none;width:max-content;max-width:calc(100% - 24px)}
+.empty-room.compact .er-card{flex-direction:row;width:auto;padding:8px 10px;gap:10px;border-color:var(--accent)}.empty-room.compact .er-ic,.empty-room.compact .er-d{display:none}.empty-room.compact .er-main{width:auto;padding:6px 12px}.empty-room.compact .er-row{width:auto}
 .pl-lead{display:flex;align-items:center;gap:7px;margin:0;font-size:12.5px;color:var(--muted)}
 .pl-lead svg{width:15px;height:15px;flex:none}
 .pl-groups button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:6px 4px}

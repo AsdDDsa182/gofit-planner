@@ -651,7 +651,7 @@ tools.handleUp = () => {
 };
 tools.polyTarget = () => {
   const L = GP.L();
-  if (ui.tool === 'vertex') return { kind: 'room', pts: L.room.pts };
+  if (ui.tool === 'vertex') return L.room.empty ? null : { kind: 'room', pts: L.room.pts };
   if (ui.tool !== 'select') return null;
   const so = ui.selObj(); if (!so) return null;
   if (['mat', 'zone'].includes(so.k)) return { kind: so.k, obj: so.obj, pts: so.obj.pts };
@@ -689,10 +689,17 @@ GP.pruneWalls = () => {
   for (const m of [L.wallMarks, L.wallTex]) if (m) for (const k in m) if (!(+k < n)) delete m[k];
   return before - L.openings.length;
 };
+/* the walls go (to draw them again from nothing); doors and windows on them go too. ask: say what goes first */
+tools.clearRoom = async (ask) => {
+  const L = GP.L(), nOp = L.openings.filter(o => o.host === 'room').length;
+  if (ask && !(await GP.confirm(`공간(벽)을 비우고 처음부터 다시 그릴까요?${nOp ? ` 벽에 있는 문 · 창문 ${nOp}개도 지워져요.` : ''} 기구 · 바닥은 그대로 있어요. (Ctrl+Z로 되돌릴 수 있어요)`, '비우고 새로 그리기'))) return false;
+  L.room.empty = true; delete L.room.curves; L.openings = L.openings.filter(o => o.host !== 'room'); L.wallMarks = {}; L.wallTex = {}; selOnly(-1);
+  GP.changed(['room', 'openings']); ui.setTool(GP.wiz && GP.wiz.on ? 'select' : 'select'); return true;
+};
 tools.deleteVertex = (i) => {
   const t = tools.polyTarget(); if (!t) return; const min = t.open ? 2 : 3;
   const del = (tools.selVs.size > 1 && tools.selVs.has(i) ? [...tools.selVs] : [i]).sort((a, b) => b - a);
-  if (t.pts.length - del.length < min) { GP.toast(`꼭짓점은 최소 ${min}개가 필요해요`, { bad: true }); return; }
+  if (t.pts.length - del.length < min) { if (t.kind === 'room') { tools.clearRoom(true); return; } GP.toast(`꼭짓점은 최소 ${min}개가 필요해요`, { bad: true }); return; }
   del.forEach(k => { const old = t.pts.map(p => p.slice()); t.pts.splice(k, 1); tools.reindex(t, 'del', k, old); }); selOnly(-1); GP.changed(t.kind === 'room' ? ['room', 'openings'] : t.kind);
 };
 tools.setAngle = (i, deg, side) => {

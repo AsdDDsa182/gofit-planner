@@ -175,7 +175,7 @@ ui.renderGuideBits = () => {
   if (!GP.P) return; const L = GP.L(), st = ui.step, nx = $('#stepNext'), eh = $('#emptyHint');
   if (nx) {
     nx.hidden = GP.viewOnly; const n = NEXT[st] || NEXT.place;
-    const info = st === 'space' ? `${U.r2(G.area(L.room.pts) / U.PY)}평 공간` : st === 'place' ? `기구 ${L.items.filter(it => !GP.info.NO_QUOTE.has(it.type)).length}대 놓음` : `고무블럭 ${L.mats.length}구역`;
+    const info = st === 'space' ? (L.room.empty ? '아직 공간 없음' : `${U.r2(Math.abs(G.area(L.room.pts)) / U.PY)}평 공간`) : st === 'place' ? `기구 ${L.items.filter(it => !GP.info.NO_QUOTE.has(it.type)).length}대 놓음` : `고무블럭 ${L.mats.length}구역`;
     nx.innerHTML = `<small>${info}</small><button class="btn primary" data-next="${n[0]}">${n[1]} →</button>`;
   }
   if (eh) {
@@ -196,6 +196,7 @@ ui.renderTools = () => {
 };
 $('#tools').addEventListener('click', e => { const b = e.target.closest('[data-tool]'); if (!b) return; const id = b.dataset.tool; if (id === 'multi') { ui.multi = !ui.multi; ui.setTool('select'); GP.toast(ui.multi ? '누르는 기구가 차례로 선택에 추가돼요' : '여러 개 선택을 껐어요'); return; } ui.setTool(ui.tool === id && id !== 'select' ? 'select' : id); });
 ui.setTool = (id) => {
+  if (['vertex', 'xform', 'opening', 'fillwall'].includes(id) && GP.roomEmpty && GP.roomEmpty()) { GP.toast('아직 공간이 없어요. 가운데 「공간 만들기」에서 먼저 만들어 주세요', { bad: true }); id = 'select'; }
   if (GP.tools) GP.tools.cancel();
   if (id !== 'select' && GP.V3 && GP.V3.on) GP.V3.show(false);
   ui.tool = id;
@@ -279,8 +280,8 @@ $('#hint').addEventListener('click', e => { const k = e.target.closest('[data-ok
 
 /* ---------------- HUD, layers, zoom ---------------- */
 ui.renderHUD = () => {
-  const L = GP.L(), A = Math.abs(G.area(L.room.pts)); const eq = L.items.filter(it => GP.EQUIP_CATS.has((GP.getDef(it.type) || {}).cat) && !(GP.getDef(it.type) || {}).flat).length;
-  $('#hud').innerHTML = `<div class="hud-area"><b>${(A / U.PY).toFixed(1)}</b><span>평</span><em>${A.toFixed(1)}㎡</em></div><div class="hud-meta">운동기구 ${eq}대</div>`;
+  const L = GP.L(), A = L.room.empty ? 0 : Math.abs(G.area(L.room.pts)); const eq = L.items.filter(it => GP.EQUIP_CATS.has((GP.getDef(it.type) || {}).cat) && !(GP.getDef(it.type) || {}).flat).length;
+  $('#hud').innerHTML = `<div class="hud-area">${L.room.empty ? '<b>–</b><em>공간 없음</em>' : `<b>${(A / U.PY).toFixed(1)}</b><span>평</span><em>${A.toFixed(1)}㎡</em>`}</div><div class="hud-meta">운동기구 ${eq}대</div>`;
 };
 const LAYERS = [['labels', '이름'], ['clear', '사용 공간'], ['mats', '바닥'], ['zones', '존'], ['dims', '치수'], ['notes', '메모'], ['aisle', '좁은 통로'], ['egress', '비상 동선'], ['magnet', '벽 자석']];
 /* wall magnet: a device setting (off by default); the button on the plan and the 보기 menu both switch it */

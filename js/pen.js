@@ -353,7 +353,7 @@ function finish() {
   const { pts, curves } = build(st.A);
   if (G.selfX(pts)) { GP.toast('벽이 서로 엇갈려요. 마지막 점을 지우고 다시 찍어 보세요', { bad: true, ms: 4000 }); return; }
   if (Math.abs(G.area(pts)) < 1) { GP.toast('공간이 너무 작아요', { bad: true }); return; }
-  const L = GP.L(); L.room.pts = pts; if (Object.keys(curves).length) L.room.curves = curves; else delete L.room.curves;
+  const L = GP.L(); L.room.pts = pts; delete L.room.empty; if (Object.keys(curves).length) L.room.curves = curves; else delete L.room.curves;
   const gone = GP.pruneWalls(); st = null; GP.changed(['room', 'openings']); GP.S.fit();
   ui().setTool('vertex');
   GP.toast(`벽을 만들었어요 · ${(Math.abs(G.area(pts)) / U.PY).toFixed(1)}평${gone ? ` · 없어진 벽의 문·창문 ${gone}개는 지웠어요` : ''}. ${GP.S.underlay ? '확실히 아는 벽 하나의 길이 숫자를 눌러 입력하면 전체를 그 비율로 맞출 수 있어요' : '길이 숫자를 눌러 정확한 길이로 바꿀 수 있어요'}`, { ms: 6500 });
@@ -493,5 +493,31 @@ xb.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter'
 GP.on('tool', () => { if (ui().tool === 'xform') { if (!xs) xfStart(); } else if (xs) { if (xs.changed) X.commit(false); xs = null; } xbar(); GP.emit('overlay'); });
 GP.on('changed', () => { if (xs && !xbusy && !xs.changed) xfStart(); xbar(); });      // the space changed some other way (undo, a typed length): a new box
 GP.on('project', () => { xs = null; xbar(); });
+
+/* ================= no space yet: a card in the middle of the plan ================= */
+const IC = GP.IC, ec = document.createElement('div'); ec.className = 'empty-room'; ec.hidden = true;
+ec.innerHTML = `<div class="er-card"><div class="er-ic">${IC.pen}</div><div class="er-tx"><b class="er-t">공간 만들기</b><p class="er-d">고객 매장의 벽 모양부터 만들어요</p></div>
+  <button class="btn primary er-main" data-er="pen">${IC.pen}<span>펜으로 그리기</span><small>클릭: 모서리 · 누른 채 끌기: 곡선</small></button>
+  <div class="er-row"><button class="btn" data-er="py">평수로 시작</button><button class="btn" data-er="shape">모양 템플릿</button><button class="btn" data-er="trace">도면 사진 올리기</button></div></div>`;
+$('#stage').appendChild(ec);
+function emptyCard() {
+  const on = !!GP.P && !GP.viewOnly && GP.roomEmpty() && ui().tool !== 'pen' && !(GP.V3 && GP.V3.on); ec.hidden = !on; if (!on) return;
+  const ul = !!GP.S.underlay; ec.classList.toggle('compact', ul);      // a floor-plan picture is down: do not hide it, sit on top
+  ec.querySelector('.er-main span').textContent = ul ? '펜으로 따라 그리기' : '펜으로 그리기';
+  ec.querySelector('[data-er="trace"]').hidden = ul;
+}
+GP.emptyCard = emptyCard;
+ec.addEventListener('click', e => {
+  const b = e.target.closest('[data-er]'); if (!b) return; const a = b.dataset.er, W = GP.wiz, easy = W && W.on, u = ui();
+  if (easy && W.step !== 1) W.go(1);
+  else if (!easy && u.step !== 'space') u.setStep('space');
+  const pick = m => { const c = document.querySelector(`#wiz [data-sm="${m}"]`); if (easy && c) c.click(); };
+  if (a === 'pen') { u.setTool('pen'); GP.toast('모서리를 차례로 클릭하세요. 휘어진 곳은 누른 채 끌면 곡선이 돼요. 첫 점을 누르면 완성!', { ms: 5000 }); }
+  else if (a === 'py') { pick('py'); if (!easy) { GP.panels.openFold('make'); GP.panels.spaceMode('py'); } GP.panels.applyPy(); }
+  else if (a === 'shape') { pick('shape'); if (!easy) { GP.panels.openFold('make'); GP.panels.spaceMode('shape'); } GP.toast('왼쪽에서 모양을 고르세요', { ms: 3000 }); }
+  else if (a === 'trace') { pick('trace'); if (!easy) { GP.panels.openFold('trace'); GP.panels.renderSpace(); } const f = $('#ulImg'); if (f) f.click(); }
+  emptyCard();
+});
+['changed', 'tool', 'project', 'step', 'overlay'].forEach(ev => GP.on(ev, emptyCard));
 GP.toolExt = { pen: { down: (e, fp) => pen.down(e, fp), move: e => pen.move(e), up: e => pen.up(e), dbl: e => pen.dbl(e) }, xform: { down: X.down, move: X.move, up: X.up, dbl: X.dbl } };
 })();

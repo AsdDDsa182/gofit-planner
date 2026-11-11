@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.14.0';
+GP.VERSION = '2.15.0';
 GP.APP_SUB = '짐 스튜디오'; GP.APP_NAME = 'GOFIT ' + GP.APP_SUB;      // the app's name: the top bar, window title, menus (manifest.webmanifest and index.html <title> say it too);
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
@@ -225,9 +225,12 @@ GP.TRIMS = { rubber: '경사형 고무 마감재', alu: '경사형 알루미늄 
 GP.PARTS = { wall: '일반 가벽', glass: '유리 파티션', half: '허리 높이 반벽' };
 GP.OPENINGS = { door: '여닫이 문', door2: '양개문', auto: '자동문 (미닫이)', glass2: '유리 양개문', slide: '미닫이 문', opening: '개구부(문 없음)', window: '창문' };
 
-GP.DEFAULT_ROOM = [[0, 0], [10, 0], [10, 8], [0, 8]];     // a new project starts with one plain 10 x 8 m room
-GP.newLayout = (pts) => ({
-  room: { pts: pts || GP.DEFAULT_ROOM.map(q => q.slice()) },
+GP.DEFAULT_ROOM = [[0, 0], [10, 0], [10, 8], [0, 8]];
+/* no space drawn yet (a new project, or the walls were cleared to draw again): the points stay as a placeholder so the view and
+   the maths keep working, but nothing shows the room and the plan asks to make one (pen.js) */
+GP.roomEmpty = (L) => { L = L || (GP.P && GP.L()); return !!(L && L.room && L.room.empty); };     // a new project starts with one plain 10 x 8 m room
+GP.newLayout = (pts, empty) => ({
+  room: empty ? { pts: GP.DEFAULT_ROOM.map(q => q.slice()), empty: true } : { pts: pts || GP.DEFAULT_ROOM.map(q => q.slice()) },
   wallColors: {}, wallMarks: {}, wallTex: {},      // wallTex: one wall's own finish (wall index → GP.TEX id)
   openings: [], partitions: [], items: [], mats: [], zones: [], rooms: [], notes: [], dims: [], scenes: [],
   quote: { extras: [], shipping: null, install: null, discountPct: 0, discountAmt: 0, note: '', validDays: null, no: '' },
@@ -239,7 +242,7 @@ GP.newProject = (o) => {
     v: 2, id, name: o.name || '새 프로젝트', client: o.client || '', consultant: o.consultant || '',
     createdAt: Date.now(), updatedAt: Date.now(),
     settings: { wallH: 2.8, wallColor: '#eeede8', floorBase: 'concrete', wallTex: 'paint', frameColor: 'black', seatColor: 'black', accent: '#f08a1c', shroud: '#141517' },      // floorBase / wallTex: GP.TEX ids; frameColor / seatColor: GP.EQ_FRAME / GP.EQ_SEAT ids (strength equipment)
-    variants: [{ id: U.uid('v'), name: 'A안', layout: GP.newLayout(o.pts) }], cur: 0,
+    variants: [{ id: U.uid('v'), name: 'A안', layout: GP.newLayout(o.pts, o.empty) }], cur: 0,
     images: {},
   };
 };
@@ -263,9 +266,10 @@ function sCurves(c, N) {
   return Object.keys(out).length ? out : null;
 }
 function sanitizeLayout(L) {
-  const cv = L.room && L.room.curves;
+  const cv = L.room && L.room.curves, L0room = L.room;
   L.room = { pts: sPts(L.room && L.room.pts, 3) || GP.DEFAULT_ROOM.map(q => q.slice()) };
   { const c = sCurves(cv, L.room.pts.length); if (c) L.room.curves = c; }
+  if (L0room && L0room.empty === true) L.room.empty = true;
   L.partitions = L.partitions.filter(q => q && sPts(q.pts, 2)).map(q => { q.pts = sPts(q.pts, 2); q.id = sWord(q.id) || U.uid('pt'); q.thick = U.clamp(sNum(q.thick, .1), .03, .6); q.kind = GP.PARTS[q.kind] ? q.kind : 'wall'; sKeys(q, ['color', 'frameC', 'glass']); sNums(q, ['height']); return q; });
   L.openings = L.openings.filter(o => o && sNum(o.t) !== undefined && sNum(o.w) !== undefined && Number.isInteger(+o.seg)).map(o => { o.id = sWord(o.id) || U.uid('o'); o.host = sWord(o.host) || 'room'; o.seg = +o.seg; o.t = +o.t; o.w = U.clamp(+o.w, .3, 8); o.kind = GP.OPENINGS[o.kind] ? o.kind : 'door'; sNums(o, ['h', 'sill']); sKeys(o, ['leafC', 'frameC', 'glass', 'hw', 'hinge', 'wtype']); return o; });
   L.items = L.items.filter(it => sWord(String(it.type))).map(it => { it.type = GONE[it.type] || String(it.type); it.uid = sWord(String(it.uid)) || U.uid(); it.x = +it.x; it.z = +it.z; sNums(it, ['w', 'd', 'h', 'elev']); sKeys(it, ['grp', 'mount', 'img', 'fcol', 'scol']); if (it.load != null) it.load = it.load === true || undefined; if (it.name != null) it.name = sTxt(it.name, 80) || undefined;
