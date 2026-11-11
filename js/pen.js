@@ -593,35 +593,50 @@ function bendApply(commit) {
   if (commit) { arcBusy = true; GP.changed('items'); arcBusy = false; ui().renderInspector(); } else { GP.checks.quick(); GP.S.invalidate(); GP.emit('overlay'); }
 }
 ARC.bend = (deg, done) => { const S0 = session(); if (!S0) return; S0.deg = deg; bendApply(done); };
+ARC.pivotTo = (v, done) => { const S0 = session(); if (!S0) return; S0.pivot = U.clamp(v, 0, 1); bendApply(done); };
 ARC.deg = () => bs && bs.key === selKey() ? bs.deg : 0;
-const pivotName = v => v < .02 ? '처음 고른 기구 쪽 끝' : v > .98 ? '반대쪽 끝' : Math.abs(v - .5) < .02 ? '가운데' : `${Math.round(v * 100)}% 지점`;
-ARC.pivotText = () => pivotName(bs && bs.key === selKey() ? bs.pivot : .5);
-ARC.center = () => { const S0 = session(); if (!S0) return; S0.pivot = .5; bendApply(true); };
+ARC.pivot = () => bs && bs.key === selKey() ? bs.pivot : .5;
+const pivotName = v => v < .02 ? '처음 고른 쪽 끝' : v > .98 ? '반대쪽 끝' : Math.abs(v - .5) < .02 ? '가운데' : `${Math.round(v * 100)}%`;
+ARC.pivotText = () => pivotName(ARC.pivot());
+ARC.straight = () => { const S0 = session(); if (!S0) return; S0.deg = 0; bendApply(true); };
+ARC.center = () => ARC.pivotTo(.5, true);
 GP.on('changed', () => { if (!arcBusy && bs) bs = null; });      // moved some other way: the next bend starts from where they are
-/* the centre on the plan: a diamond on the row's line, dragged along it (it sticks to the machines' middles and the ends) */
+/* the control point: off the row by d → bent by d / (row length) × 120° (as far off as the row is long: 120°); in front: front
+   convex, behind: concave. Along the row: the centre of the bend. */
+const GAIN = 120;
+function devOf(S0, deg) { return deg / GAIN * (S0.x1 - S0.x0); }
+function degFor(S0, d) { const v = d / (S0.x1 - S0.x0) * GAIN; return Math.abs(v) < .5 ? 0 : Math.round(U.clamp(v, -150, 150)); }
+function frame() {
+  const u = ui(); if (GP.viewOnly || u.tool !== 'select' || u.step !== 'place' || u.selItems().length < 2 || u.sel.length !== u.selItems().length) return null;
+  if (bs && bs.key === selKey()) return bs;
+  const its = u.selItems(), ref = its[0], l = its.map(it => G.w2l(ref.x, ref.z, ref.rot, it.x, it.z)); return { ref, x0: Math.min(...l.map(v => v[0])), x1: Math.max(...l.map(v => v[0])), z0: l.reduce((t, v) => t + v[1], 0) / l.length, deg: 0, pivot: .5 };
+}
 ARC.handles = () => {
-  const u = ui(); if (GP.viewOnly || u.tool !== 'select' || u.step !== 'place' || u.selItems().length < 2 || u.sel.length !== u.selItems().length) return [];
-  const S0 = bs && bs.key === selKey() ? bs : null, its = u.selItems(), ref = S0 ? S0.ref : its[0];
-  let x0, x1, z0; if (S0) ({ x0, x1, z0 } = S0); else { const l = its.map(it => G.w2l(ref.x, ref.z, ref.rot, it.x, it.z)); x0 = Math.min(...l.map(v => v[0])); x1 = Math.max(...l.map(v => v[0])); z0 = l.reduce((t, v) => t + v[1], 0) / l.length; }
-  if (x1 - x0 < .1) return []; const pv = S0 ? S0.pivot : .5, pos = G.l2w(ref.x, ref.z, ref.rot, x0 + (x1 - x0) * pv, z0);
-  return [{ cls: 'ov hd arcp', html: '', pos, h: 'arcp', title: `휘는 중심 (${pivotName(pv)}) · 줄을 따라 끌어서 옮기기` }];
+  const F = frame(); if (!F || F.x1 - F.x0 < .1) return []; const span = F.x1 - F.x0, base = F.x0 + span * F.pivot, pos = G.l2w(F.ref.x, F.ref.z, F.ref.rot, base, F.z0 + devOf(F, F.deg));      // (straight: on the row, at its centre)
+  return [{ cls: 'ov hd arcp', html: '', pos, h: 'arcp', title: '끌어서 줄 휘기 · 줄에서 멀리 끌수록 많이 휘어요 · 좌우로 옮기면 휘는 중심이 바뀌어요' }];
 };
 ARC.svg = () => {
-  const h = ARC.handles(); if (!h.length || !(bs && bs.key === selKey()) || !bs.deg) return ''; const S = GP.S, [x, y] = S.toScreen(h[0].pos[0], 0, h[0].pos[1]);
-  return `<g transform="translate(${x},${y + 20})"><rect x="-30" y="-10" width="60" height="18" rx="4" fill="#E0622B"/><text x="0" y="3" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="Pretendard,Malgun Gothic,sans-serif">휘는 중심</text></g>`;
+  const F = frame(); if (!F || F.x1 - F.x0 < .1) return ''; const S = GP.S, span = F.x1 - F.x0, b = G.l2w(F.ref.x, F.ref.z, F.ref.rot, F.x0 + span * F.pivot, F.z0), h = ARC.handles()[0]; if (!h) return '';
+  const [bx, by] = S.toScreen(b[0], 0, b[1]), [hx, hy] = S.toScreen(h.pos[0], 0, h.pos[1]), txt = F.deg ? `휘기 ${F.deg > 0 ? '+' : ''}${F.deg}° · ${pivotName(F.pivot)}` : '끌어서 휘기';
+  return `<line x1="${bx}" y1="${by}" x2="${hx}" y2="${hy}" stroke="#E0622B" stroke-width="1.4" stroke-dasharray="4 3"/><circle cx="${bx}" cy="${by}" r="3" fill="#E0622B"/><g transform="translate(${hx},${hy - 20})"><rect x="${-(txt.length * 6.2 + 12) / 2}" y="-10" width="${txt.length * 6.2 + 12}" height="18" rx="4" fill="#E0622B"/><text x="0" y="3" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="Pretendard,Malgun Gothic,sans-serif">${txt}</text></g>`;
 };
 let pd = null;
 ARC.pivotDown = (e, el) => {
   e.preventDefault(); e.stopPropagation(); const S0 = session(); if (!S0) return; try { el.setPointerCapture(e.pointerId); } catch (_) { }
   pd = true; const mv = ev => {
-    if (!pd) return; const fp = GP.S.floorAt(ev.clientX, ev.clientY), [lx] = G.w2l(S0.ref.x, S0.ref.z, S0.ref.rot, fp.x, fp.z), span = S0.x1 - S0.x0; let v = U.clamp((lx - S0.x0) / span, 0, 1);
-    const tol = Math.min(.04, GP.S.mpp() * 12 / span); let bw = null, bd = tol; for (const w of [0, .5, 1, ...S0.loc.map(o => (o.lx - S0.x0) / span)]) { const d = Math.abs(w - v); if (d < bd) { bd = d; bw = w; } } if (bw != null) v = bw;      // sticks to the nearest machine middle / end / the middle, only when close
-    S0.pivot = v; bendApply(false); ui().setHint(`휘는 중심 <b>${pivotName(v)}</b>${S0.deg ? '' : ' · 오른쪽 칸 「줄 휘기」로 휘어 보세요'}`);
+    if (!pd) return; const fp = GP.S.floorAt(ev.clientX, ev.clientY), [lx, lz] = G.w2l(S0.ref.x, S0.ref.z, S0.ref.rot, fp.x, fp.z), span = S0.x1 - S0.x0; let v = U.clamp((lx - S0.x0) / span, 0, 1);
+    const tol = Math.min(.03, GP.S.mpp() * 10 / span); let bw = null, bd = tol; for (const w of [0, .5, 1, ...S0.loc.map(o => (o.lx - S0.x0) / span)]) { const d = Math.abs(w - v); if (d < bd) { bd = d; bw = w; } } if (bw != null) v = bw;      // sticks to a machine's middle / an end / the middle, only when close
+    S0.pivot = v; S0.deg = ev.altKey ? S0.deg : degFor(S0, lz - S0.z0); bendApply(false);
+    ui().setHint(`휘는 정도 <b>${S0.deg > 0 ? '+' : ''}${S0.deg}°</b> · 휘는 중심 <b>${pivotName(v)}</b> · 줄에서 멀리 끌수록 많이 휘어요 · 앞으로: 앞쪽 볼록, 뒤로: 오목 · <kbd>Alt</kbd>: 휘는 정도는 그대로 중심만`);
+    const a = $('#arcBend'), b = $('#arcPivot'); if (a) { a.value = S0.deg; $('#arcV').textContent = (S0.deg > 0 ? '+' : '') + S0.deg + '°'; } if (b) { b.value = Math.round(v * 100); $('#arcP').textContent = pivotName(v); }
   };
-  const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); pd = null; ui().setHint(); if (S0.deg) bendApply(true); else ui().renderInspector(); GP.emit('overlay'); };
+  const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); pd = null; ui().setHint(); bendApply(true); GP.emit('overlay'); };
   window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
 };
-document.addEventListener('input', e => { if (e.target.id !== 'arcBend') return; const v = +e.target.value; const l = $('#arcV'); if (l) l.textContent = (v > 0 ? '+' : '') + v + '°'; ARC.bend(v, false); });
-document.addEventListener('change', e => { if (e.target.id !== 'arcBend') return; ARC.bend(+e.target.value, true); });
+document.addEventListener('input', e => {
+  if (e.target.id === 'arcBend') { const v = +e.target.value; const l = $('#arcV'); if (l) l.textContent = (v > 0 ? '+' : '') + v + '°'; ARC.bend(v, false); }
+  else if (e.target.id === 'arcPivot') { const v = +e.target.value / 100; const l = $('#arcP'); if (l) l.textContent = pivotName(v); ARC.pivotTo(v, false); }
+});
+document.addEventListener('change', e => { if (e.target.id === 'arcBend') ARC.bend(+e.target.value, true); else if (e.target.id === 'arcPivot') ARC.pivotTo(+e.target.value / 100, true); });
 GP.toolExt = { pen: { down: (e, fp) => pen.down(e, fp), move: e => pen.move(e), up: e => pen.up(e), dbl: e => pen.dbl(e) }, xform: { down: X.down, move: X.move, up: X.up, dbl: X.dbl } };
 })();

@@ -848,6 +848,7 @@ act.inspAction = async (a, b) => {
   if (a === 'row') return act.makeRow(U.clamp(+$('#iRowN').value || 2, 2, 40), +$('#iRowG').value || 0);
   if (a === 'arcWall' && GP.ARC) return GP.ARC.followWall();
   if (a === 'arcCenter' && GP.ARC) return GP.ARC.center();
+  if (a === 'arcStraight' && GP.ARC) return GP.ARC.straight();
   if (a === 'alignF') return act.align('F'); if (a === 'alignC') return act.align('C'); if (a === 'alignB') return act.align('B');
   if (a === 'gap') return act.gap(+$('#mGap').value || 0); if (a === 'even') return act.gap(0, true);
   if (a === 'grot') return act.groupRotate(90);
