@@ -502,6 +502,7 @@ GP.focusAt = (p) => GP.S.focus(p);
 
 /* ---------------- keyboard ---------------- */
 window.addEventListener('keydown', e => {
+  if (e.key === 'Alt') e.preventDefault();      // (Alt is the copy key: the browser must not take it for its menu)
   if (!modal.hidden) { if (e.key === 'Escape') GP.closeModal(); return; }
   if (!$('#guide').hidden) { if (e.key === 'Escape') $('#guide').hidden = true; return; }
   const tag = (e.target.tagName || '').toLowerCase(); if (tag === 'input' || tag === 'textarea' || tag === 'select') { if (e.key === 'Escape') e.target.blur(); return; }

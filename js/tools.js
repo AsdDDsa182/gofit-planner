@@ -346,7 +346,8 @@ function onUp(e) {
   if (draw) { toolUp(e); return; }
   if (drag) {
     const d = drag; drag = null; canvas().style.cursor = '';
-    if (d.cloned) { act.lastDup = { pairs: d.pairs }; ui.setHint(); }
+    if (d.cloned) { act.lastDup = { pairs: d.pairs }; }
+    ui.setHint();
     if (d.moved) { if (!d.cloned) ui.setHint(); if (d.kind === 'mat') tools.snapMat(d.obj); GP.changed(d.kind === 'items' ? 'items' : d.kind); ui.renderInspector(); }
     return;
   }
@@ -379,12 +380,20 @@ function dragMove(e) {
   if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
   d.moved = true; const fp = S.floorAt(e.clientX, e.clientY);
   if (d.kind === 'items') {
-    if (d.altDup && !d.cloned) {      // Alt held when the drag started: copy, and drag the copies
-      const src = d.start.map(s => GP.findItem(s.uid)).filter(Boolean), out = cloneItems(src, 0, 0), map = new Map(src.map((it, k) => [it.uid, out[k].uid]));
+    if (e.altKey && !d.cloned) {      // Alt held (pressed before or during the drag): copy, and drag the copies; the originals go back to where they were
+      const src = d.start.map(s => GP.findItem(s.uid)).filter(Boolean); d.start.forEach(s => { const it = GP.findItem(s.uid); if (it) { it.x = s.x; it.z = s.z; } });
+      const out = cloneItems(src, 0, 0), map = new Map(src.map((it, k) => [it.uid, out[k].uid]));
       d.pairs = d.start.map(s => [s.uid, map.get(s.uid)]); d.start = d.start.map(s => ({ uid: map.get(s.uid), x: s.x, z: s.z })); d.anchor = map.get(d.anchor); d.cloned = true;
       ui.select(out.map(it => ({ k: 'item', id: it.uid })), false, true); GP.S.dataChanged(); ui.setHint('복제해서 옮기는 중 · 놓은 뒤 <kbd>Shift</kbd>+<kbd>D</kbd>: 같은 간격으로 하나 더');
     }
-    const q = gridOf(e); moveItems(d, fp, e.altKey && !d.altDup, q.g); if (!d.cloned) ui.setHint(`옮기는 중${gridHint(q)}`); return;
+    const prec = e.shiftKey && !e.altKey, straight = e.shiftKey && e.altKey, q = prec ? { g: .01 } : gridOf(e, true); let p = fp, free = false;
+    // Shift: precision like Blender — from the moment it is pressed the pointer counts a tenth; let go and it carries on from there
+    if (prec) { if (!d.pr) d.pr = { s: [fp.x, fp.z], e: d.lastEff ? [d.lastEff.x, d.lastEff.z] : [fp.x, fp.z] }; p = { x: d.pr.e[0] + (fp.x - d.pr.s[0]) * .1, z: d.pr.e[1] + (fp.z - d.pr.s[1]) * .1 }; }
+    else { if (d.pr) { d.adj = [d.lastEff.x - fp.x, d.lastEff.z - fp.z]; d.pr = null; } if (d.adj) p = { x: fp.x + d.adj[0], z: fp.z + d.adj[1] }; }
+    d.lastEff = p;
+    if (straight) { const dx = p.x - d.fx, dz = p.z - d.fz, a = Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) * Math.PI / 4; let l = dx * Math.cos(a) + dz * Math.sin(a); l = U.snap(l, q.g); p = { x: d.fx + Math.cos(a) * l, z: d.fz + Math.sin(a) * l }; free = true; }      // Alt+Shift: copy on a straight line (Photoshop), the length on the grid
+    moveItems(d, p, free, q.g);
+    ui.setHint(`${d.cloned ? '복제해서 옮기는 중' : '옮기는 중'}${prec ? ' · <b>정밀 (10배 느리게)</b>' : straight ? ' · <b>직선으로</b>' : ''} · <kbd>Shift</kbd> 정밀 · <kbd>Alt</kbd> 복사 · <kbd>Alt</kbd>+<kbd>Shift</kbd> 직선 복사 · <kbd>Ctrl</kbd> 1cm${d.cloned ? ' · 놓은 뒤 <kbd>Shift</kbd>+<kbd>D</kbd>: 같은 간격으로 하나 더' : ''}`); return;
   }
   const q = gridOf(e); let dx = fp.x - d.fx, dz = fp.z - d.fz; if (!q.free) { dx = U.snap(dx, q.g); dz = U.snap(dz, q.g); }
   const orig = JSON.parse(d.snap), o = d.obj;
