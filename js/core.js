@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.25.9';
+GP.VERSION = '2.26.0';
 GP.APP_SUB = '짐 스튜디오'; GP.APP_NAME = 'GOFIT ' + GP.APP_SUB;      // the app's name: the top bar, window title, menus (manifest.webmanifest and index.html <title> say it too);
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
@@ -291,7 +291,7 @@ function sanitizeProject(p) {
   const s = p.settings, d = GP.newProject().settings; s.wallColor = sHex(s.wallColor, d.wallColor); s.wallH = U.clamp(sNum(s.wallH, d.wallH), 2, 8); s.accent = sHex(s.accent, d.accent); s.shroud = sHex(s.shroud, d.shroud);
   for (const k of ['floorBase', 'wallTex', 'frameColor', 'seatColor', 'ceilTex']) s[k] = sWord(s[k]) || d[k];
   { const e = s.env; if (e && typeof e === 'object') { const o = {}; for (const k of ['sky', 'ground']) if (sWord(e[k])) o[k] = sWord(e[k]); const r = sNum(e.rot); if (r) o.rot = ((Math.round(r) % 360) + 360) % 360; s.env = o; } else delete s.env; }
-  { const l = s.light; if (l && typeof l === 'object') { const o = {}; for (const k of ['type', 'tone', 'body']) if (sWord(l[k])) o[k] = sWord(l[k]); const g = sNum(l.gap); if (g) o.gap = U.clamp(g, .8, 20); if (l.top === true) o.top = true; { const lm = sNum(l.lum); if (lm !== undefined && lm >= 0) o.lum = Math.min(3, Math.round(lm * 100) / 100); } if (typeof l.color === 'string' && /^#[0-9a-f]{6}$/i.test(l.color)) o.color = l.color.toLowerCase(); { const k = sNum(l.k); if (k >= 1000 && k <= 20000) o.k = Math.round(k); } s.light = o; } else delete s.light; }
+  { const l = s.light; if (l && typeof l === 'object') { const o = {}; for (const k of ['type', 'tone', 'body']) if (sWord(l[k])) o[k] = sWord(l[k]); const g = sNum(l.gap); if (g) o.gap = U.clamp(g, .8, 20); { const g2 = sNum(l.gap2); if (g2 !== undefined && g2 >= 0) o.gap2 = U.clamp(g2, 0, 20); } { const dr = sNum(l.drop); if (dr > 0) o.drop = U.clamp(dr, .05, 4); } if (l.pat === 'stagger') o.pat = 'stagger'; if (l.dir === 'short') o.dir = 'short'; if (l.top === true) o.top = true; { const lm = sNum(l.lum); if (lm !== undefined && lm >= 0) o.lum = Math.min(3, Math.round(lm * 100) / 100); } if (typeof l.color === 'string' && /^#[0-9a-f]{6}$/i.test(l.color)) o.color = l.color.toLowerCase(); { const k = sNum(l.k); if (k >= 1000 && k <= 20000) o.k = Math.round(k); } s.light = o; } else delete s.light; }
   { const a = s.texAdj, o = {}; if (a && typeof a === 'object') for (const f of ['floor', 'wall', 'ceil']) if (a[f] && typeof a[f] === 'object') { const q = {}; for (const k of ['b', 'c', 's', 'w']) { const v = sNum(a[f][k]); if (v) q[k] = U.clamp(Math.round(v), -60, 60); } if (Object.keys(q).length) o[f] = q; } if (Object.keys(o).length) s.texAdj = o; else delete s.texAdj; } if (s.baseboard != null && sWord(s.baseboard) === undefined) delete s.baseboard;
   p.id = sWord(p.id) || U.uid('p'); p.name = sTxt(p.name, 120) || '새 프로젝트'; p.client = sTxt(p.client, 120); p.consultant = sTxt(p.consultant, 60); for (const k of ['createdAt', 'updatedAt']) p[k] = sNum(p[k], Date.now());
   for (const k of ['custName', 'custTel', 'siteAddr', 'consTel', 'consEmail']) if (p[k] != null) p[k] = sTxt(p[k], 160);

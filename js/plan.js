@@ -170,6 +170,7 @@ S.drawPlan = (x, V, o) => {
   for (const it of items) drawItem(x, it, px, conf.has(it.uid) ? 'bad' : sel.has('item:' + it.uid) ? 'sel' : hov && hov.k === 'item' && hov.id === it.uid ? 'hover' : 'normal');
   // walls, partitions, openings
   drawWalls(x, L, px, sel, hov, scr);
+  if (scr && GP.ui && GP.ui.step === 'space' && !L.room.empty) drawLights(x, L, px);
   // emergency exit: the way out from the farthest point (green arrow), machines without a passage to a door (red rings)
   if (lay.egress && GP.checks && GP.checks.egress) {
     const E = GP.checks.egress, R = E.route || [];
@@ -276,6 +277,14 @@ function hatchPoly(x, q, px) {
   x.save(); x.beginPath(); q.forEach((p, k) => k ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); x.clip();
   const b = G.bounds(q), step = Math.max(.06, 7 * px); x.beginPath(); for (let t = b.minX - b.sz; t < b.maxX + b.sz; t += step) { x.moveTo(t, b.maxZ); x.lineTo(t + (b.maxZ - b.minZ), b.minZ); }
   x.strokeStyle = 'rgba(27,31,35,.55)'; x.lineWidth = .8 * px; x.stroke(); x.restore();
+}
+/* the ceiling lights seen from below, faint, in the space step (they follow the light settings as they are changed) */
+function drawLights(x, L, px) {
+  const Lt = GP.lightOf(GP.P.settings), spots = GP.lightSpots(L.room.pts, Lt); if (!spots.length) return;
+  const fp = Lt.d.fp || [.3, .3, 1], w = fp[0], d = Math.max(fp[1], 3 * px); x.save(); x.globalAlpha = .9; x.lineWidth = 1.1 * px;
+  x.fillStyle = S._line ? '#FFFFFF' : Lt.glow; x.strokeStyle = S._line ? '#1B1F23' : '#B07A12';
+  for (const s of spots) { x.save(); x.translate(s.p[0], s.p[1]); x.rotate(-s.rot); x.beginPath(); if (fp[2]) x.arc(0, 0, w / 2, 0, Math.PI * 2); else x.rect(-w / 2, -d / 2, w, d); x.fill(); x.stroke(); x.restore(); }
+  x.restore();
 }
 function drawWalls(x, L, px, sel, hov, scr) {
   const P = L.room.pts, n = P.length, st = GP.P.settings; if (n < 3 || L.room.empty) return;

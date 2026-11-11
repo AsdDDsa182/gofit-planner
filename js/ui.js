@@ -46,7 +46,7 @@ let toastT = 0;
    around it are not drawn again (that ended the drag and took the caret away); they catch up when it is let go. */
 const LV = GP.live = { el: null, on: false, pend: new Map(), sel: '' };
 const LIVE_IN = 'input[type=number],input[type=range],input[type=color]';
-const OWN_LIVE = '#ltGap,#ulOp,#ulW,#ulX,#ulY,#ulScale,[data-tadj],#arcR,#arcBend,#pyIn,#pyRatio,[id^="shp_"],#panel-space [data-f],#cgW,#cgH,#pGw,#envRot,#ltLum,[data-nolive]';      // (these do their own live work on 'input')
+const OWN_LIVE = '#ltGap,#ulOp,#ulW,#ulX,#ulY,#ulScale,[data-tadj],#arcR,#arcBend,#pyIn,#pyRatio,[id^="shp_"],#panel-space [data-f],#cgW,#cgH,#pGw,#envRot,#ltLum,#ltGap2,#ltDrop,[data-nolive]';      // (these do their own live work on 'input')
 const inUse = el => !!(el && el.matches && el.matches(LIVE_IN + ',input[type=text],input:not([type]),textarea'));
 GP.liveIn = box => { const el = LV.el; return !!(el && box && el.isConnected && box.contains(el)); };
 GP.liveWait = (key, box, fn) => { if (!GP.liveIn(box)) { LV.pend.delete(key); return false; } LV.pend.set(key, fn); return true; };      // a panel in use: drawn when it is let go

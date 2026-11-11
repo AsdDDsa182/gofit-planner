@@ -104,18 +104,34 @@ GP.gwTxt = v => v > 0 ? v.toFixed(1) + ' m' : '안 나눔';
    the body's colour (the files name the parts g_lhouse / g_lemit), set out on the ceiling every `gap` m; line = its length when it
    runs in rows */
 GP.LIGHTS = [
-  { id: 'panel_rect', name: '평판 1200×300', gap: 2.6, len: 1.2 }, { id: 'panel_sq', name: '평판 600각', gap: 2.4, w: .6 },
-  { id: 'linear', name: '라인 (직부)', gap: 2.4, line: 1.2 }, { id: 'linear_pend', name: '라인 펜던트', gap: 2.6, line: 1.8 },
-  { id: 'down', name: '매립 다운라이트', gap: 1.6 }, { id: 'surface', name: '원형 직부등', gap: 2.4 },
-  { id: 'track', name: '트랙 스포트', gap: 3, line: 1.5 }, { id: 'dome', name: '산업용 갓 펜던트', gap: 2.6 },
-  { id: 'globe', name: '구형 펜던트', gap: 2.2 }, { id: 'ring', name: '링 펜던트', gap: 3.4, w: .95 },
-  { id: 'highbay', name: '하이베이 (공장형)', gap: 4 }, { id: 'hexgrid', name: '육각 그리드', gap: 3.8, w: 2.1 },
+  { id: 'panel_rect', name: '평판 1200×300', gap: 2.6, len: 1.2, fp: [1.2, .3] }, { id: 'panel_sq', name: '평판 600각', gap: 2.4, w: .6, fp: [.6, .6] },
+  { id: 'linear', name: '라인 (직부)', gap: 2.4, line: 1.2, fp: [1.2, .08] }, { id: 'linear_pend', name: '라인 펜던트', gap: 2.6, line: 1.8, fp: [1.8, .08], drop: .7 },
+  { id: 'down', name: '매립 다운라이트', gap: 1.6, fp: [.17, .17, 1] }, { id: 'surface', name: '원형 직부등', gap: 2.4, fp: [.45, .45, 1] },
+  { id: 'track', name: '트랙 스포트', gap: 3, line: 1.5, fp: [1.5, .06] }, { id: 'dome', name: '산업용 갓 펜던트', gap: 2.6, fp: [.45, .45, 1], drop: .76 },
+  { id: 'globe', name: '구형 펜던트', gap: 2.2, fp: [.3, .3, 1], drop: .58 }, { id: 'ring', name: '링 펜던트', gap: 3.4, w: .95, fp: [.95, .95, 1], drop: .6 },
+  { id: 'highbay', name: '하이베이 (공장형)', gap: 4, fp: [.42, .42, 1] }, { id: 'hexgrid', name: '육각 그리드', gap: 3.8, w: 2.1, fp: [2.1, 2.1, 1] },
   { id: 'none', name: '조명 없음' },
 ];
 GP.LIGHT_TONE = { day: { n: '주광색', k: '6500K', c: '#eef4ff' }, neutral: { n: '주백색', k: '4000K', c: '#fff5e4' }, warm: { n: '전구색', k: '3000K', c: '#ffd29a' } };
 GP.LIGHT_BODY = { white: { n: '화이트', c: '#eeeeec', m: .1, r: .45 }, black: { n: '블랙', c: '#1f2124', m: .3, r: .5 }, silver: { n: '실버', c: '#c4c8cc', m: .85, r: .3 }, gold: { n: '골드', c: '#c9a45c', m: .85, r: .3 } };
 GP.lightOf = (st) => { const l = (st && st.light) || {}, d = GP.LIGHTS.find(q => q.id === l.type) || GP.LIGHTS[0]; const tn = GP.LIGHT_TONE[l.tone] ? l.tone : 'neutral', cus = /^#[0-9a-f]{6}$/i.test(l.color || '');
-  return { d, top: l.top === true, lum: l.lum >= 0 ? Math.min(3, l.lum) : 1, glow: cus ? l.color.toLowerCase() : GP.LIGHT_TONE[tn].c, k: cus ? (l.k > 0 ? l.k : 0) : { day: 6500, neutral: 4000, warm: 3000 }[tn], tone: tn, body: GP.LIGHT_BODY[l.body] ? l.body : 'white', gap: l.gap > .6 ? l.gap : d.gap }; };
+  return { d, top: l.top === true, lum: l.lum >= 0 ? Math.min(3, l.lum) : 1, glow: cus ? l.color.toLowerCase() : GP.LIGHT_TONE[tn].c, k: cus ? (l.k > 0 ? l.k : 0) : { day: 6500, neutral: 4000, warm: 3000 }[tn], tone: tn, body: GP.LIGHT_BODY[l.body] ? l.body : 'white', gap: l.gap > .6 ? l.gap : d.gap,
+    gap2: l.gap2 >= 0 ? l.gap2 : d.line ? 1 : (l.gap > .6 ? l.gap : d.gap), pat: l.pat === 'stagger' ? 'stagger' : 'grid', dir: l.dir === 'short' ? 'short' : 'long', drop: d.drop ? (l.drop > 0 ? l.drop : d.drop) : 0 }; };
+/* where the ceiling lights go (3D and the plan alike): rows along the room's long side (or short: dir), `gap` between the rows,
+   `gap2` along a row — between the ends for line lights, centre to centre for the rest — every other row shifted by half a step
+   when staggered; only spots at least 45 cm from the walls with the whole fixture under the ceiling */
+GP.lightSpots = (P, Lt) => {
+  const G = GP.G, d = Lt.d; if (d.id === 'none' || !P || P.length < 3) return [];
+  const b = G.bounds(P), longX = b.sx >= b.sz, alongX = Lt.dir === 'short' ? !longX : longX, Lw = alongX ? b.sx : b.sz, Sw = alongX ? b.sz : b.sx, o0 = alongX ? b.minX : b.minZ, s0 = alongX ? b.minZ : b.minX, out = [];
+  const inside = (u, v) => { const [x, z] = alongX ? [u, v] : [v, u]; if (!G.pip(x, z, P)) return null; for (let i = 0; i < P.length; i++) if (G.closest(x, z, P[i], P[(i + 1) % P.length]).d < .45) return null; return [x, z]; };
+  const half = (d.line || d.len || d.w || 0) / 2, rot = alongX ? 0 : Math.PI / 2, rows = Math.max(1, Math.round(Sw / Lt.gap)), step = Math.max(.15, d.line ? d.line + Lt.gap2 : Lt.gap2);
+  const n = Math.max(1, Math.floor((Lw - .9 - 2 * half) / step) + 1);
+  for (let r = 0; r < rows; r++) {
+    const v = s0 + Sw * (r + .5) / rows, sh = Lt.pat === 'stagger' && r % 2 ? step / 2 : 0, u0 = o0 + (Lw - (n - 1) * step) / 2 + sh;
+    for (let k = -1; k <= n; k++) { if ((k < 0 || k === n) && !sh) continue; const u = u0 + k * step, p = inside(u, v); if (p && (!half || (inside(u - half, v) && inside(u + half, v)))) out.push({ p, rot }); if (out.length >= 320) return out; }
+  }
+  return out;
+};
 /* finish adjustments per surface (settings.texAdj[floor|wall|ceil]): brightness, contrast, saturation, warmth, each −60..60 */
 GP.TEX_ADJ = [['b', '밝기'], ['c', '대비'], ['s', '채도'], ['w', '색감']];
 /* colours for doors, windows, partitions (frame / leaf), glass and handles; a hex string works too */

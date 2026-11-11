@@ -185,7 +185,7 @@ function haloTex() { return mat('haloTex', () => { const c = document.createElem
 function lightMode(pos) {
   if (!GP.P || !V3.hemi) return; const st = GP.P.settings, Lt = GP.lightOf(st), E = GP.envOf(st), sky = (!LINE && E.sky.light) || {};
   const inside = !LINE && !V3.cut && !!ceilRef && (V3.walking || (pos.y < roomH - .05 && G.pip(pos.x, pos.z, GP.L().room.pts)));
-  const F = Lt.d.id === 'none' ? 0 : Lt.lum, D = E.sky.day ?? 1, pts = inside && F > 0 && ptl.length && lightRef && lightRef.spots, A = inside ? Math.min(2.2, F * (pts ? .34 : .85) + D * .15) : 1;
+  const F = Lt.d.id === 'none' ? 0 : Lt.lum, D = E.sky.day ?? 1, pts = inside && F > 0 && ptl.length && lightRef && lightRef.spots, A = inside ? Math.min(2.2, F * (pts ? .34 : .85) + D * .15) : Math.max(.35, Math.min(1, F * .85 + D * .15));      // from above too (not below 35 %: the layout still reads)
   const key = [inside, A.toFixed(3), Lt.glow, E.sky.id, LINE, ptl.length, lightRef && lightRef.spots.length].join('|'), now = performance.now();
   if (key === lmKey && !(A !== 1 && now - lmT > 400)) return;      // (while dimmed, now and then again: machines loaded since get it too)
   const fresh = key !== lmKey; lmKey = key; lmT = now; V3.lightLevel = A;
@@ -212,27 +212,29 @@ function buildGround(g, P) {
 const lightScenes = {}; let lightRef = null;
 const lightsFor = (pos) => { if (lightRef) lightRef.holder.visible = lightRef.top || V3.walking || pos.y < lightRef.H - .05; };      // only from under the ceiling, unless asked for
 function lightScene(id) { return lightScenes[id] || (lightScenes[id] = GP.R3.loaders().then(gl => new Promise((res, rej) => gl.load(GP.R3.base() + 'models/light/' + id + '.glb', r => res(r.scene), undefined, rej))).catch(e => { delete lightScenes[id]; throw e; })); }
-function lightSpots(P, d, gap) {
-  const b = G.bounds(P), alongX = b.sx >= b.sz, Lw = alongX ? b.sx : b.sz, Sw = alongX ? b.sz : b.sx, o0 = alongX ? b.minX : b.minZ, s0 = alongX ? b.minZ : b.minX, out = [];
-  const inside = (u, v) => { const [x, z] = alongX ? [u, v] : [v, u]; if (!G.pip(x, z, P)) return null; for (let i = 0; i < P.length; i++) if (G.closest(x, z, P[i], P[(i + 1) % P.length]).d < .45) return null; return [x, z]; };
-  const rows = Math.max(1, Math.round(Sw / gap)), half = (d.line || d.len || d.w || 0) / 2;
-  for (let r = 0; r < rows; r++) {
-    const v = s0 + Sw * (r + .5) / rows;
-    const fit = u => { const p = inside(u, v); return p && (!half || (inside(u - half, v) && inside(u + half, v))) ? p : null; };      // the whole fixture under the ceiling, not only its middle
-    if (d.line) { const step = d.line + .3, n = Math.max(1, Math.floor((Lw - .9) / step)), u0 = o0 + (Lw - n * step) / 2 + step / 2; for (let k = 0; k < n; k++) { const p = fit(u0 + k * step); if (p) out.push({ p, rot: alongX ? 0 : Math.PI / 2 }); } }
-    else { const cols = Math.max(1, Math.round(Lw / gap)); for (let c = 0; c < cols; c++) { const p = fit(o0 + Lw * (c + .5) / cols); if (p) out.push({ p, rot: alongX ? 0 : Math.PI / 2 }); } }
-  }
-  return out.slice(0, 220);
+/* a pendant hung lower or higher: a copy of the model with its cords stretched (scaled from the ceiling) and everything below the
+   ceiling cups moved by the difference — a few kept, older ones freed */
+const protoCache = new Map();
+function lightProto(d, scene, drop) {
+  if (!d.drop || Math.abs(drop - d.drop) < 1e-3) return scene; const key = d.id + ':' + drop.toFixed(3); let p = protoCache.get(key); if (p) return p;
+  p = scene.clone(true); p.updateMatrixWorld(true); const k = drop / d.drop, off = d.drop - drop, v = new THREE.Vector3();
+  p.traverse(n => {
+    if (!n.isMesh) return; const cord = /lcable/.test((n.material && n.material.name) || ''), g = n.geometry.clone(), pos = g.attributes.position, M = n.matrixWorld, Mi = M.clone().invert();
+    for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(M); if (cord) v.y *= k; else if (v.y < -.03) v.y += off; v.applyMatrix4(Mi); pos.setXYZ(i, v.x, v.y, v.z); }
+    pos.needsUpdate = true; g.computeBoundingBox(); g.computeBoundingSphere(); n.geometry = g;
+  });
+  protoCache.set(key, p); if (protoCache.size > 6) { const [k0, old] = protoCache.entries().next().value; protoCache.delete(k0); old.traverse(n => { if (n.isMesh) n.geometry.dispose(); }); }
+  return p;
 }
 function buildLights(g, P, H, st) {
-  const L = GP.lightOf(st); if (L.d.id === 'none') return; const spots = lightSpots(P, L.d, L.gap); if (!spots.length) return;
+  const L = GP.lightOf(st); if (L.d.id === 'none') return; const spots = GP.lightSpots(P, L); if (!spots.length) return;
   const body = GP.LIGHT_BODY[L.body];
   const em = mat('lt:e', () => Object.assign(new THREE.MeshBasicMaterial({ color: L.glow, toneMapped: false }), { name: 'PT_EMIT' })); em.color.set(glowHex(L)).multiplyScalar(.3 + .7 * Math.min(1, L.lum));      // one glow, recoloured in place (a colour being dragged does not make new materials)
   const hm = mat('lt:h:' + L.body, () => std(body.c, { metalness: body.m, roughness: body.r }));
   const holder = new THREE.Group(); holder.userData.own = true; g.add(holder); lightRef = { holder, H, top: L.top, spots };
   lightScene(L.d.id).then(scene => {
     if (!holder.parent) return;      // built again since
-    const proto = scene.clone(true); proto.traverse(n => { if (!n.isMesh) return; const nm = (n.material && n.material.name) || ''; if (/lemit/.test(nm)) n.material = em; else if (/lhouse/.test(nm)) n.material = hm; n.castShadow = false; n.receiveShadow = false; });
+    const proto = lightProto(L.d, scene, Math.min(L.drop, Math.max(.05, H - 1.9))).clone(true); proto.traverse(n => { if (!n.isMesh) return; const nm = (n.material && n.material.name) || ''; if (/lemit/.test(nm)) n.material = em; else if (/lhouse/.test(nm)) n.material = hm; n.castShadow = false; n.receiveShadow = false; });
     const eb = new THREE.Box3(); proto.updateMatrixWorld(true); proto.traverse(n => { if (n.isMesh && n.material === em) eb.expandByObject(n); });
     const hc = eb.isEmpty() ? null : eb.getCenter(new THREE.Vector3()), hsz = hc ? Math.max(eb.max.x - eb.min.x, eb.max.z - eb.min.z) * 1.5 + .45 : 0, Y = new THREE.Vector3(0, 1, 0);
     if (lightRef && lightRef.holder === holder && hc) lightRef.em = { c: hc.clone(), w: eb.max.x - eb.min.x, d: eb.max.z - eb.min.z };
