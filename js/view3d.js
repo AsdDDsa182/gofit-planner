@@ -66,7 +66,7 @@ function renderBar() {
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-v3]'); if (!b) return; const a = b.dataset.v3;
   if (a === 'pt') { V3.ptOpen(); return; }
-  if (a === 'q') { GP.popover(b, `<div class="ph">3D 화질</div>${Object.entries(Q3N).map(([k, [n, d]]) => `<button class="mi${Q3() === k ? ' def' : ''}" data-act="${k}"><div><b>${n}${Q3() === k ? ' ✓' : ''}</b><small>${d}</small></div></button>`).join('')}<div class="ph" style="margin-top:4px">조작</div>${[['free', '자유 시점', '끌면 화면을 잡고 둘러봐요 · 오른쪽 버튼 누른 채 = 게임처럼 둘러보기 · 휠 = 커서 쪽으로 · 가운데 버튼 = 옮기기'], ['orbit', '중심 돌기', '끌면 한 점을 중심으로 빙 돌아요 · 오른쪽 끌기 옮기기 · 휠 확대']].map(([k, n, d]) => `<button class="mi${(GP.lib.nav3d === 'orbit' ? 'orbit' : 'free') === k ? ' def' : ''}" data-act="nav:${k}"><div><b>${n}${(GP.lib.nav3d === 'orbit' ? 'orbit' : 'free') === k ? ' ✓' : ''}</b><small>${d}</small></div></button>`).join('')}<p class="note" style="margin:4px 10px 6px">이 기기에만 저장돼요. 화면이 끊기면 화질을 한 단계 낮춰 주세요.</p>`, act => { if (act.startsWith('nav:')) V3.setNav(act.slice(4)); else V3.setQuality(act); return false; }); return; }
+  if (a === 'q') { GP.popover(b, `<div class="ph">3D 화질</div>${Object.entries(Q3N).map(([k, [n, d]]) => `<button class="mi${Q3() === k ? ' def' : ''}" data-act="${k}"><div><b>${n}${Q3() === k ? ' ✓' : ''}</b><small>${d}</small></div></button>`).join('')}<div class="ph" style="margin-top:4px">조작</div>${[['free', '자유 시점', '누른 곳을 중심으로 돌기 · 오른쪽 버튼 누른 채 = 게임처럼 둘러보기 · 휠 = 커서 쪽으로 · 가운데 버튼 = 옮기기'], ['orbit', '중심 돌기', '끌면 한 점을 중심으로 빙 돌아요 · 오른쪽 끌기 옮기기 · 휠 확대']].map(([k, n, d]) => `<button class="mi${(GP.lib.nav3d === 'orbit' ? 'orbit' : 'free') === k ? ' def' : ''}" data-act="nav:${k}"><div><b>${n}${(GP.lib.nav3d === 'orbit' ? 'orbit' : 'free') === k ? ' ✓' : ''}</b><small>${d}</small></div></button>`).join('')}<p class="note" style="margin:4px 10px 6px">이 기기에만 저장돼요. 화면이 끊기면 화질을 한 단계 낮춰 주세요.</p>`, act => { if (act.startsWith('nav:')) V3.setNav(act.slice(4)); else V3.setQuality(act); return false; }); return; }
   if (a === 'cut') { V3.cut = !V3.cut; V3.rebuild(); renderBar(); }
   else if (a === 'walk') V3.walk(!V3.walking);
   else if (a === 'shot') GP.exp.image3dDialog();
@@ -818,7 +818,7 @@ const fcFloor = () => { if (cam.position.y < .25) cam.position.y = .25; };
 function fcDown(e) {
   if (!FC.on || V3.walking || mv || !R) return; FC.ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (FC.ptrs.size === 2) { const [a, b] = [...FC.ptrs.values()]; FC.pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 }; FC.look = null; return; }
-  FC.look = { x: e.clientX, y: e.clientY, b: e.button, id: e.pointerId, w: e.button === 0 && !e.shiftKey ? fcRay(e.clientX, e.clientY) : null };
+  FC.look = { x: e.clientX, y: e.clientY, b: e.button, id: e.pointerId, piv: e.button === 0 && !e.shiftKey ? fcPivot(e.clientX, e.clientY) : null };
 }
 /* the direction (world) under a screen point, and the camera turn that puts a world direction w exactly under a screen point */
 function fcRay(x, y) { const r = R.domElement.getBoundingClientRect(), rc = new THREE.Raycaster(); rc.setFromCamera(new THREE.Vector2((x - r.left) / r.width * 2 - 1, -(y - r.top) / r.height * 2 + 1), cam); return rc.ray.direction.clone(); }
@@ -833,20 +833,42 @@ function fcMove(e) {
   if (!FC.on || V3.walking) return; const p = FC.ptrs.get(e.pointerId); if (p) { p.x = e.clientX; p.y = e.clientY; }
   if (FC.pinch && FC.ptrs.size === 2) { const [a, b] = [...FC.ptrs.values()], d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2; cam.position.addScaledVector(fcFwd(), (d - FC.pinch.d) * FC.D * .004); fcPan(mx - FC.pinch.mx, my - FC.pinch.my); FC.pinch = { d, mx, my }; fcFloor(); fcApply(); return; }
   const L = FC.look; if (!L || e.pointerId !== L.id || mv) return; const dx = e.clientX - L.x, dy = e.clientY - L.y; L.x = e.clientX; L.y = e.clientY; if (!dx && !dy) return;
-  if (L.b === 0 && !e.shiftKey) { if (!(L.w && fcGrab(L.w, e.clientX, e.clientY))) { const k = cam.fov * DEG / Math.max(200, R.domElement.clientHeight); FC.yaw += dx * k; FC.pitch = U.clamp(FC.pitch + dy * k, -1.55, 1.55); } }      // left drag: grab the view — what was under the cursor stays under it (like a street-view photo)
+  if (L.b === 0 && !e.shiftKey) { if (L.piv) fcOrbit(L.piv, dx, dy); }      // left drag: turn round the point that was pressed
   else if (L.b === 2) { const k = .0032; FC.yaw -= dx * k; FC.pitch = U.clamp(FC.pitch - dy * k, -1.55, 1.55); }      // right button held: a game's mouse look (move right, look right)
   else fcPan(dx, dy);      // middle button / Shift + left: slide
   fcFloor(); fcApply(); GP.tip.hide();
 }
 function fcPan(dx, dy) { const k = Math.max(.003, FC.D * .0016), q = cam.quaternion; cam.position.addScaledVector(new THREE.Vector3(1, 0, 0).applyQuaternion(q), -dx * k).addScaledVector(new THREE.Vector3(0, 1, 0).applyQuaternion(q), dy * k); }
-function fcUp(e) { FC.ptrs.delete(e.pointerId); if (FC.ptrs.size < 2) FC.pinch = null; if (FC.look && FC.look.id === e.pointerId) FC.look = null; }
+function fcUp(e) { FC.ptrs.delete(e.pointerId); if (FC.ptrs.size < 2) FC.pinch = null; if (FC.look && FC.look.id === e.pointerId) { FC.look = null; if (pivDot) { pivDot.visible = false; dirty = true; } } }
+/* the point pressed: the first solid thing under the cursor (faded walls and glass, the sky, halos skipped), else the floor, else a
+   little way ahead. A small dot shows it while turning. */
+let pivDot = null;
+function fcPivot(x, y) {
+  const r = R.domElement.getBoundingClientRect(), rc = new THREE.Raycaster(); rc.setFromCamera(new THREE.Vector2((x - r.left) / r.width * 2 - 1, -(y - r.top) / r.height * 2 + 1), cam);
+  let p = null; for (const h of rc.intersectObjects([groups.room, groups.mats, groups.items], true)) { const m = h.object.material, mm = Array.isArray(m) ? m[0] : m; if (!h.object.visible || h.object.isSprite || (mm && mm.transparent && mm.opacity < .5)) continue; p = h.point.clone(); break; }
+  if (!p) { const q = new THREE.Vector3(); if (rc.ray.intersectPlane(floorPlane, q) && q.distanceTo(cam.position) < 400) p = q; }
+  if (!p) p = cam.position.clone().addScaledVector(rc.ray.direction, FC.D);
+  if (!pivDot) { pivDot = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: '#2450E0', depthTest: false, transparent: true, opacity: .85 })); pivDot.renderOrder = 20; sc.add(pivDot); }
+  pivDot.position.copy(p); pivDot.scale.setScalar(Math.max(.03, cam.position.distanceTo(p) * .008)); pivDot.visible = true; dirty = true;
+  return p;
+}
+/* turn the camera round point P: sideways round the vertical through P, up and down round the camera's own sideways axis through
+   P — P stays where it is on the screen */
+function fcOrbit(P, dx, dy) {
+  const h = Math.max(200, R.domElement.clientHeight), a = -dx / h * Math.PI * 1.6, b0 = -dy / h * Math.PI * 1.6;
+  const pitch = U.clamp(FC.pitch + b0, -1.55, 1.55), b = pitch - FC.pitch, v = cam.position.clone().sub(P);
+  v.applyAxisAngle(new THREE.Vector3(0, 1, 0), a); FC.yaw += a;
+  const right = new THREE.Vector3(Math.cos(FC.yaw), 0, -Math.sin(FC.yaw)), v2 = v.clone().applyAxisAngle(right, b);
+  if (P.y + v2.y >= .25) { v.copy(v2); FC.pitch = pitch; }      // (not under the floor)
+  cam.position.copy(P).add(v);
+}
 function fcWheel(e) {      // towards / away from what the cursor points at
   if (!FC.on || V3.walking || !R) return; e.preventDefault(); const r = R.domElement.getBoundingClientRect(), rc = new THREE.Raycaster(); rc.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -(e.clientY - r.top) / r.height * 2 + 1), cam);
   const hit = new THREE.Vector3(), far = rc.ray.intersectPlane(floorPlane, hit) ? cam.position.distanceTo(hit) : FC.D, step = -Math.sign(e.deltaY) * U.clamp(far * .15, .25, 12) * (e.shiftKey ? 3 : 1);
   if (step > 0 && far - step < .6) return;      // not into the floor
   cam.position.addScaledVector(rc.ray.direction, step); fcFloor(); fcApply(); GP.tip.hide();
 }
-V3.setNav = k => { if (!GP.lib) return; GP.lib.nav3d = k; GP.saveLib(); fcMode(); if (!FC.on) { ctl.update(); } dirty = true; GP.toast(k === 'orbit' ? '조작: 중심 돌기 — 끌면 한 점을 중심으로 돌아요' : '조작: 자유 시점 — 끌면 화면을 잡고 둘러봐요', { ms: 3000 }); };
+V3.setNav = k => { if (!GP.lib) return; GP.lib.nav3d = k; GP.saveLib(); fcMode(); if (!FC.on) { ctl.update(); } dirty = true; GP.toast(k === 'orbit' ? '조작: 중심 돌기 — 끌면 화면 가운데 한 점을 중심으로 돌아요' : '조작: 자유 시점 — 누른 곳을 중심으로 돌아요', { ms: 3000 }); };
 /* the ordinary 3D view: W A S D / arrows fly the way the camera looks — up and down with it (the turning point comes along),
    Q / E down / up, Shift faster; the mouse still turns, pans and zooms. With machines picked, the arrows nudge them and Q / E
    turn them, as before. */
