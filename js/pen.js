@@ -385,6 +385,7 @@ pen.svg = (P) => {
   // curve handles of the room (wall-shape tool)
   if (ui().tool === 'vertex' && !GP.viewOnly) for (const h of CV.handles(GP.L())) for (const [c, a, , gh] of h.h) html += `<line x1="${S.toScreen(a[0], 0, a[1])[0]}" y1="${S.toScreen(a[0], 0, a[1])[1]}" x2="${S.toScreen(c[0], 0, c[1])[0]}" y2="${S.toScreen(c[0], 0, c[1])[1]}" stroke="#E0622B" stroke-width="1.3" opacity="${gh ? .45 : .85}"${gh ? ' stroke-dasharray="3 3"' : ''}/>`;
   if (GP.XF) html += GP.XF.svg();
+  if (GP.ARC) html += GP.ARC.svg();
   if (ui().tool !== 'pen' || !st) return html;
   const A = st.A, m = A.length; if (!m) return html;
   // guides
@@ -572,18 +573,53 @@ ARC.followWall = () => {
   }
   GP.changed('items'); GP.toast(`${rows.length}대를 곡선 벽을 따라 놓았어요${T > D.L ? ' · 곡선보다 줄이 길어서 끝쪽 기구는 곡선 밖에 걸쳐요' : ''}`, { ms: 3500 });
 };
-let bendSnap = null;
-ARC.bend = (deg, done) => {
-  if (!bendSnap) { const its = ui().selItems(); if (its.length < 2) return; bendSnap = its.map(it => ({ it, x: it.x, z: it.z, rot: it.rot })); }
-  const ref = bendSnap[0], loc = bendSnap.map(q => { const [lx, lz] = G.w2l(ref.x, ref.z, ref.rot, q.x, q.z); return { q, lx, lz }; });
-  const x0 = Math.min(...loc.map(o => o.lx)), x1 = Math.max(...loc.map(o => o.lx)), span = x1 - x0, mid = (x0 + x1) / 2, z0 = loc.reduce((s, o) => s + o.lz, 0) / loc.length;
-  const th = deg * DEGR, kap = span > .1 ? th / span : 0;
+/* bending: a session per selection keeps the straight row it started from, the angle and the centre of the bend (0 = the first
+   end, 1 = the other, .5 = the middle; the item there stays put and unturned, the row curls away from it). Moving the centre or the
+   angle again works from that same straight row; anything else that moves the machines starts a new session. */
+let bs = null, arcBusy = false;
+const selKey = () => ui().selItems().map(it => it.uid).sort().join(',');
+function session() {
+  const its = ui().selItems(); if (its.length < 2) return null; const key = selKey();
+  if (!bs || bs.key !== key) { const snap = its.map(it => ({ it, x: it.x, z: it.z, rot: it.rot })), ref = snap[0], loc = snap.map(q => { const [lx, lz] = G.w2l(ref.x, ref.z, ref.rot, q.x, q.z); return { q, lx, lz }; }); const x0 = Math.min(...loc.map(o => o.lx)), x1 = Math.max(...loc.map(o => o.lx)); bs = { key, snap, ref, loc, x0, x1, z0: loc.reduce((t, o) => t + o.lz, 0) / loc.length, deg: 0, pivot: .5 }; }
+  return bs;
+}
+function bendApply(commit) {
+  const S0 = session(); if (!S0) return; const { ref, loc, x0, x1, z0 } = S0, span = x1 - x0, p = x0 + span * S0.pivot, kap = span > .1 ? S0.deg * DEGR / span : 0;
   for (const o of loc) {
     if (Math.abs(kap) < 1e-4) { o.q.it.x = o.q.x; o.q.it.z = o.q.z; o.q.it.rot = o.q.rot; continue; }
-    const s = o.lx - mid, e = o.lz - z0, R = 1 / kap + e, lx = mid + R * Math.sin(kap * s), lz = z0 - 1 / kap + R * Math.cos(kap * s), [x, z] = G.l2w(ref.x, ref.z, ref.rot, lx, lz);
+    const s = o.lx - p, R = 1 / kap + (o.lz - z0), lx = p + R * Math.sin(kap * s), lz = z0 - 1 / kap + R * Math.cos(kap * s), [x, z] = G.l2w(ref.x, ref.z, ref.rot, lx, lz);
     o.q.it.x = U.r3(x); o.q.it.z = U.r3(z); o.q.it.rot = U.normRot(o.q.rot - kap * s / DEGR);
   }
-  if (done) { bendSnap = null; GP.changed('items'); } else { GP.checks.quick(); GP.S.invalidate(); GP.emit('overlay'); }
+  if (commit) { arcBusy = true; GP.changed('items'); arcBusy = false; ui().renderInspector(); } else { GP.checks.quick(); GP.S.invalidate(); GP.emit('overlay'); }
+}
+ARC.bend = (deg, done) => { const S0 = session(); if (!S0) return; S0.deg = deg; bendApply(done); };
+ARC.deg = () => bs && bs.key === selKey() ? bs.deg : 0;
+const pivotName = v => v < .02 ? '처음 고른 기구 쪽 끝' : v > .98 ? '반대쪽 끝' : Math.abs(v - .5) < .02 ? '가운데' : `${Math.round(v * 100)}% 지점`;
+ARC.pivotText = () => pivotName(bs && bs.key === selKey() ? bs.pivot : .5);
+ARC.center = () => { const S0 = session(); if (!S0) return; S0.pivot = .5; bendApply(true); };
+GP.on('changed', () => { if (!arcBusy && bs) bs = null; });      // moved some other way: the next bend starts from where they are
+/* the centre on the plan: a diamond on the row's line, dragged along it (it sticks to the machines' middles and the ends) */
+ARC.handles = () => {
+  const u = ui(); if (GP.viewOnly || u.tool !== 'select' || u.step !== 'place' || u.selItems().length < 2 || u.sel.length !== u.selItems().length) return [];
+  const S0 = bs && bs.key === selKey() ? bs : null, its = u.selItems(), ref = S0 ? S0.ref : its[0];
+  let x0, x1, z0; if (S0) ({ x0, x1, z0 } = S0); else { const l = its.map(it => G.w2l(ref.x, ref.z, ref.rot, it.x, it.z)); x0 = Math.min(...l.map(v => v[0])); x1 = Math.max(...l.map(v => v[0])); z0 = l.reduce((t, v) => t + v[1], 0) / l.length; }
+  if (x1 - x0 < .1) return []; const pv = S0 ? S0.pivot : .5, pos = G.l2w(ref.x, ref.z, ref.rot, x0 + (x1 - x0) * pv, z0);
+  return [{ cls: 'ov hd arcp', html: '', pos, h: 'arcp', title: `휘는 중심 (${pivotName(pv)}) · 줄을 따라 끌어서 옮기기` }];
+};
+ARC.svg = () => {
+  const h = ARC.handles(); if (!h.length || !(bs && bs.key === selKey()) || !bs.deg) return ''; const S = GP.S, [x, y] = S.toScreen(h[0].pos[0], 0, h[0].pos[1]);
+  return `<g transform="translate(${x},${y + 20})"><rect x="-30" y="-10" width="60" height="18" rx="4" fill="#E0622B"/><text x="0" y="3" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="Pretendard,Malgun Gothic,sans-serif">휘는 중심</text></g>`;
+};
+let pd = null;
+ARC.pivotDown = (e, el) => {
+  e.preventDefault(); e.stopPropagation(); const S0 = session(); if (!S0) return; try { el.setPointerCapture(e.pointerId); } catch (_) { }
+  pd = true; const mv = ev => {
+    if (!pd) return; const fp = GP.S.floorAt(ev.clientX, ev.clientY), [lx] = G.w2l(S0.ref.x, S0.ref.z, S0.ref.rot, fp.x, fp.z), span = S0.x1 - S0.x0; let v = U.clamp((lx - S0.x0) / span, 0, 1);
+    const tol = Math.min(.04, GP.S.mpp() * 12 / span); let bw = null, bd = tol; for (const w of [0, .5, 1, ...S0.loc.map(o => (o.lx - S0.x0) / span)]) { const d = Math.abs(w - v); if (d < bd) { bd = d; bw = w; } } if (bw != null) v = bw;      // sticks to the nearest machine middle / end / the middle, only when close
+    S0.pivot = v; bendApply(false); ui().setHint(`휘는 중심 <b>${pivotName(v)}</b>${S0.deg ? '' : ' · 오른쪽 칸 「줄 휘기」로 휘어 보세요'}`);
+  };
+  const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); pd = null; ui().setHint(); if (S0.deg) bendApply(true); else ui().renderInspector(); GP.emit('overlay'); };
+  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
 };
 document.addEventListener('input', e => { if (e.target.id !== 'arcBend') return; const v = +e.target.value; const l = $('#arcV'); if (l) l.textContent = (v > 0 ? '+' : '') + v + '°'; ARC.bend(v, false); });
 document.addEventListener('change', e => { if (e.target.id !== 'arcBend') return; ARC.bend(+e.target.value, true); });

@@ -622,7 +622,8 @@ details.more>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--i
 .empty-room .er-row{display:flex;gap:6px;width:100%}.empty-room .er-row .btn{flex:1;justify-content:center;font-size:12.5px;padding:7px 4px;white-space:nowrap}
 .empty-room.compact{inset:auto;left:50%;top:12px;transform:translateX(-50%);display:block;background:none;backdrop-filter:none;width:max-content;max-width:calc(100% - 24px)}
 .empty-room.compact .er-card{flex-direction:row;width:auto;padding:8px 10px;gap:10px;border-color:var(--accent)}.empty-room.compact .er-ic,.empty-room.compact .er-d{display:none}.empty-room.compact .er-main{width:auto;padding:6px 12px}.empty-room.compact .er-row{width:auto}
-.arc-sec input[type=range]{width:100%}
+.arc-sec input[type=range]{width:100%}.arc-pv{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12.5px;color:var(--ink-2)}
+.hd.arcp{width:20px;height:20px;background:none;border:0;box-shadow:none;cursor:ew-resize}.hd.arcp::before{content:'';position:absolute;inset:4px;border-radius:2px;background:#E0622B;border:2px solid #fff;box-shadow:0 0 0 1px #E0622B,0 1px 3px rgba(0,0,0,.3);transform:rotate(45deg)}      /* (the diamond turns inside: turning the handle itself would turn its placement too) */
 .pl-lead{display:flex;align-items:center;gap:7px;margin:0;font-size:12.5px;color:var(--muted)}
 .pl-lead svg{width:15px;height:15px;flex:none}
 .pl-groups button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:6px 4px}

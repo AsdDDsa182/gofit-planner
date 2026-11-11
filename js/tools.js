@@ -434,7 +434,7 @@ function toolDown(t, e, fp) {
   if (t === 'measure') { const p = snapPoint(fp.x, fp.z, { e, alt: e.altKey, prev: draw && draw.a, shift: e.shiftKey }); if (!draw) { draw = { tool: 'measure', a: p, b: p }; } else { const d = { id: U.uid('d'), a: draw.a, b: p }; if (G.len(d.a, d.b) > .02) { L.dims.push(d); draw = null; GP.changed('annot'); ui.select([{ k: 'dim', id: d.id }]); GP.toast(`길이 ${G.len(d.a, d.b).toFixed(2)} m`); } } GP.emit('overlay'); return true; }
   if (t === 'note') { const n = { id: U.uid('n'), x: U.r3(fp.x), z: U.r3(fp.z), text: '', _new: true }; L.notes.push(n); GP.changed('annot'); ui.setTool('select'); ui.select([{ k: 'note', id: n.id }]); return true; }
   if (t === 'roomlabel') { if (!G.pip(fp.x, fp.z, L.room.pts)) { GP.toast('방 안쪽을 눌러 주세요', { bad: true }); return true; } const r = { id: U.uid('r'), x: U.r3(fp.x), z: U.r3(fp.z), name: '공간 이름', _new: true }; L.rooms.push(r); GP.changed('annot'); ui.setTool('select'); ui.select([{ k: 'room', id: r.id }]); return true; }
-  if (t === 'opening') { const h = openingHover(fp); if (!h) { GP.toast('벽이나 가벽 가까이를 눌러 주세요', { bad: true }); return true; } const k = ui.openingKind; const w = tools.openingWidth(k); const o = { id: U.uid('o'), host: h.host, seg: h.seg, t: U.r3(U.clamp(U.snap(h.t, .05), w / 2, h.L - w / 2)), w, h: k === 'window' ? 1.2 : 2.1, sill: .9, kind: k }; L.openings.push(o); tools.preview = null; GP.changed('openings'); ui.setTool('select'); ui.select([{ k: 'opening', id: o.id }]); return true; }
+  if (t === 'opening') { const h = openingHover(fp); if (!h) { GP.toast('벽이나 가벽 가까이를 눌러 주세요', { bad: true }); return true; } if (h.host === 'room' && GP.CV && GP.CV.of(L, h.seg)) { GP.toast('곡선 벽에는 문 · 창문을 달 수 없어요. 직선 벽에 달아 주세요', { bad: true, ms: 4000 }); return true; } const k = ui.openingKind; const w = tools.openingWidth(k); const o = { id: U.uid('o'), host: h.host, seg: h.seg, t: U.r3(U.clamp(U.snap(h.t, .05), w / 2, h.L - w / 2)), w, h: k === 'window' ? 1.2 : 2.1, sill: .9, kind: k }; L.openings.push(o); tools.preview = null; GP.changed('openings'); ui.setTool('select'); ui.select([{ k: 'opening', id: o.id }]); return true; }
   if (t === 'fillwall') { const h = wallHover(fp); if (!h) { GP.toast('벽 가까이를 눌러 주세요', { bad: true }); return true; } GP.panels.fillWallDialog(h); return true; }
   return false;
 }
@@ -561,6 +561,7 @@ tools.handleDown = (e, el) => {
   if (h === 'cp' && GP.CV) { GP.CV.cpDown(e, el); return; }
   if ((h === 'rr' || h === 'rcv') && GP.CV) { GP.CV.rcDown(e, el); return; }
   if ((h === 'xf' || h === 'xfr') && GP.XF) { GP.XF.handleDown(e, el); return; }
+  if (h === 'arcp' && GP.ARC) { GP.ARC.pivotDown(e, el); return; }
   const target = tools.polyTarget();
   if (h === 'v' && target) {
     const i = +el.dataset.i, S = tools.selVs;
@@ -846,6 +847,7 @@ act.inspAction = async (a, b) => {
   if (a === 'fav' && it) { const f = GP.lib.favorites, i = f.indexOf(it.type); if (i >= 0) f.splice(i, 1); else f.unshift(it.type); GP.saveLib(); ui.renderInspector(); GP.emit('library'); return; }
   if (a === 'row') return act.makeRow(U.clamp(+$('#iRowN').value || 2, 2, 40), +$('#iRowG').value || 0);
   if (a === 'arcWall' && GP.ARC) return GP.ARC.followWall();
+  if (a === 'arcCenter' && GP.ARC) return GP.ARC.center();
   if (a === 'alignF') return act.align('F'); if (a === 'alignC') return act.align('C'); if (a === 'alignB') return act.align('B');
   if (a === 'gap') return act.gap(+$('#mGap').value || 0); if (a === 'even') return act.gap(0, true);
   if (a === 'grot') return act.groupRotate(90);

@@ -75,6 +75,7 @@ OV.syncHandles = () => {
     for (let i = 0; i < n; i++) if (!inner.has(i)) hspecs.push({ cls: 'ov hd vx' + (GP.tools.selV === i || GP.tools.selVs.has(i) ? ' sel' : ''), html: room ? (CV ? CV.num(GP.L(), i) : i + 1) : '', pos: P[i], h: 'v', i, title: sizable ? '끌어서 크기 조절 (두 변 함께) · Alt+끌기: 이 점만 옮기기 · Shift+클릭 여러 개 선택 · 더블클릭 삭제' : '끌어서 이동 (Ctrl: 1cm 미세 · Alt: 자유) · 방향키 1cm, Shift+방향키 10cm · Shift+클릭 여러 개 선택 · 더블클릭 삭제' });
   }
   if (GP.XF) hspecs.push(...GP.XF.handles());
+  if (GP.ARC) hspecs.push(...GP.ARC.handles());
   const its = u.selItems();
   if (its.length === 1 && u.sel.length === 1 && u.tool === 'select') {
     const it = its[0], d = GP.dims(it);
