@@ -477,6 +477,7 @@ details.more>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--i
 #c3{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none;z-index:1}
 .v3bar{display:none!important;align-items:center}
 .app.v3 .v3bar{display:flex!important}
+.layers.v3bar{max-width:none}      /* one line while the view has room (the layer buttons' 560px cap made it two) */
 .app.v3 #c,.app.v3 #overlay,.app.v3 #tools,.app.v3 #layersBox,.app.v3 #scalebar{display:none!important}
 .v3bar .btn svg{width:14px;height:14px}
 .v3sep{width:1px;align-self:stretch;background:var(--line);margin:2px 4px}

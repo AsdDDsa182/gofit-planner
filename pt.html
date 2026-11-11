@@ -46,7 +46,7 @@
 <div class="bar">
   <span id="st">준비 중…</span><span class="sep"></span>
   <label>목표 <select id="goal"><option value="200">빠르게 (200)</option><option value="600" selected>보통 (600)</option><option value="1500">고품질 (1500)</option><option value="0">계속</option></select></label>
-  <label>속도 <select id="load" title="그래픽카드를 얼마나 쓸지 — 빠르게는 그동안 컴퓨터가 버벅일 수 있어요"><option value=".8">빠르게</option><option value=".45" selected>보통</option><option value=".2">조용히</option></select></label>
+  <label>속도 <select id="load" title="그래픽카드를 얼마나 쓸지 — 빠르게는 그동안 컴퓨터가 버벅일 수 있어요"><option value=".8" selected>빠르게</option><option value=".45">보통</option><option value=".2">조용히</option></select></label>
   <label>해상도 <select id="res"><option value="0.5">절반 (빠름)</option><option value="1" selected>그대로</option></select></label>
   <label>밝기 <input type="range" id="exp" min="-2" max="2" step="0.1" value="0"></label>
   <label>조명 세기 <input type="range" id="lit" min="0" max="3" step="0.1" value="1"></label>
@@ -129,7 +129,7 @@ async function start(d) {
 }
 /* as many samples a frame as the graphics card can do: each frame's work is timed to the end (gl.finish) and the count adjusted
    so the work fills most of the time between frames (one sample a frame, as before, left the card mostly idle) */
-let last = -1, prevT = performance.now(), dtAvg = 16, rate = 0, rs = 0, rt = performance.now(), LOAD = .45;      // (the share of the time between frames the card works: the rest is left to the desktop and other programs)
+let last = -1, prevT = performance.now(), dtAvg = 16, rate = 0, rs = 0, rt = performance.now(), LOAD = .8;      // (the share of the time between frames the card works: the rest is left to the desktop and other programs)
 function loop() {
   requestAnimationFrame(loop); const now = performance.now(), dt = now - prevT; prevT = now; dtAvg = dtAvg * .9 + Math.min(250, dt) * .1; if (!running || !pt) return;
   const gl = renderer.getContext(), t0 = performance.now(); let n = 0;
