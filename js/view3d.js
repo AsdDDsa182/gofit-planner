@@ -767,7 +767,7 @@ window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase(); if (k === 'escape') { V3.walk(false); e.preventDefault(); e.stopImmediatePropagation(); return; }
   if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) { keys.add(k); e.preventDefault(); e.stopImmediatePropagation(); }
 }, true);
-/* the ordinary 3D view: W A S D / arrows move along the floor the way the camera looks (the turning point comes along),
+/* the ordinary 3D view: W A S D / arrows fly the way the camera looks — up and down with it (the turning point comes along),
    Q / E down / up, Shift faster; the mouse still turns, pans and zooms. With machines picked, the arrows nudge them and Q / E
    turn them, as before. */
 const FLY = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'q', 'e'];
@@ -781,9 +781,9 @@ window.addEventListener('keydown', e => {
 function flyStep() {
   let f = 0, s = 0, u = 0; if (keys.has('w') || keys.has('arrowup')) f++; if (keys.has('s') || keys.has('arrowdown')) f--; if (keys.has('a') || keys.has('arrowleft')) s--; if (keys.has('d') || keys.has('arrowright')) s++; if (keys.has('e')) u++; if (keys.has('q')) u--;
   const t = performance.now(); if (!f && !s && !u) { lastF = 0; return; } const dt = Math.min(.05, (t - (lastF || t - 16)) / 1000); lastF = t;
-  const dir = new THREE.Vector3().subVectors(ctl.target, cam.position); dir.y = 0; if (dir.lengthSq() < 1e-8) dir.set(0, 0, -1); dir.normalize();
-  const right = new THREE.Vector3(-dir.z, 0, dir.x), dist = cam.position.distanceTo(ctl.target), sp = U.clamp(dist * .6, 2.5, 30) * (keys.has('shift') ? 2.5 : 1) * dt;
-  const mv = dir.multiplyScalar(f * sp).add(right.multiplyScalar(s * sp)); mv.y = u * sp;
+  const dir = new THREE.Vector3().subVectors(ctl.target, cam.position); if (dir.lengthSq() < 1e-8) dir.set(0, 0, -1); dir.normalize();      // the way the camera looks, up and down too (looking at the floor, S goes back and up)
+  const right = new THREE.Vector3(-dir.z, 0, dir.x); if (right.lengthSq() < 1e-8) right.set(1, 0, 0); right.normalize(); const dist = cam.position.distanceTo(ctl.target), sp = U.clamp(dist * .6, 2.5, 30) * (keys.has('shift') ? 2.5 : 1) * dt;
+  const mv = dir.multiplyScalar(f * sp).add(right.multiplyScalar(s * sp)); mv.y += u * sp;
   cam.position.add(mv); ctl.target.add(mv); if (cam.position.y < .25) { const d = .25 - cam.position.y; cam.position.y += d; ctl.target.y += d; }
   dirty = true; GP.tip.hide();
 }
