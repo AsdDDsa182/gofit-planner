@@ -30,7 +30,7 @@
   .bar select { background: #23282d; color: #e8ebee; border: 1px solid #3a4148; border-radius: 7px; padding: 4px 6px; font: inherit; }
   .bar input[type=range] { width: 110px; accent-color: #2450e0; }
   .sep { width: 1px; align-self: stretch; background: #3a4148; }
-  #st { min-width: 120px; color: #cfd6dc; font-variant-numeric: tabular-nums; }
+  #st { min-width: 160px; color: #cfd6dc; font-variant-numeric: tabular-nums; }
   #prog { position: fixed; left: 0; top: 0; height: 3px; background: #2450e0; width: 0; transition: width .3s; }
   .msg { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; background: rgba(13, 15, 17, .82); }
   .msg[hidden] { display: none; }
@@ -62,7 +62,7 @@ import { WebGLPathTracer, GradientEquirectTexture } from 'three-gpu-pathtracer';
 const $ = s => document.querySelector(s), cv = $('#c'), DEG = Math.PI / 180;
 const msg = (t, p, spin = true) => { $('#msg').hidden = !t; if (!t) return; $('#msgT').textContent = t; $('#msgP').textContent = p || ''; $('.spin').style.display = spin ? '' : 'none'; };
 const post = (o) => parent.postMessage(o, location.origin);
-let renderer, pt, scene, camera, controls, running = false, goal = 600, lights = [], emits = [], D = null;
+let renderer, pt, scene, camera, controls, running = false, goal = 600, lights = [], emits = [], D = null, GPU = '', spf = 1;
 
 try {
   renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: false, preserveDrawingBuffer: true });
@@ -70,8 +70,9 @@ try {
   renderer.toneMapping = THREE.AgXToneMapping; renderer.toneMappingExposure = 1;      // AgX: Blender's own view transform
   scene = new THREE.Scene(); camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, .05, 600);
   controls = new OrbitControls(camera, cv); controls.enableDamping = false; controls.screenSpacePanning = true;
-  pt = new WebGLPathTracer(renderer); pt.tiles.set(2, 2); pt.bounces = 6; pt.transmissiveBounces = 10; pt.filterGlossyFactor = .5; pt.minSamples = 2; pt.fadeDuration = 250; pt.renderScale = 1; pt.dynamicLowRes = true; pt.lowResScale = .25;
-  controls.addEventListener('change', () => pt.updateCamera());
+  pt = new WebGLPathTracer(renderer); pt.tiles.set(1, 1); pt.bounces = 6; pt.transmissiveBounces = 10; pt.filterGlossyFactor = .5; pt.minSamples = 2; pt.fadeDuration = 250; pt.renderScale = 1; pt.dynamicLowRes = true; pt.lowResScale = .25;
+  controls.addEventListener('change', () => { pt.updateCamera(); spf = 1; });      // moving: one sample a frame so it follows the mouse, then it speeds up again
+  { const g = renderer.getContext(), x = g.getExtension('WEBGL_debug_renderer_info'); GPU = x ? String(g.getParameter(x.UNMASKED_RENDERER_WEBGL)).replace(/^ANGLE \((.*)\)$/, '$1').split(',').slice(1, 2).join('').replace(/\(0x[0-9a-f]+\)/i, '').replace(/\s+(Direct3D|OpenGL|Vulkan|Metal).*$/i, '').trim() || g.getParameter(x.UNMASKED_RENDERER_WEBGL) : ''; }
   msg('장면을 기다리는 중…', '3D 화면의 장면을 받아요.');
   post({ type: 'pt-ready' });
 } catch (err) { msg('이 기기에서는 실사 렌더를 할 수 없어요', String(err && err.message || err), false); }
@@ -125,12 +126,16 @@ async function start(d) {
   await new Promise(r => setTimeout(r, 30));
   pt.setScene(scene, camera); setLights(); msg(''); running = true;
 }
-let last = 0;
+/* as many samples a frame as the graphics card can do: each frame's work is timed to the end (gl.finish) and the count adjusted
+   so the work fills most of the time between frames (one sample a frame, as before, left the card mostly idle) */
+let last = -1, prevT = performance.now(), dtAvg = 16, rate = 0, rs = 0, rt = performance.now();
 function loop() {
-  requestAnimationFrame(loop); if (!running || !pt) return;
-  const s = Math.floor(pt.samples);
-  if (!goal || s < goal) pt.renderSample();
-  if (s !== last) { last = s; $('#st').textContent = goal && s >= goal ? `완성 · ${s} 샘플` : `${s} 샘플${goal ? ' / ' + goal : ''}`; $('#prog').style.width = goal ? Math.min(100, s / goal * 100) + '%' : '0'; }
+  requestAnimationFrame(loop); const now = performance.now(), dt = now - prevT; prevT = now; dtAvg = dtAvg * .9 + Math.min(250, dt) * .1; if (!running || !pt) return;
+  const gl = renderer.getContext(), t0 = performance.now(); let n = 0;
+  for (; n < spf && (!goal || pt.samples < goal); n++) pt.renderSample();
+  if (n) { gl.finish(); const work = performance.now() - t0, aim = Math.min(60, Math.max(14, dtAvg * .75)); if (work < aim * .7 && spf < 256) spf = Math.min(256, Math.ceil(spf * 1.35)); else if (work > aim * 1.3 && spf > 1) spf = Math.max(1, Math.floor(spf / 1.35)); }
+  const s = Math.floor(pt.samples); if (now - rt > 700) { rate = Math.max(0, (pt.samples - rs) / ((now - rt) / 1000)); rs = pt.samples; rt = now; }
+  if (s !== last) { last = s; const done = goal && s >= goal; $('#st').textContent = (done ? `완성 · ${s} 샘플` : `${s}${goal ? ' / ' + goal : ''} 샘플 · 초당 ${Math.round(rate)}`) + (GPU ? ` · ${GPU}` : ''); $('#prog').style.width = goal ? Math.min(100, s / goal * 100) + '%' : '0'; }
 }
 loop();
 window.PT = { get pt() { return pt; }, get scene() { return scene; }, get camera() { return camera; }, get renderer() { return renderer; } };      // (checks)
