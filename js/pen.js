@@ -573,71 +573,139 @@ ARC.followWall = () => {
   }
   GP.changed('items'); GP.toast(`${rows.length}대를 곡선 벽을 따라 놓았어요${T > D.L ? ' · 곡선보다 줄이 길어서 끝쪽 기구는 곡선 밖에 걸쳐요' : ''}`, { ms: 3500 });
 };
-/* pulling part of a row (like a magnet / Photoshop's puppet pin): the selected machines are held where they were; a point (◆) pulled
-   away from its place on the row drags the machines within a dashed circle round that place along with it — the nearest most,
-   fading to none at the circle, those outside it stay exactly — and each one turns with the row's new line there.
-   Session per selection (in the first machine's frame: x along the row, +z its front): the row as it was, the place (anchor),
-   the pull, the circle's radius. Anything else that moves the machines starts a new session. */
+/* bending a row, two ways (the panel's [기본 | 정밀]):
+   기본 — the whole row on one arc ("휘는 정도"), the middle stays; spacing along the arc as it was.
+   정밀 — a point (◆) pulled away from its place on the row bends the row's line only inside a dashed circle round that place;
+          the machines are then laid along that line: 「원 밖은 그대로」 the ones outside stay exactly and the ones inside share the
+          bent part evenly; 「전체 간격 그대로」 every gap stays as it was (the ones outside slide a little along the row).
+   Both stop just before two machines would overlap. The frame does not depend on the order the machines were picked: x along the
+   row (its main direction), +z the side most of them face. A session per selection keeps the row as it was. */
 let bs = null, arcBusy = false;
 const selKey = () => ui().selItems().map(it => it.uid).sort().join(',');
+const arcMode = () => GP.lib.arcMode === 'fine' ? 'fine' : 'basic', arcKeep = () => GP.lib.arcKeep === 'all' ? 'all' : 'inside';
+function rowFrame(its) {
+  const n = its.length, cx = its.reduce((t, it) => t + it.x, 0) / n, cz = its.reduce((t, it) => t + it.z, 0) / n;
+  let sxx = 0, sxz = 0, szz = 0; for (const it of its) { const dx = it.x - cx, dz = it.z - cz; sxx += dx * dx; sxz += dx * dz; szz += dz * dz; }
+  let ang = .5 * Math.atan2(2 * sxz, sxx - szz);      // the main direction of the centres
+  if (sxx + szz < 1e-6) { const r = its[0].rot * DEGR; ang = Math.atan2(Math.sin(r), Math.cos(r)); }
+  let rot = ang / DEGR; const front = r => [-Math.sin(r * DEGR), Math.cos(r * DEGR)];
+  const fz = its.reduce((t, it) => { const f = front(it.rot), z = front(rot); return t + f[0] * z[0] + f[1] * z[1]; }, 0); if (fz < 0) rot += 180;      // +z = where most of them face
+  return { ox: cx, oz: cz, rot };
+}
 function session() {
   const its = ui().selItems(); if (its.length < 2) return null; const key = selKey();
   if (!bs || bs.key !== key) {
-    const snap = its.map(it => ({ it, x: it.x, z: it.z, rot: it.rot })), ref = snap[0], loc = snap.map(q => { const [lx, lz] = G.w2l(ref.x, ref.z, ref.rot, q.x, q.z); return { q, lx, lz }; });
-    const x0 = Math.min(...loc.map(o => o.lx)), x1 = Math.max(...loc.map(o => o.lx)), z0 = loc.reduce((t, o) => t + o.lz, 0) / loc.length;
-    bs = { key, snap, ref, loc, x0, x1, z0, anchor: [(x0 + x1) / 2, z0], pull: [0, 0], R: Math.max(1, (x1 - x0) / 2) };
+    const F = rowFrame(its), items = its.map(it => { const [lx, lz] = G.w2l(F.ox, F.oz, F.rot, it.x, it.z); return { it, x: it.x, z: it.z, rot: it.rot, lx, lz }; }).sort((p, q) => p.lx - q.lx);
+    const x0 = items[0].lx, x1 = items[items.length - 1].lx, z0 = items.reduce((t, o) => t + o.lz, 0) / items.length;
+    const before = new Set(); for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) if (G.overlap(GP.footprint(items[i].it), GP.footprint(items[j].it))) before.add(i + ',' + j);
+    bs = { key, F, items, x0, x1, z0, before, deg: 0, anchor: [(x0 + x1) / 2, z0], pull: [0, 0], R: Math.max(1, (x1 - x0) / 2) };
   }
   return bs;
 }
 const wOf = (r, R) => r >= R ? 0 : (1 - (r / R) ** 2) ** 2;      // 1 at the place, 0 at the circle, smooth both ends
-function pullApply(commit) {
-  const S0 = session(); if (!S0) return; const { ref, loc, anchor: A, pull: D, R } = S0;
-  for (const o of loc) {
-    const dx = o.lx - A[0], dz = o.lz - A[1], r = Math.hypot(dx, dz), w = wOf(r, R);
-    if (!w) { o.q.it.x = o.q.x; o.q.it.z = o.q.z; o.q.it.rot = o.q.rot; continue; }
-    const dw = -4 * (1 - (r / R) ** 2) * dx / (R * R), phi = Math.atan2(dw * D[1], 1 + dw * D[0]);      // the row's new direction there: d/dx of (x + w·Dx, z + w·Dz)
-    const [x, z] = G.l2w(ref.x, ref.z, ref.rot, o.lx + w * D[0], o.lz + w * D[1]); o.q.it.x = U.r3(x); o.q.it.z = U.r3(z); o.q.it.rot = U.normRot(o.q.rot + phi / DEGR);
-  }
+/* 기본: the whole row on one arc */
+function placeArc(S0, deg) {
+  const { F, x0, x1, z0 } = S0, span = x1 - x0, mid = (x0 + x1) / 2, k = span > .1 ? deg * DEGR / span : 0;
+  return S0.items.map(o => { if (Math.abs(k) < 1e-5) return { x: o.x, z: o.z, rot: o.rot }; const s = o.lx - mid, R = 1 / k + (o.lz - z0), [x, z] = G.l2w(F.ox, F.oz, F.rot, mid + R * Math.sin(k * s), z0 - 1 / k + R * Math.cos(k * s)); return { x, z, rot: o.rot - k * s / DEGR }; });
+}
+/* 정밀: the row's line bent inside the circle, the machines laid along it */
+function placePull(S0, pull) {
+  const { F, x0, x1, z0, anchor: A, R } = S0, ext = R + (x1 - x0) + 3, X0 = Math.min(x0, A[0]) - ext, X1 = Math.max(x1, A[0]) + ext, n = U.clamp(Math.round((X1 - X0) / .04), 60, 5000), h = (X1 - X0) / n;
+  const pts = [], acc = [0];
+  for (let k = 0; k <= n; k++) { const x = X0 + h * k, w = wOf(Math.hypot(x - A[0], z0 - A[1]), R); pts.push([x + w * pull[0], z0 + w * pull[1]]); if (k) acc.push(acc[k - 1] + G.len(pts[k - 1], pts[k])); }
+  const Sx = x => { const f = U.clamp((x - X0) / h, 0, n), i = Math.min(n - 1, Math.floor(f)); return acc[i] + (acc[i + 1] - acc[i]) * (f - i); };
+  const at = S => { let lo = 0, hi = n; if (S <= 0) lo = 0; else if (S >= acc[n]) lo = n - 1; else { while (hi - lo > 1) { const m = (lo + hi) >> 1; if (acc[m] <= S) lo = m; else hi = m; } }
+    const a = pts[lo], b = pts[lo + 1], L = (acc[lo + 1] - acc[lo]) || 1e-9, t = (S - acc[lo]) / L, ang = Math.atan2(b[1] - a[1], b[0] - a[0]); return { p: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], ang }; };
+  const out_ = o => wOf(Math.hypot(o.lx - A[0], z0 - A[1]), R) === 0;      // the line is not moved there
+  const items = S0.items, keepAll = arcKeep() === 'all', sA = Sx(A[0]);
+  return items.map((o, i) => {
+    let S;
+    if (keepAll) S = sA + (o.lx - A[0]);
+    else if (out_(o)) return { x: o.x, z: o.z, rot: o.rot };      // outside the circle: exactly where it was
+    else { let L = null, Rb = null; for (let j = i - 1; j >= 0; j--) if (out_(items[j])) { L = items[j]; break; } for (let j = i + 1; j < items.length; j++) if (out_(items[j])) { Rb = items[j]; break; }
+      S = L && Rb ? Sx(L.lx) + (o.lx - L.lx) / (Rb.lx - L.lx) * (Sx(Rb.lx) - Sx(L.lx)) : L ? Sx(L.lx) + (o.lx - L.lx) : Rb ? Sx(Rb.lx) - (Rb.lx - o.lx) : sA + (o.lx - A[0]); }
+    const { p, ang } = at(S), e = o.lz - z0, [x, z] = G.l2w(F.ox, F.oz, F.rot, p[0] - Math.sin(ang) * e, p[1] + Math.cos(ang) * e); return { x, z, rot: o.rot + ang / DEGR };
+  });
+}
+/* would these places make two machines overlap (that did not before)? */
+function clashes(S0, pl) {
+  const fp = S0.items.map((o, i) => GP.footprint(Object.assign({}, o.it, pl[i])));
+  for (let i = 0; i < fp.length; i++) for (let j = i + 1; j < fp.length; j++) if (!S0.before.has(i + ',' + j) && G.overlap(fp[i], fp[j])) return true;
+  return false;
+}
+function put(S0, pl, commit) {
+  S0.items.forEach((o, i) => { o.it.x = U.r3(pl[i].x); o.it.z = U.r3(pl[i].z); o.it.rot = U.normRot(pl[i].rot); });
   if (commit) { arcBusy = true; GP.changed('items'); arcBusy = false; ui().renderInspector(); } else { GP.checks.quick(); GP.S.invalidate(); GP.emit('overlay'); }
 }
-ARC.radius = () => bs && bs.key === selKey() ? bs.R : null;
-ARC.setRadius = (R, done) => { const S0 = session(); if (!S0) return; S0.R = Math.max(.3, R); pullApply(done); };
-ARC.straight = () => { const S0 = session(); if (!S0) return; S0.pull = [0, 0]; pullApply(true); };
-ARC.center = () => {}; ARC.deg = () => 0; ARC.pivot = () => .5; ARC.pivotText = () => '';      // (the earlier arc controls)
-GP.on('changed', () => { if (!arcBusy && bs) bs = null; });      // moved some other way: the next pull starts from where they are
-function frame() {
-  const u = ui(); if (GP.viewOnly || u.tool !== 'select' || u.step !== 'place' || u.selItems().length < 2 || u.sel.length !== u.selItems().length) return null;
-  if (bs && bs.key === selKey()) return bs;
-  const its = u.selItems(), ref = its[0], l = its.map(it => G.w2l(ref.x, ref.z, ref.rot, it.x, it.z)), x0 = Math.min(...l.map(v => v[0])), x1 = Math.max(...l.map(v => v[0])), z0 = l.reduce((t, v) => t + v[1], 0) / l.length;
-  return { ref, x0, x1, z0, anchor: [(x0 + x1) / 2, z0], pull: [0, 0], R: Math.max(1, (x1 - x0) / 2) };
+/* the largest part (0..1) of a change that does not make machines overlap */
+function fit(f) { if (!f(1)) return 1; let lo = 0, hi = 1; for (let i = 0; i < 14; i++) { const m = (lo + hi) / 2; if (f(m)) hi = m; else lo = m; } return lo; }
+let warnT = 0; const clashHint = (txt) => { ui().setHint(`<b style="color:#D6362B">${txt}</b>`); clearTimeout(warnT); warnT = setTimeout(() => ui().setHint(), 2200); };
+ARC.bend = (deg, done) => {
+  const S0 = session(); if (!S0) return; let d = deg;
+  if (clashes(S0, placeArc(S0, d))) { const k = fit(t => clashes(S0, placeArc(S0, deg * t))); d = Math.trunc(deg * k); clashHint(`더 휘면 기구가 겹쳐요 · 여기까지 (${d > 0 ? '+' : ''}${d}°)`); const sl = $('#arcBend'); if (sl) sl.value = d; const l = $('#arcV'); if (l) l.textContent = (d > 0 ? '+' : '') + d + '°'; }
+  S0.deg = d; put(S0, placeArc(S0, d), done);
+};
+function pullTo(S0, want, commit) {
+  const cap = 1.5 * S0.R, L = Math.hypot(want[0], want[1]); if (L > cap) want = [want[0] * cap / L, want[1] * cap / L];
+  let pl = placePull(S0, want), stopped = false;
+  if (clashes(S0, pl)) { const k = fit(t => clashes(S0, placePull(S0, [want[0] * t, want[1] * t]))); want = [want[0] * k, want[1] * k]; pl = placePull(S0, want); stopped = true; }
+  S0.pull = [U.r3(want[0]), U.r3(want[1])]; put(S0, pl, commit); return stopped;
 }
-const W_ = (F, p) => G.l2w(F.ref.x, F.ref.z, F.ref.rot, p[0], p[1]);
+ARC.radius = () => bs && bs.key === selKey() ? bs.R : null;
+ARC.deg = () => bs && bs.key === selKey() ? bs.deg : 0;
+ARC.setRadius = (R, done) => { const S0 = session(); if (!S0) return; S0.R = Math.max(.3, R); if (pullTo(S0, S0.pull, done)) clashHint('범위를 줄이면 기구가 겹쳐서 덜 당겼어요'); };
+ARC.straight = () => { const S0 = session(); if (!S0) return; S0.deg = 0; S0.pull = [0, 0]; put(S0, S0.items.map(o => ({ x: o.x, z: o.z, rot: o.rot })), true); };
+ARC.setMode = (m) => { GP.lib.arcMode = m; GP.saveLib(); const S0 = session(); if (S0) { S0.deg = 0; S0.pull = [0, 0]; put(S0, S0.items.map(o => ({ x: o.x, z: o.z, rot: o.rot })), true); } else ui().renderInspector(); GP.emit('overlay'); };
+ARC.setKeep = (k) => { GP.lib.arcKeep = k; GP.saveLib(); const S0 = session(); if (S0) pullTo(S0, S0.pull, true); else ui().renderInspector(); };
+ARC.center = () => {}; ARC.pivot = () => .5; ARC.pivotText = () => '';
+GP.on('changed', () => { if (!arcBusy && bs) bs = null; });      // moved some other way: the next bend starts from where they are
+/* the panel section (ui.js renderMulti) */
+ARC.panelHtml = () => {
+  const its = ui().selItems(); if (its.length < 2) return ''; const S0 = session(), fine = arcMode() === 'fine', span = S0 ? S0.x1 - S0.x0 : 4, R = S0 ? S0.R : Math.max(1, span / 2), dv = S0 ? S0.deg : 0;
+  return `<div class="sec arc-sec"><span class="lbl">곡선으로 놓기</span>${ARC.hasCurve() ? '<button class="btn sm soft wide" data-act="arcWall" title="가장 가까운 곡선 벽을 따라, 지금 순서 · 위 간격으로 · 벽 쪽을 벽에 대고">가까운 곡선 벽을 따라 놓기</button>' : ''}
+    <div class="seg full sm"><button data-arcmode="basic" class="${fine ? '' : 'on'}">기본 · 줄 전체 휘기</button><button data-arcmode="fine" class="${fine ? 'on' : ''}">정밀 · 일부만 당기기</button></div>
+    ${fine ? `<div class="rng"><span>영향 범위</span><input type="range" id="arcR" min="0.5" max="${Math.max(4, Math.ceil(span * 1.2))}" step="0.1" value="${R.toFixed(1)}"><b id="arcRV">${R.toFixed(1)} m</b></div>
+      <div class="rng"><span>간격</span><div class="seg sm"><button data-arckeep="inside" class="${arcKeep() === 'inside' ? 'on' : ''}" title="원 밖 기구는 그대로, 원 안 기구들이 휜 부분을 고르게 나눠요">원 밖은 그대로</button><button data-arckeep="all" class="${arcKeep() === 'all' ? 'on' : ''}" title="모든 기구 사이 간격을 그대로 두고, 원 밖 기구는 줄을 따라 조금씩 밀려요">전체 간격 그대로</button></div></div>
+      <p class="note" style="margin:0">도면의 주황 <b style="color:#E0622B">◆</b>를 끌면 점선 원 안에서만 줄이 휘어요. 흰 점: 잡을 곳 옮기기 · 원 위 네모: 범위 크기. 기구가 겹치기 직전에서 멈춰요.</p>`
+    : `<div class="rng"><span>휘는 정도</span><input type="range" id="arcBend" min="-150" max="150" step="1" value="${dv}"><b id="arcV">${dv > 0 ? '+' : ''}${dv}°</b></div>
+      <p class="note" style="margin:0">오른쪽: 기구 앞쪽이 볼록 · 왼쪽: 오목. 줄 가운데는 제자리, 간격은 그대로이고 기구가 겹치기 직전에서 멈춰요.</p>`}
+    <div class="acts"><button class="btn sm" data-act="arcStraight">원래대로</button></div></div>`;
+};
+document.addEventListener('click', e => { const m = e.target.closest('[data-arcmode]'); if (m) { ARC.setMode(m.dataset.arcmode); return; } const k = e.target.closest('[data-arckeep]'); if (k) ARC.setKeep(k.dataset.arckeep); });
+/* the plan (정밀 only): ◆ pull, white dot = the place, square on the circle = its size */
+function frame() {
+  const u = ui(); if (arcMode() !== 'fine' || GP.viewOnly || u.tool !== 'select' || u.step !== 'place' || u.selItems().length < 2 || u.sel.length !== u.selItems().length) return null;
+  return session();
+}
+const W_ = (S0, p) => G.l2w(S0.F.ox, S0.F.oz, S0.F.rot, p[0], p[1]);
 ARC.handles = () => {
-  const F = frame(); if (!F) return []; const A = F.anchor, D = F.pull;
-  const out = [{ cls: 'ov hd arcp', html: '', pos: W_(F, [A[0] + D[0], A[1] + D[1] + GP.S.mpp() * 30]), h: 'arcp', title: '끌어당기기 · 점선 원 안의 기구가 따라와요 (가까울수록 많이)' }];
-  out.push({ cls: 'ov hd arca', html: '', pos: W_(F, A), h: 'arca', title: '잡을 곳 옮기기 (원이 같이 움직여요)' });
-  out.push({ cls: 'ov hd arcr', html: '', pos: W_(F, [A[0] + F.R, A[1]]), h: 'arcr', title: '영향 범위 크기 바꾸기' });
-  return out;
+  const S0 = frame(); if (!S0) return []; const A = S0.anchor, D = S0.pull;
+  return [{ cls: 'ov hd arcp', html: '', pos: W_(S0, [A[0] + D[0], A[1] + D[1] + GP.S.mpp() * 30]), h: 'arcp', title: '끌어당기기 · 점선 원 안에서만 줄이 휘어요' },
+    { cls: 'ov hd arca', html: '', pos: W_(S0, A), h: 'arca', title: '잡을 곳 옮기기 (원이 같이 움직여요)' },
+    { cls: 'ov hd arcr', html: '', pos: W_(S0, [A[0] + S0.R, A[1]]), h: 'arcr', title: '영향 범위 크기 바꾸기' }];
 };
 ARC.svg = () => {
-  const F = frame(); if (!F) return ''; const S = GP.S, A = W_(F, F.anchor), [ax, ay] = S.toScreen(A[0], 0, A[1]), r = F.R / S.mpp(), h = ARC.handles(), [px, py] = S.toScreen(h[0].pos[0], 0, h[0].pos[1]), [rx, ry] = S.toScreen(h[2].pos[0], 0, h[2].pos[1]);
-  const txt = `영향 범위 ${F.R.toFixed(1)} m`, w = txt.length * 6.4 + 12;
+  const S0 = frame(); if (!S0) return ''; const S = GP.S, A = W_(S0, S0.anchor), [ax, ay] = S.toScreen(A[0], 0, A[1]), r = S0.R / S.mpp(), h = ARC.handles(), [px, py] = S.toScreen(h[0].pos[0], 0, h[0].pos[1]), [rx, ry] = S.toScreen(h[2].pos[0], 0, h[2].pos[1]);
+  const txt = `영향 범위 ${S0.R.toFixed(1)} m`, w = txt.length * 6.4 + 12;
   return `<circle cx="${ax}" cy="${ay}" r="${r}" fill="rgba(224,98,43,.05)" stroke="#E0622B" stroke-width="1.4" stroke-dasharray="6 5"/><line x1="${ax}" y1="${ay}" x2="${px}" y2="${py}" stroke="#E0622B" stroke-width="1.4" stroke-dasharray="3 3"/><g transform="translate(${rx + w / 2 + 10},${ry})"><rect x="${-w / 2}" y="-10" width="${w}" height="18" rx="4" fill="#E0622B"/><text x="0" y="3" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="Pretendard,Malgun Gothic,sans-serif">${txt}</text></g>`;
 };
 ARC.pivotDown = (e, el) => {
   e.preventDefault(); e.stopPropagation(); const S0 = session(); if (!S0) return; try { el.setPointerCapture(e.pointerId); } catch (_) { }
-  const kind = el.dataset.h, loc = ev => { const fp = GP.S.floorAt(ev.clientX, ev.clientY); return G.w2l(S0.ref.x, S0.ref.z, S0.ref.rot, fp.x, fp.z); }, p0 = loc(e), pull0 = S0.pull.slice(), anc0 = S0.anchor.slice();      // (by how far the pointer went: no jump on the first move)
+  const kind = el.dataset.h, loc = ev => { const fp = GP.S.floorAt(ev.clientX, ev.clientY); return G.w2l(S0.F.ox, S0.F.oz, S0.F.rot, fp.x, fp.z); }, p0 = loc(e), pull0 = S0.pull.slice(), anc0 = S0.anchor.slice();      // (by how far the pointer went: no jump on the first move)
   const mv = ev => {
     const p = loc(ev);
-    if (kind === 'arcp') { S0.pull = [U.r3(pull0[0] + p[0] - p0[0]), U.r3(pull0[1] + p[1] - p0[1])]; ui().setHint(`끌어당기는 중 <b>${U.cm(Math.hypot(...S0.pull))}cm</b> · 점선 원 안의 기구만 따라와요`); }
-    else if (kind === 'arca') { let q = [anc0[0] + p[0] - p0[0], anc0[1] + p[1] - p0[1]]; const tol = GP.S.mpp() * 10; for (const o of S0.loc) if (Math.hypot(o.lx - q[0], o.lz - q[1]) < tol) { q = [o.lx, o.lz]; break; } S0.anchor = [U.r3(q[0]), U.r3(q[1])]; ui().setHint('잡을 곳 옮기는 중 · 기구 가운데에 가까우면 붙어요'); }
+    if (kind === 'arcp') { const st = pullTo(S0, [pull0[0] + p[0] - p0[0], pull0[1] + p[1] - p0[1]], false); if (st) clashHint('여기까지만 당길 수 있어요 · 더 당기면 기구가 겹쳐요'); else ui().setHint(`끌어당기는 중 <b>${U.cm(Math.hypot(...S0.pull))}cm</b> · 점선 원 안에서만 줄이 휘어요`); return; }
+    if (kind === 'arca') { let q = [anc0[0] + p[0] - p0[0], anc0[1] + p[1] - p0[1]]; const tol = GP.S.mpp() * 10; for (const o of S0.items) if (Math.hypot(o.lx - q[0], o.lz - q[1]) < tol) { q = [o.lx, o.lz]; break; } S0.anchor = [U.r3(q[0]), U.r3(q[1])]; ui().setHint('잡을 곳 옮기는 중 · 기구 가운데에 가까우면 붙어요'); }
     else { S0.R = Math.max(.3, U.r3(Math.hypot(p[0] - S0.anchor[0], p[1] - S0.anchor[1]))); ui().setHint(`영향 범위 <b>${S0.R.toFixed(2)} m</b>`); const sl = $('#arcR'); if (sl) { sl.value = S0.R; $('#arcRV').textContent = S0.R.toFixed(1) + ' m'; } }
-    pullApply(false);
+    if (pullTo(S0, S0.pull, false)) clashHint('기구가 겹쳐서 덜 당겼어요');
   };
-  const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); ui().setHint(); pullApply(true); GP.emit('overlay'); };
+  const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); pullTo(S0, S0.pull, true); GP.emit('overlay'); };
   window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
 };
-document.addEventListener('input', e => { if (e.target.id !== 'arcR') return; const v = +e.target.value; const l = $('#arcRV'); if (l) l.textContent = v.toFixed(1) + ' m'; ARC.setRadius(v, false); });
-document.addEventListener('change', e => { if (e.target.id === 'arcR') ARC.setRadius(+e.target.value, true); });
+document.addEventListener('input', e => {
+  if (e.target.id === 'arcR') { const v = +e.target.value; const l = $('#arcRV'); if (l) l.textContent = v.toFixed(1) + ' m'; ARC.setRadius(v, false); }
+  else if (e.target.id === 'arcBend') { const v = +e.target.value; const l = $('#arcV'); if (l) l.textContent = (v > 0 ? '+' : '') + v + '°'; ARC.bend(v, false); }
+});
+document.addEventListener('change', e => { if (e.target.id === 'arcR') ARC.setRadius(+e.target.value, true); else if (e.target.id === 'arcBend') ARC.bend(+e.target.value, true); });
 GP.toolExt = { pen: { down: (e, fp) => pen.down(e, fp), move: e => pen.move(e), up: e => pen.up(e), dbl: e => pen.dbl(e) }, xform: { down: X.down, move: X.move, up: X.up, dbl: X.dbl } };
 })();

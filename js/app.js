@@ -155,7 +155,7 @@ app.welcome = () => {
     ui.renderTop();
     if (GP.wiz && GP.wiz.on) { GP.wiz.go(1); return; }      // easy mode: the wizard walks on from here
     ui.setStep('space');
-    GP.toast('가운데 「공간 만들기」에서 시작하세요. 펜으로 바로 그리거나 평수 · 도면 사진으로 만들 수 있어요', { ms: 5000 });
+    if (GP.roomEmpty()) GP.toast('가운데 「공간 만들기」에서 시작하세요. 펜으로 바로 그리거나 평수 · 도면 사진으로 만들 수 있어요', { ms: 5000 });
     if (!GP.lib.guideSeen) setTimeout(() => GP.panels.guide(), 600);
   };
   GP.modal(`${GP.APP_NAME} 시작하기`, `<div class="wiz"><p class="note">이름을 정하면 바로 공간을 만들어요. 펜으로 벽을 그리거나, 평수 · 모양 · 도면 사진으로 시작할 수 있어요.</p>
