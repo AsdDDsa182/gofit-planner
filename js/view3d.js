@@ -22,6 +22,7 @@ V3.init = () => {
   [[0, 2.9, 0, 7, .1, 7, 3.2], [5.9, 1.6, 0, .1, 2, 5, 1.8], [-5.9, 1.6, 0, .1, 2, 5, 1.4], [0, 1.6, 5.9, 5, 2, .1, 1.2]].forEach(([x, y, z, w, h, d, i]) => { const m = new THREE.Mesh(eg, new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffffff').multiplyScalar(i) })); m.position.set(x, y, z); m.scale.set(w, h, d); env.add(m); });
   sc.environment = pm.fromScene(env, .04).texture; pm.dispose();
   groups = {}; ['room', 'mats', 'items'].forEach(k => { groups[k] = new THREE.Group(); sc.add(groups[k]); });
+  applyQuality();
   ctl = new THREE.OrbitControls(cam, cv); ctl.enableDamping = true; ctl.dampingFactor = .12; ctl.maxPolarAngle = 1.5; ctl.minDistance = 1; ctl.maxDistance = 250; ctl.screenSpacePanning = false;
   ctl.addEventListener('change', () => { dirty = true; GP.tip.hide(); });
   const T = V3.tex = {};
@@ -43,8 +44,8 @@ V3.resize = () => {
   if (V3.on && !V3.sized && r.width > 50 && r.height > 50) { V3.sized = true; if (!V3.walking) V3.view('persp'); }   // first real size (opened hidden): frame the room again
 };
 V3.invalidate = () => { dirty = true; };
-V3.camera = () => cam;
-function loop() { raf = requestAnimationFrame(loop); if (V3.walking) walkStep(); else if (ctl.update()) dirty = true; if (!dirty) return; dirty = false; wallFade(); lightsFor(cam.position); skyAt(cam.position); R.render(sc, cam); }
+V3.camera = () => cam; V3.scene = () => sc;      // (tests)
+function loop() { raf = requestAnimationFrame(loop); if (V3.walking) walkStep(); else if (ctl.update()) dirty = true; if (!dirty) return; dirty = false; wallFade(); lightsFor(cam.position); skyAt(cam.position); lightMode(cam.position); R.render(sc, cam); }
 
 /* ---------------- show / hide ---------------- */
 V3.show = (on) => {
@@ -59,10 +60,11 @@ V3.show = (on) => {
 };
 function renderBar() {
   const b = $('#v3bar'); if (!b) return;
-  b.innerHTML = `<button class="tg${V3.cut ? ' on' : ''}" data-v3="cut"><i></i>벽 낮추기</button><span class="v3sep"></span><button class="btn xs" data-v3="persp">비스듬히</button><button class="btn xs" data-v3="top">위에서</button><button class="btn xs" data-v3="front">정면</button><button class="btn xs${V3.walking ? ' primary' : ''}" data-v3="walk">${V3.walking ? '걷기 끝' : '걸어보기'}</button>${GP.viewOnly ? '' : `<button class="btn xs" data-v3="shot">${GP.IC.image} 이미지 저장</button>`}<span class="v3load" id="v3load"></span>`;
+  b.innerHTML = `<button class="tg${V3.cut ? ' on' : ''}" data-v3="cut"><i></i>벽 낮추기</button><span class="v3sep"></span><button class="btn xs" data-v3="persp">비스듬히</button><button class="btn xs" data-v3="top">위에서</button><button class="btn xs" data-v3="front">정면</button><button class="btn xs${V3.walking ? ' primary' : ''}" data-v3="walk">${V3.walking ? '걷기 끝' : '걸어보기'}</button>${GP.viewOnly ? '' : `<button class="btn xs" data-v3="shot">${GP.IC.image} 이미지 저장</button>`}<button class="btn xs" data-v3="q" id="v3qBtn" title="3D 화질 (블렌더의 렌더 엔진 고르기처럼)">화질 · ${Q3N[Q3()][0]} ▾</button><span class="v3load" id="v3load"></span>`;
 }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-v3]'); if (!b) return; const a = b.dataset.v3;
+  if (a === 'q') { GP.popover(b, `<div class="ph">3D 화질</div>${Object.entries(Q3N).map(([k, [n, d]]) => `<button class="mi${Q3() === k ? ' def' : ''}" data-act="${k}"><div><b>${n}${Q3() === k ? ' ✓' : ''}</b><small>${d}</small></div></button>`).join('')}<p class="note" style="margin:4px 10px 6px">이 기기에만 저장돼요. 화면이 끊기면 한 단계 낮춰 주세요.</p>`, act => { V3.setQuality(act); return false; }); return; }
   if (a === 'cut') { V3.cut = !V3.cut; V3.rebuild(); renderBar(); }
   else if (a === 'walk') V3.walk(!V3.walking);
   else if (a === 'shot') GP.exp.image3dDialog();
@@ -130,10 +132,54 @@ function applyEnv() {
   if (skyMesh) { skyMesh.visible = on; if (on) { const t = skyTexOf(d); if (skyMesh.material.map !== t) { skyMesh.material.map = t; skyMesh.material.needsUpdate = true; } skyMesh.rotation.y = -E.rot * DEG; } }
   sc.background.set(LINE ? '#F7F8F7' : '#E6E9E6');
   const l = (!LINE && d.light) || {}; V3.hemi.color.set(l.sky || '#ffffff'); V3.hemi.groundColor.set(l.gnd || '#8d9399'); V3.hemi.intensity = l.hi ?? .42; V3.dir.color.set(l.sun || '#ffffff'); V3.dir.intensity = l.si ?? .9;
-  for (const gd of GP.ENV_GROUND) { const m = matCache['ground:' + gd.id]; if (m) m.color.setScalar(l.gm ?? 1); }      // a dark sky, a dark ground
+  for (const gd of GP.ENV_GROUND) { const m = matCache['ground:' + gd.id]; if (m) m.color.setScalar(l.gm ?? 1); }
+  { const Lt = GP.lightOf(GP.P.settings); if (matCache['lt:e']) matCache['lt:e'].color.set(Lt.glow).multiplyScalar(.3 + .7 * Math.min(1, Lt.lum)); }      // turned down: the fixtures look dimmer too
+  lmKey = '';      // a dark sky, a dark ground
   dirty = true;
 }
 const skyAt = pos => { if (skyMesh) skyMesh.position.copy(pos); };
+/* 3D quality, per device (GP.lib.q3d), like a render engine choice: fast = no shadows, one pixel per pixel (slow PCs); normal = as
+   it was; high = 1.5× pixels, a 4096 shadow map and twelve point lights standing in for the ceiling lights (light pools on the
+   floor, in their colour) when seen from inside. The number of lights only changes with the quality (no recompiling otherwise). */
+const Q3 = () => (GP.lib && GP.lib.q3d) || 'normal';
+const Q3N = { fast: ['빠름', '그림자 없이 가볍게 · 느린 PC · 노트북'], normal: ['기본', '그림자 · 반사 · 대부분의 PC'], high: ['고품질', '더 선명한 화면 · 고운 그림자 · 안에서 보면 조명이 바닥을 비춰요 · 그래픽 성능이 좋은 PC'] };
+let ptl = [];
+function applyQuality() {
+  if (!R) return; const q = Q3(), dpr = window.devicePixelRatio || 1;
+  R.setPixelRatio(q === 'fast' ? 1 : q === 'high' ? Math.min(3, dpr * 1.5) : Math.min(dpr, 2));
+  const ms = q === 'high' ? 4096 : 2048, sh = V3.dir.shadow; if (sh.mapSize.x !== ms) { sh.mapSize.set(ms, ms); if (sh.map) { sh.map.dispose(); sh.map = null; } }
+  V3.dir.castShadow = !LINE && q !== 'fast';
+  if (q === 'high' && !ptl.length) for (let k = 0; k < 12; k++) { const p = new THREE.PointLight(0xffffff, 0, 6, 2); sc.add(p); ptl.push(p); }
+  else if (q !== 'high' && ptl.length) { ptl.forEach(p => sc.remove(p)); ptl = []; }
+  lmKey = ''; if (V3.on) V3.resize(); dirty = true;
+}
+V3.quality = Q3;
+V3.setQuality = q => { if (!GP.lib) return; GP.lib.q3d = q; GP.saveLib(); applyQuality(); renderBar(); GP.toast({ fast: '화질: 빠름 — 그림자 없이 가볍게', normal: '화질: 기본', high: '화질: 고품질 — 선명하게, 안에서는 조명이 바닥을 비춰요 (그래픽 성능이 좋은 PC용)' }[q], { ms: 3500 }); };
+const pickSpots = (sp, n) => {      // n of them spread over the room: the one nearest the middle, then each time the one farthest from those picked
+  if (sp.length <= n) return sp; let cx = 0, cz = 0; sp.forEach(s => { cx += s.p[0]; cz += s.p[1]; }); cx /= sp.length; cz /= sp.length;
+  const dd = (a, b) => Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1]), first = sp.reduce((a, s) => Math.hypot(s.p[0] - cx, s.p[1] - cz) < Math.hypot(a.p[0] - cx, a.p[1] - cz) ? s : a), out = [first], d = sp.map(s => dd(s, first));
+  while (out.length < n) { let bi = 0; for (let i = 1; i < sp.length; i++) if (d[i] > d[bi]) bi = i; out.push(sp[bi]); for (let i = 0; i < sp.length; i++) d[i] = Math.min(d[i], dd(sp[i], sp[bi])); }
+  return out;
+};
+/* inside (under the ceiling, walking): the room is lit by its own lights — none or turned down: dark, only daylight through the
+   glass (the ceiling then casts the sun's shadow). From above or outside it stays bright so the layout reads. */
+let ceilRef = null, roomH = 0, lmKey = '', lmT = 0;
+const mixHex = (a, b, t) => '#' + new THREE.Color(a).lerp(new THREE.Color(b), t).getHexString();
+function lightMode(pos) {
+  if (!GP.P || !V3.hemi) return; const st = GP.P.settings, Lt = GP.lightOf(st), E = GP.envOf(st), sky = (!LINE && E.sky.light) || {};
+  const inside = !LINE && !V3.cut && !!ceilRef && (V3.walking || (pos.y < roomH - .05 && G.pip(pos.x, pos.z, GP.L().room.pts)));
+  const F = Lt.d.id === 'none' ? 0 : Lt.lum, D = E.sky.day ?? 1, pts = inside && F > 0 && ptl.length && lightRef && lightRef.spots, A = inside ? Math.min(2.2, F * (pts ? .34 : .85) + D * .15) : 1;
+  const key = [inside, A.toFixed(3), Lt.glow, E.sky.id, LINE, ptl.length, lightRef && lightRef.spots.length].join('|'), now = performance.now();
+  if (key === lmKey && !(A !== 1 && now - lmT > 400)) return;      // (while dimmed, now and then again: machines loaded since get it too)
+  const fresh = key !== lmKey; lmKey = key; lmT = now; V3.lightLevel = A;
+  if (fresh) {
+    V3.hemi.color.set(inside && F > 0 ? mixHex(sky.sky || '#ffffff', Lt.glow, .5) : (sky.sky || '#ffffff')); V3.hemi.intensity = (sky.hi ?? .42) * A;
+    ptl.forEach(p => { p.intensity = 0; });
+    if (pts) { const P = GP.L().room.pts, ch = pickSpots(lightRef.spots, ptl.length), cell = Math.sqrt(Math.abs(G.area(P)) / ch.length); ch.forEach((s, k) => { const p = ptl[k]; p.position.set(s.p[0], lightRef.H - .35, s.p[1]); p.color.set(Lt.glow); p.intensity = 1.5 * F; p.distance = Math.max(4.2, cell * 1.35); }); }      // the light pools
+    if (ceilRef) { ceilRef.castShadow = inside; const m = ceilRef.material; if (m.userData.base) m.color.copy(m.userData.base).multiplyScalar(inside ? Math.min(1, .06 + A * .94) : 1); }
+  }
+  sc.traverse(o => { const m = o.material; if (!m) return; for (const q of Array.isArray(m) ? m : [m]) if (q.isMeshStandardMaterial && q.envMapIntensity !== A) q.envMapIntensity = A; });
+}
 function buildGround(g, P) {
   const d = GP.envOf(GP.P.settings).ground; if (LINE || d.id === 'none') return;
   const bb = G.bounds(P), Rg = Math.max(70, Math.hypot(bb.sx, bb.sz) * 3), geo = new THREE.RingGeometry(.01, Rg, 96, 10), pos = geo.attributes.position, col = [];
@@ -146,7 +192,7 @@ function buildGround(g, P) {
 /* ceiling lights: the chosen design set out on the ceiling — rows along the room's long side for line lights, a grid for the
    rest (at least 45 cm from the walls); the body and the glow recoloured by their material names (g_lhouse / g_lemit) */
 const lightScenes = {}; let lightRef = null;
-const lightsFor = (pos) => { if (lightRef) lightRef.holder.visible = V3.walking || pos.y < lightRef.H - .05; };      // only from under the ceiling
+const lightsFor = (pos) => { if (lightRef) lightRef.holder.visible = lightRef.top || V3.walking || pos.y < lightRef.H - .05; };      // only from under the ceiling, unless asked for
 function lightScene(id) { return lightScenes[id] || (lightScenes[id] = GP.R3.loaders().then(gl => new Promise((res, rej) => gl.load(GP.R3.base() + 'models/light/' + id + '.glb', r => res(r.scene), undefined, rej))).catch(e => { delete lightScenes[id]; throw e; })); }
 function lightSpots(P, d, gap) {
   const b = G.bounds(P), alongX = b.sx >= b.sz, Lw = alongX ? b.sx : b.sz, Sw = alongX ? b.sz : b.sx, o0 = alongX ? b.minX : b.minZ, s0 = alongX ? b.minZ : b.minX, out = [];
@@ -162,9 +208,10 @@ function lightSpots(P, d, gap) {
 }
 function buildLights(g, P, H, st) {
   const L = GP.lightOf(st); if (L.d.id === 'none') return; const spots = lightSpots(P, L.d, L.gap); if (!spots.length) return;
-  const tone = GP.LIGHT_TONE[L.tone], body = GP.LIGHT_BODY[L.body];
-  const em = mat('lt:e:' + L.tone, () => new THREE.MeshBasicMaterial({ color: tone.c, toneMapped: false })), hm = mat('lt:h:' + L.body, () => std(body.c, { metalness: body.m, roughness: body.r }));
-  const holder = new THREE.Group(); holder.userData.own = true; g.add(holder); lightRef = { holder, H };
+  const body = GP.LIGHT_BODY[L.body];
+  const em = mat('lt:e', () => new THREE.MeshBasicMaterial({ color: L.glow, toneMapped: false })); em.color.set(L.glow).multiplyScalar(.3 + .7 * Math.min(1, L.lum));      // one glow, recoloured in place (a colour being dragged does not make new materials)
+  const hm = mat('lt:h:' + L.body, () => std(body.c, { metalness: body.m, roughness: body.r }));
+  const holder = new THREE.Group(); holder.userData.own = true; g.add(holder); lightRef = { holder, H, top: L.top, spots };
   lightScene(L.d.id).then(scene => {
     if (!holder.parent) return;      // built again since
     const proto = scene.clone(true); proto.traverse(n => { if (!n.isMesh) return; const nm = (n.material && n.material.name) || ''; if (/lemit/.test(nm)) n.material = em; else if (/lhouse/.test(nm)) n.material = hm; n.castShadow = false; n.receiveShadow = false; });
@@ -197,7 +244,7 @@ function toLine(obj, keepMat) { const ms = []; obj.traverse(n => { if (n.isMesh)
 const NO3D = new Set(['annot', 'zones', 'zone', 'note', 'dim']), MATS = new Set(['mats', 'mat']);
 V3.rebuild = (P) => {
   if (!R || !GP.P) return; const line = GP.S.style === 'line', parts = P instanceof Set ? [...P] : null, full = !parts || line !== LINE || !built || parts.some(k => !NO3D.has(k) && !MATS.has(k) && k !== 'items' && k !== 'room3d' && k !== 'env3d');
-  LINE = line; sc.background.set(LINE ? '#F7F8F7' : '#E6E9E6'); V3.dir.castShadow = !LINE;
+  LINE = line; sc.background.set(LINE ? '#F7F8F7' : '#E6E9E6'); V3.dir.castShadow = !LINE && Q3() !== 'fast';
   if (full) { buildRoom(); buildMats(); buildItems(); built = true; }
   else {
     if (parts.includes('room3d')) buildRoom();      // finishes, lights, glass panes: the room alone
@@ -209,12 +256,12 @@ V3.rebuild = (P) => {
 let built = false;
 let wallMeshes = [];
 function buildRoom() {
-  const g = groups.room; clear(g); wallMeshes = []; lightRef = null;
+  const g = groups.room; clear(g); wallMeshes = []; lightRef = null; ceilRef = null;
   const L = GP.L(), st = GP.P.settings, P = L.room.pts; if (P.length < 3) return;
   const fg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); fg.rotateX(-Math.PI / 2); const fd = finishOf(st.floorBase), TA = st.texAdj || {}, fk = GP.texAdjKey(TA.floor), floor = new THREE.Mesh(fg, LINE ? CADM() : fd ? mat('floor:' + fd.id + fk, () => new THREE.MeshLambertMaterial({ color: '#d0d0d0', map: finishTex(fd.id, TA.floor) })) : mat('floor' + fk, () => std(adjHex('#dcdcdc', TA.floor), { map: V3.tex.concrete, roughness: .85 }))); floor.receiveShadow = true; floor.position.y = -.001; floor.userData.own = true; g.add(floor);
   const H = V3.cut ? Math.min(1.1, st.wallH) : st.wallH, O = G.offset(P, WALL_T, true), n = P.length, marks = L.wallMarks || {};
   if (!LINE && !V3.cut) {
-    const cg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); cg.rotateX(-Math.PI / 2); const cd = (GP.TEX.ceil || []).find(t => t.id === st.ceilTex && t.size), ck = GP.texAdjKey(TA.ceil), ceil = new THREE.Mesh(cg, cd ? mat('ceil:' + cd.id + ck, () => new THREE.MeshBasicMaterial({ color: cd.id === 'ceil_glow' ? '#ffffff' : '#d2d4d3', map: finishTex(cd.id, TA.ceil), side: THREE.BackSide })) : mat('ceil' + ck, () => new THREE.MeshBasicMaterial({ color: adjHex('#c4c8c6', TA.ceil), side: THREE.BackSide }))); ceil.position.y = H; ceil.userData.own = true; g.add(ceil);
+    const cg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); cg.rotateX(-Math.PI / 2); const cd = (GP.TEX.ceil || []).find(t => t.id === st.ceilTex && t.size), ck = GP.texAdjKey(TA.ceil), ceil = new THREE.Mesh(cg, cd ? mat('ceil:' + cd.id + ck, () => new THREE.MeshBasicMaterial({ color: cd.id === 'ceil_glow' ? '#ffffff' : '#d2d4d3', map: finishTex(cd.id, TA.ceil), side: THREE.BackSide })) : mat('ceil' + ck, () => new THREE.MeshBasicMaterial({ color: adjHex('#c4c8c6', TA.ceil), side: THREE.BackSide }))); ceil.position.y = H; ceil.userData.own = true; g.add(ceil); { const cm = ceil.material; if (!cm.userData.base) cm.userData.base = cm.color.clone(); cm.shadowSide = THREE.DoubleSide; ceilRef = ceil; roomH = H; }
     buildLights(g, P, H, st);
   }
   buildGround(g, P);
@@ -234,18 +281,19 @@ function buildRoom() {
     const add = (geo, m, shadow) => { const me = new THREE.Mesh(geo, m); me.castShadow = !!shadow; me.receiveShadow = true; me.userData.own = true; if (LINE) addEdges(me); g.add(me); return me; };
     const wd = !LINE && finishOf((L.wallTex || {})[c.s] || st.wallTex), tm = wd && std('#ffffff', { map: finishTex(wd.id, TA.wall), roughness: wd.rough, transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
     const bbC = { dark: '#2f3236', white: '#efefec' }[st.baseboard || 'dark'], bm = bbC && !LINE && std(bbC, { roughness: .6, transparent: true, opacity: 1 });
-    const fm = mat('gframe', () => std('#2f3236', { roughness: .45, metalness: .35, side: THREE.DoubleSide })), gw = c.ref.gw ?? GP.GLASS_GW, HB = .06, HT = .06;
+    let fm = null, gm = null; const glassMats = () => { if (fm) return; fm = LINE ? CADM() : std('#2f3236', { roughness: .45, metalness: .35, side: THREE.DoubleSide, transparent: true, opacity: 1 }); gm = LINE ? CADM() : glassMat(c.ref.glass).clone(); if (!LINE) { wallMeshes.push({ mat: fm, nx: -mid[0], nz: -mid[1] }); wallMeshes.push({ mat: gm, nx: -mid[0], nz: -mid[1], base: gm.opacity }); } };      // this curve's own frame and glass: they fade with the walls
+    const gw = c.ref.gw ?? GP.GLASS_GW, HB = .06, HT = .06;
     let anyWall = false;
     for (const [u0, u1, isG] of secs) {
       const q = cut(Q, u0, u1), o = cut(Oq, u0, u1), nn = cut(N_, u0, u1, true), uu = cutU(u0, u1), ot = nn.map(v => [-v[0], -v[1]]);
       if (isG) {
         const M = q.map((p, k) => [p[0] - nn[k][0] * WALL_T / 2, p[1] - nn[k][1] * WALL_T / 2]);
         const GH = Math.max(HB + HT + .2, Math.min(H, c.ref.gh ?? H));
-        add(stripGeo(M, nn, HB, GH - HT, uu), LINE ? CADM() : glassMat(c.ref.glass), false).receiveShadow = false;
+        glassMats(); add(stripGeo(M, nn, HB, GH - HT, uu), gm, false).receiveShadow = false;
         if (GH < H - .005) { anyWall = true; add(stripGeo(q, nn, GH, H, uu), wm, true); add(stripGeo(o, ot, GH, H, uu), wm, true); add(capGeo(q, o, H), wm, false); if (tm) add(stripGeo(q.map((p, k) => [p[0] + nn[k][0] * .004, p[1] + nn[k][1] * .004]), nn, GH, H, uu), tm, false); }      // above the glass: wall
         for (const [y0, y1] of [[0, HB], [GH - HT, GH]]) { add(stripGeo(q, nn, y0, y1, uu), fm, true); add(stripGeo(o, ot, y0, y1, uu), fm, true); add(capGeo(q, o, y1), fm, false); if (y0 > 0) add(capGeo(q, o, y0), fm, false); }
-        const len = u1 - u0, nM = gw > 0 ? Math.max(1, Math.round(len / gw)) : 1, bx = mat('gpost:' + Math.round(GH * 100), () => new THREE.BoxGeometry(.05, Math.max(.1, GH - HB - HT), .07));
-        for (let k = 0; k <= nM; k++) { const sv = len * k / nM; let j = 1; while (j < uu.length - 1 && uu[j] - u0 < sv) j++; const f = U.clamp((sv - (uu[j - 1] - u0)) / ((uu[j] - uu[j - 1]) || 1), 0, 1), p0 = M[j - 1], p1 = M[j], tx = p1[0] - p0[0], tz = p1[1] - p0[1]; const me = new THREE.Mesh(bx, fm); me.position.set(p0[0] + tx * f, HB + (GH - HB - HT) / 2, p0[1] + tz * f); me.rotation.y = -Math.atan2(tz, tx); me.castShadow = true; g.add(me); }
+        const len = u1 - u0, nM = gw > 0 ? Math.max(1, Math.round(len / gw)) : 1, bx = new THREE.BoxGeometry(.05, Math.max(.1, GH - HB - HT), .07);
+        for (let k = 0; k <= nM; k++) { const sv = len * k / nM; let j = 1; while (j < uu.length - 1 && uu[j] - u0 < sv) j++; const f = U.clamp((sv - (uu[j - 1] - u0)) / ((uu[j] - uu[j - 1]) || 1), 0, 1), p0 = M[j - 1], p1 = M[j], tx = p1[0] - p0[0], tz = p1[1] - p0[1]; const me = new THREE.Mesh(bx, fm); me.userData.own = k === 0; me.position.set(p0[0] + tx * f, HB + (GH - HB - HT) / 2, p0[1] + tz * f); me.rotation.y = -Math.atan2(tz, tx); me.castShadow = true; g.add(me); }
         continue;
       }
       anyWall = true;
@@ -529,9 +577,9 @@ function markSel() {
 }
 function wallFade() {
   if (!GP.P || !wallMeshes.length) return;
-  if (V3.walking || solid) { for (const w of wallMeshes) if (w.mat.opacity !== 1) { w.mat.opacity = 1; w.mat.depthWrite = true; } return; } const b = G.bounds(GP.L().room.pts); let vx = cam.position.x - b.cx, vz = cam.position.z - b.cz; const l = Math.hypot(vx, vz) || 1; vx /= l; vz /= l;
+  if (V3.walking || solid) { for (const w of wallMeshes) { const o = w.base ?? 1; if (w.mat.opacity !== o) { w.mat.opacity = o; w.mat.depthWrite = o === 1; } } return; } const b = G.bounds(GP.L().room.pts); let vx = cam.position.x - b.cx, vz = cam.position.z - b.cz; const l = Math.hypot(vx, vz) || 1; vx /= l; vz /= l;
   const high = cam.position.y > Math.max(b.sx, b.sz) * 1.6;
-  for (const w of wallMeshes) { const o = (!high && (w.nx * vx + w.nz * vz) > .2) ? .12 : 1; if (w.mat.opacity !== o) { w.mat.opacity = o; w.mat.depthWrite = o === 1; } }
+  for (const w of wallMeshes) { const b0 = w.base ?? 1, o = (!high && (w.nx * vx + w.nz * vz) > .2) ? .12 * b0 : b0; if (w.mat.opacity !== o) { w.mat.opacity = o; w.mat.depthWrite = o === 1; } }      // (glass: from its own see-through to nearly nothing)
 }
 
 /* ---------------- picking (footprint boxes, cheap even with big models) ---------------- */
@@ -718,7 +766,7 @@ V3.snapshot = async (w, h, preset) => {
   const view = typeof preset === 'object' && preset ? preset : null, shot = new THREE.PerspectiveCamera(view && view.fov || 40, w / h, .1, 400);
   if (view) { shot.position.set(...view.pos); shot.lookAt(new THREE.Vector3(...view.target)); }
   else if (preset) { const p = V3.presets()[preset]; shot.position.set(...p.pos); shot.lookAt(new THREE.Vector3(...p.target)); } else { shot.position.copy(cam.position); shot.quaternion.copy(cam.quaternion); }
-  const pr = R.getPixelRatio(); R.setPixelRatio(1); R.setSize(w, h, false); const keep = cam.position.clone(); cam.position.copy(shot.position); solid = !!view; wallFade(); solid = false; cam.position.copy(keep); lightsFor(shot.position); skyAt(shot.position); R.render(sc, shot); lightsFor(cam.position); skyAt(cam.position);
+  const pr = R.getPixelRatio(); R.setPixelRatio(1); R.setSize(w, h, false); const keep = cam.position.clone(); cam.position.copy(shot.position); solid = !!view; wallFade(); solid = false; cam.position.copy(keep); lightsFor(shot.position); skyAt(shot.position); lightMode(shot.position); R.render(sc, shot); lightsFor(cam.position); skyAt(cam.position); lightMode(cam.position);
   const c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(R.domElement, 0, 0);
   R.setPixelRatio(pr); V3.resize(); if (selKeep) sc.add(selKeep); dirty = true; void c0; return c;
 };

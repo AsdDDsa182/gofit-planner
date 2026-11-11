@@ -46,7 +46,7 @@ let toastT = 0;
    around it are not drawn again (that ended the drag and took the caret away); they catch up when it is let go. */
 const LV = GP.live = { el: null, on: false, pend: new Map(), sel: '' };
 const LIVE_IN = 'input[type=number],input[type=range],input[type=color]';
-const OWN_LIVE = '#ltGap,#ulOp,#ulW,#ulX,#ulY,#ulScale,[data-tadj],#arcR,#arcBend,#pyIn,#pyRatio,[id^="shp_"],#panel-space [data-f],#cgW,#cgH,#pGw,#envRot,[data-nolive]';      // (these do their own live work on 'input')
+const OWN_LIVE = '#ltGap,#ulOp,#ulW,#ulX,#ulY,#ulScale,[data-tadj],#arcR,#arcBend,#pyIn,#pyRatio,[id^="shp_"],#panel-space [data-f],#cgW,#cgH,#pGw,#envRot,#ltLum,[data-nolive]';      // (these do their own live work on 'input')
 const inUse = el => !!(el && el.matches && el.matches(LIVE_IN + ',input[type=text],input:not([type]),textarea'));
 GP.liveIn = box => { const el = LV.el; return !!(el && box && el.isConnected && box.contains(el)); };
 GP.liveWait = (key, box, fn) => { if (!GP.liveIn(box)) { LV.pend.delete(key); return false; } LV.pend.set(key, fn); return true; };      // a panel in use: drawn when it is let go
@@ -94,6 +94,50 @@ document.addEventListener('click', e => {
   inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') end(true); else if (ev.key === 'Escape') end(false); });
   inp.addEventListener('blur', () => end(true));
 });
+/* ---------------- colour picker: a saturation × brightness square, a hue strip, the hex code, a colour temperature slider,
+   swatches. Live while dragged or typed; one undo step when let go. GP.cpk.on[id] = (hex, live, kelvin) does the work. ---------------- */
+const CPK = GP.cpk = { on: {} };
+const hex2rgb = h => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); if (!m) return null; const n = parseInt(m[1], 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
+const rgb2hex = (r, g, b) => '#' + [r, g, b].map(v => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('');
+const rgb2hsv = (r, g, b) => { r /= 255; g /= 255; b /= 255; const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; let h = 0; if (d) { h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4; h *= 60; if (h < 0) h += 360; } return [h, mx ? d / mx : 0, mx]; };
+const hsv2rgb = (h, s, v) => { const c = v * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = v - c, [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x]; return [(r + m) * 255, (g + m) * 255, (b + m) * 255]; };
+CPK.kelvin = K => { const t = K / 100; let r, g, b; if (t <= 66) { r = 255; g = 99.4708025861 * Math.log(t) - 161.1195681661; b = t <= 19 ? 0 : 138.5177312231 * Math.log(t - 10) - 305.0447927307; } else { r = 329.698727446 * Math.pow(t - 60, -0.1332047592); g = 288.1221695283 * Math.pow(t - 60, -0.0755148492); b = 255; } return rgb2hex(r, g, b); };
+CPK.html = (id, hex, o) => {
+  o = o || {}; const [h, s, v] = rgb2hsv(...(hex2rgb(hex) || [255, 255, 255]));
+  return `<div class="cpk" data-cpk="${id}" data-h="${h}" data-s="${s}" data-v="${v}">
+    <div class="cpk-sv" style="background-color:hsl(${h},100%,50%)" title="끌어서 색 고르기 (가로: 선명함 · 세로: 밝기)"><i style="left:${s * 100}%;top:${(1 - v) * 100}%"></i></div>
+    <div class="cpk-hue" title="끌어서 색상 바꾸기"><i style="left:${h / 360 * 100}%"></i></div>
+    <div class="cpk-row"><span class="cpk-now" style="background:${hex}"></span><input class="cpk-hex" value="${hex.toUpperCase()}" maxlength="7" spellcheck="false" aria-label="색 코드" data-nolive><span class="cpk-tag">${o.k ? o.k + 'K' : '직접 고른 색'}</span></div>
+    ${o.kelvin ? `<div class="rng cpk-k"><span>색온도</span><input type="range" class="cpk-kr" min="1800" max="10000" step="100" value="${o.k || 4000}" data-nolive><b>${o.k ? o.k + 'K' : '—'}</b></div>` : ''}
+    ${o.swatches ? `<div class="cpk-pre">${o.swatches.map(([c, n, k]) => `<button style="background:${c}" data-cpkc="${c}"${k ? ` data-cpkk="${k}"` : ''} title="${U.esc(n)}"></button>`).join('')}</div>` : ''}
+  </div>`;
+};
+function cpkPaint(box, h, s, v, hex, k) {
+  box.dataset.h = h; box.dataset.s = s; box.dataset.v = v; const sv = box.querySelector('.cpk-sv'), dot = sv.firstElementChild, hh = box.querySelector('.cpk-hue i'), hx = box.querySelector('.cpk-hex');
+  sv.style.backgroundColor = `hsl(${h},100%,50%)`; dot.style.left = s * 100 + '%'; dot.style.top = (1 - v) * 100 + '%'; hh.style.left = h / 360 * 100 + '%';
+  box.querySelector('.cpk-now').style.background = hex; if (document.activeElement !== hx) hx.value = hex.toUpperCase(); box.querySelector('.cpk-tag').textContent = k ? k + 'K' : '직접 고른 색';
+  const kr = box.querySelector('.cpk-kr'); if (kr) { if (k && document.activeElement !== kr) kr.value = k; const b = kr.parentElement.querySelector('b'); if (b) b.textContent = k ? k + 'K' : '—'; }
+}
+const cpkFire = (box, hex, live, k) => { const f = CPK.on[box.dataset.cpk]; if (!f || GP.viewOnly) return; LV.on = !!live; try { f(hex, !!live, k || 0); } finally { LV.on = false; } };
+const cpkHex = (box, hex, live, k) => { const [h, s, v] = rgb2hsv(...hex2rgb(hex)); cpkPaint(box, v && s ? h : +box.dataset.h, v ? s : +box.dataset.s, v, hex, k); cpkFire(box, hex, live, k); };
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest('.cpk-sv, .cpk-hue'); if (!el || GP.viewOnly) return; const box = el.closest('.cpk'), sv = el.classList.contains('cpk-sv'); e.preventDefault(); try { el.setPointerCapture(e.pointerId); } catch (_) { }
+  LV.el = el; let hex = '';
+  const at = ev => { const r = el.getBoundingClientRect(), x = Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)), y = Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height)); let h = +box.dataset.h, s = +box.dataset.s, v = +box.dataset.v; if (sv) { s = x; v = 1 - y; } else h = Math.min(359.9, x * 360); hex = rgb2hex(...hsv2rgb(h, s, v)); cpkPaint(box, h, s, v, hex, 0); cpkFire(box, hex, true, 0); };
+  at(e); const mv = ev => at(ev), up = () => { el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); cpkFire(box, hex, false, 0); setTimeout(liveFlush, 0); };
+  el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+});
+document.addEventListener('input', e => {
+  const t = e.target, box = t.closest && t.closest('.cpk'); if (!box) return;
+  if (t.classList.contains('cpk-hex')) { const m = /^#?([0-9a-f]{6})$/i.exec(t.value.trim()); if (m) cpkHex(box, '#' + m[1].toLowerCase(), true, 0); }
+  else if (t.classList.contains('cpk-kr')) { const k = Math.round(+t.value); cpkHex(box, CPK.kelvin(k), true, k); }
+});
+document.addEventListener('change', e => {
+  const t = e.target, box = t.closest && t.closest('.cpk'); if (!box) return;
+  if (t.classList.contains('cpk-hex')) { const m = /^#?([0-9a-f]{6})$/i.exec(t.value.trim()); if (m) cpkHex(box, '#' + m[1].toLowerCase(), false, 0); else t.value = box.querySelector('.cpk-now').style.background && t.defaultValue; }
+  else if (t.classList.contains('cpk-kr')) { const k = Math.round(+t.value); cpkHex(box, CPK.kelvin(k), false, k); }
+});
+document.addEventListener('click', e => { const b = e.target.closest('.cpk [data-cpkc]'); if (!b) return; const k = +b.dataset.cpkk || 0; cpkHex(b.closest('.cpk'), b.dataset.cpkc, false, k); });
 GP.toast = (msg, o) => {
   if (LV.on) return;
   o = o || {}; const t = $('#toast'); t.innerHTML = `<span>${U.esc(msg)}</span>` + (o.action ? `<button>${U.esc(o.action)}</button>` : '');

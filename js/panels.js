@@ -22,6 +22,10 @@ function applyRoomLive(P, fit) {
   GP.changed('room', { commit: false, fast: true }); clearTimeout(liveT);
   liveT = setTimeout(() => { const n = GP.pruneWalls(); if (n) { GP.changed('openings', { commit: false }); GP.toast(`벽 개수가 줄어서 문·창문 ${n}개를 지웠어요 (Ctrl+Z로 되돌릴 수 있어요)`, { ms: 4500 }); } GP.H.commit(); if (fit) GP.S.fit(); }, 700);
 }
+GP.cpk.on.ltColor = (hex, live, k) => {      // the light's colour: live = only the glow is recoloured
+  const st = GP.P.settings, l = st.light = Object.assign({}, st.light || {}); l.color = hex; if (k) l.k = k; else delete l.k; delete l.tone;
+  GP.changed(live ? 'env3d' : 'settings', live ? { commit: false } : undefined);
+};
 panels.renderSpace = () => {
   if (GP.liveWait('space', $('#panel-space'), panels.renderSpace)) return;
   const P = GP.P, st = P.settings, L = GP.L(), A = Math.abs(G.area(L.room.pts));
@@ -37,11 +41,15 @@ panels.renderSpace = () => {
     <span class="lbl">벽 (모든 벽)</span>${ui.texGrid('wall', st.wallTex || 'paint')}${ui.adjBlock('wall')}
     <div class="row2"><label class="fld"><span>페인트 색</span><input type="color" id="wallColor" value="${U.esc(st.wallColor || '#eeede8')}"></label><label class="fld"><span>걸레받이</span><select id="baseboard">${[['dark', '블랙'], ['white', '화이트'], ['none', '없음']].map(([k, n]) => `<option value="${k}" ${(st.baseboard || 'dark') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>
     <span class="lbl">천장 <small class="note">(3D에서 안쪽에서 볼 때 · 걸어 보기)</small></span>${ui.texGrid('ceil', st.ceilTex || 'paint')}${ui.adjBlock('ceil')}`)}
-  ${(() => { const L = GP.lightOf(st); return fold('light', '조명', L.d.id === 'none' ? '없음' : `${L.d.name} · ${GP.LIGHT_TONE[L.tone].n}`, `<p class="note" style="margin:0">3D 천장에 보여요(안쪽에서 볼 때 · 걸어 보기). 디자인 · 빛 색 · 몸체 색을 고르고 간격으로 개수를 바꿔요.</p>
+  ${(() => { const L = GP.lightOf(st); return fold('light', '조명', L.d.id === 'none' ? '없음' : `${L.d.name} · ${L.k ? L.k + 'K' : L.glow.toUpperCase()}`, `<p class="note" style="margin:0">3D 천장에 보여요(안쪽에서 볼 때 · 걸어 보기). 디자인 · 빛 색 · 몸체 색을 고르고 간격으로 개수를 바꿔요.</p>
     <div class="lt-grid">${GP.LIGHTS.map(l => `<button class="lt-card${L.d.id === l.id ? ' on' : ''}" data-light="${l.id}" title="${U.esc(l.name)}">${l.id === 'none' ? '<i class="lt-none">✕</i>' : `<img src="assets/light/${l.id}.png" alt="" loading="lazy">`}<span>${U.esc(l.name)}</span></button>`).join('')}</div>
-    <div class="rng"><span>빛 색</span><div class="seg sm">${Object.entries(GP.LIGHT_TONE).map(([k, t]) => `<button data-ltone="${k}" class="${L.tone === k ? 'on' : ''}" title="${t.k}"><i class="eqc-dot" style="background:${t.c}"></i>${t.n}</button>`).join('')}</div></div>
+    <span class="lbl" style="margin:2px 0 -2px">빛 색 <small class="note">색온도 막대 · 사각형 · 색 코드 · 아래 견본</small></span>
+    ${GP.cpk.html('ltColor', L.glow, { kelvin: true, k: L.k, swatches: [[GP.cpk.kelvin(6500), '주광색 6500K', 6500], [GP.cpk.kelvin(5000), '5000K', 5000], [GP.cpk.kelvin(4000), '주백색 4000K', 4000], [GP.cpk.kelvin(3000), '전구색 3000K', 3000], [GP.cpk.kelvin(2700), '2700K', 2700], ['#ffffff', '흰색'], ['#ff3b30', '빨강'], ['#ff9500', '주황'], ['#ffd60a', '노랑'], ['#34c759', '초록'], ['#32d6e8', '하늘'], ['#0a84ff', '파랑'], ['#5e5ce6', '남색'], ['#bf5af2', '보라'], ['#ff2d92', '분홍'], ['#ff6b8a', '연분홍']] })}
     <div class="rng"><span>몸체 색</span><div class="seg sm">${Object.entries(GP.LIGHT_BODY).map(([k, b]) => `<button data-lbody="${k}" class="${L.body === k ? 'on' : ''}"><i class="eqc-dot" style="background:${b.c}"></i>${b.n}</button>`).join('')}</div></div>
-    ${L.d.id === 'none' ? '' : `<div class="rng"><span>간격</span><input type="range" id="ltGap" min="1" max="6" step="0.1" value="${L.gap}"><b id="ltGapV">${L.gap.toFixed(1)} m</b></div>`}`); })()}
+    ${L.d.id === 'none' ? '' : `<div class="rng"><span>간격</span><input type="range" id="ltGap" min="1" max="${Math.max(12, L.gap)}" step="0.1" value="${L.gap}"><b id="ltGapV">${L.gap.toFixed(1)} m</b></div>`}
+    ${L.d.id === 'none' ? '' : `<div class="rng"><span>밝기</span><input type="range" id="ltLum" min="0" max="200" step="5" value="${Math.round(L.lum * 100)}"><b id="ltLumV">${Math.round(L.lum * 100)}%</b></div>`}
+    <p class="note" style="margin:0">안에서 볼 때(천장 아래 · 걸어 보기) 실내 밝기는 조명을 따라가요. 조명 없음 · 밝기 0%면 어둡고 유리로 들어오는 햇빛만 보여요. 위에서 내려다볼 때는 배치가 잘 보이게 늘 밝아요.</p>
+    ${L.d.id === 'none' ? '' : `<label class="fld lt-top"><input type="checkbox" id="ltTop" ${L.top ? 'checked' : ''}><span><b>위에서 내려다볼 때도 조명 보이기</b><small class="note">끄면 천장 위에서 볼 때 조명이 숨어서 배치가 잘 보여요</small></span></label>`}`); })()}
   ${(() => { const E = GP.envOf(st); return fold('env', '3D 배경 · 바깥', E.sky.name + (E.ground.id !== 'none' ? ' · ' + E.ground.name : ''), `<p class="note" style="margin:0">3D 보기 · 걸어 보기 · 제안서 3D 그림에서 건물 밖으로 보이는 하늘과 바닥이에요. 빛 색도 하늘에 맞춰 바뀌어요. 실사 배경은 360° 사진이에요(Poly Haven, CC0).</p>
     <div class="env-grid">${GP.ENV_SKY.map(d => `<button class="env-card${E.sky.id === d.id ? ' on' : ''}" data-envsky="${d.id}" title="${U.esc(d.name)}"><i style="background:${d.pano ? `url(assets/env/thumb/sky_${d.pano}.jpg) center/cover` : GP.envGrad(d)}"></i><span>${U.esc(d.name)}</span></button>`).join('')}</div>
     ${E.sky.pano ? `<div class="rng"><span>배경 돌리기</span><input type="range" id="envRot" min="0" max="359" step="1" value="${E.rot}"><b id="envRotV">${E.rot}°</b></div>` : ''}
@@ -127,15 +135,18 @@ spEl.addEventListener('input', e => {
   if (t.id === 'pyIn' || t.id === 'pyRatio') { const P = pyRect(); if (sp.py >= 3) applyRoomLive(P, true); return; }
   if (t.id && t.id.startsWith('shp_')) { const v = +t.value; if (v > 0) { sp.vals[sp.shape][t.dataset.k] = v; shpCalc(); applyRoomLive(SHAPES[sp.shape].make(sp.vals[sp.shape])); GP.OV.hiWall = hiWallsFor(t.dataset.k); } return; }
   if (t.dataset.f && sp.walk) { const i = +t.dataset.i; if (t.dataset.f === 'len') { const v = +t.value; if (!(v > 0)) return; sp.walk[i].len = v; } else sp.walk[i].turn = +t.value; walkCalc(); applyRoomLive(walkToPts(sp.walk)); return; }
+  if (t.id === 'ltLum') { const st = GP.P.settings; st.light = Object.assign({}, st.light || {}, { lum: Math.max(0, Math.min(300, Math.round(+t.value || 0))) / 100 }); const v = $('#ltLumV'); if (v) v.textContent = Math.round(st.light.lum * 100) + '%'; GP.changed('env3d', { commit: false }); return; }
   if (t.id === 'envRot') { const st = GP.P.settings; st.env = Object.assign({}, st.env || {}, { rot: ((Math.round(+t.value) % 360) + 360) % 360 }); const v = $('#envRotV'); if (v) v.textContent = st.env.rot + '°'; GP.changed('env3d', { commit: false }); return; }
-  if (t.id === 'ltGap') { const st = GP.P.settings; st.light = Object.assign({}, st.light || {}, { gap: U.clamp(+t.value || 1, .8, 8) }); const v = $('#ltGapV'); if (v) v.textContent = st.light.gap.toFixed(1) + ' m'; GP.changed('room3d', { commit: false }); return; }
+  if (t.id === 'ltGap') { const st = GP.P.settings; st.light = Object.assign({}, st.light || {}, { gap: U.clamp(+t.value || 1, .8, 20) }); const v = $('#ltGapV'); if (v) v.textContent = st.light.gap.toFixed(1) + ' m'; GP.changed('room3d', { commit: false }); return; }
   if (t.id === 'ulOp' || t.id === 'ulW' || t.id === 'ulX' || t.id === 'ulY' || t.id === 'ulScale') { const UL = GP.S.underlay; if (!UL) return; const v = +t.value; if (!isFinite(v)) return; if (t.id === 'ulOp') UL.op = v; if (t.id === 'ulW') UL.w = Math.max(1, v); if (t.id === 'ulX') UL.x = v; if (t.id === 'ulY') UL.z = v; if (t.id === 'ulScale') UL.scale = v; GP.S.buildUnderlay(UL); panels.saveUL(); return; }
 });
 spEl.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.c != null && t.dataset.i != null && t.closest('#vtable')) { const P = GP.L().room.pts, i = +t.dataset.i, v = +t.value; if (isFinite(v) && P[i]) { if (GP.CV) GP.CV.release(GP.L(), i); P[i][+t.dataset.c] = U.r3(v); GP.changed('room'); } return; }
   if (t.id === 'ltGap') { GP.changed('settings'); return; }
+  if (t.id === 'ltTop') { const st = GP.P.settings; st.light = Object.assign({}, st.light || {}); if (t.checked) st.light.top = true; else delete st.light.top; GP.changed('settings'); return; }
   if (t.id === 'envRot') { GP.changed(['env3d', 'settings']); return; }
+  if (t.id === 'ltLum') { GP.changed(['env3d', 'settings']); return; }
   if (t.id === 'baseboard') { GP.P.settings.baseboard = t.value; GP.changed(['room', 'settings']); return; }
   if (t.id === 'wallColor') { GP.P.settings.wallColor = t.value; GP.changed(['room', 'settings']); return; }
   if (t.id === 'ceilH') { const v = U.clamp(+t.value || 2.8, 2, 8); GP.P.settings.wallH = U.r2(v); t.value = GP.P.settings.wallH; GP.changed('all'); GP.toast(`천장 높이 ${GP.P.settings.wallH}m 기준으로 다시 점검했어요`); return; }

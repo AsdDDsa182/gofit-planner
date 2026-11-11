@@ -80,16 +80,16 @@ GP.TEX = {
 };
 /* the world around the 3D view: the sky (a colour gradient, or a 360° photo from Poly Haven, CC0 — assets/env/sky_<pano>.jpg,
    2048 × 1024) with the light that goes with it, and the ground outside the building (assets/env/ground_<id>.jpg, size = m per
-   picture; gm = how bright the ground is under that sky). g: gradient stops from the top of the sky (0) through the horizon (.5) to straight down (1). */
+   picture; gm = how bright the ground is under that sky; day = daylight coming in through the glass, 1 = full). g: gradient stops from the top of the sky (0) through the horizon (.5) to straight down (1). */
 GP.ENV_SKY = [
   { id: 'studio', name: '스튜디오' },
   { id: 'clear', name: '맑은 하늘', g: [[0, '#4f86c9'], [.36, '#8fbbe6'], [.49, '#e2edf4'], [.515, '#c3c6c0'], [1, '#a4a7a1']], light: { sky: '#eef5ff', sun: '#fff3df', si: .95, hi: .45 } },
-  { id: 'sunset', name: '노을', g: [[0, '#2b3868'], [.28, '#87709c'], [.43, '#ee8a5c'], [.49, '#ffd197'], [.515, '#8a7c77'], [1, '#5b5451']], light: { sky: '#ffe0c4', gnd: '#7a6a70', sun: '#ffbd7d', si: .8, hi: .4, gm: .75 } },
-  { id: 'night', name: '밤', g: [[0, '#03060f'], [.34, '#0c1630'], [.49, '#23365c'], [.515, '#1c1f25'], [1, '#111317']], light: { sky: '#9fb0d8', gnd: '#3a3f4c', sun: '#c6d4ff', si: .35, hi: .34, gm: .3 } },
+  { id: 'sunset', name: '노을', day: 0.55, g: [[0, '#2b3868'], [.28, '#87709c'], [.43, '#ee8a5c'], [.49, '#ffd197'], [.515, '#8a7c77'], [1, '#5b5451']], light: { sky: '#ffe0c4', gnd: '#7a6a70', sun: '#ffbd7d', si: .8, hi: .4, gm: .75 } },
+  { id: 'night', name: '밤', day: 0.08, g: [[0, '#03060f'], [.34, '#0c1630'], [.49, '#23365c'], [.515, '#1c1f25'], [1, '#111317']], light: { sky: '#9fb0d8', gnd: '#3a3f4c', sun: '#c6d4ff', si: .35, hi: .34, gm: .3 } },
   { id: 'city', name: '도시 낮', pano: 'canary_wharf', light: { sky: '#eef4fb', sun: '#fff4e2', si: .95, hi: .45 } },
   { id: 'park', name: '공원', pano: 'je_gray_park', light: { sky: '#eef6ff', sun: '#fff3dc', si: 1, hi: .46 } },
-  { id: 'dusk', name: '저녁 도시', pano: 'sunset_jhbcentral', light: { sky: '#ffe4cc', gnd: '#6f6670', sun: '#ffc48a', si: .8, hi: .4, gm: .75 } },
-  { id: 'citynight', name: '밤 거리', pano: 'hansaplatz', light: { sky: '#a6b2d4', gnd: '#3b3a3c', sun: '#ffd9a8', si: .35, hi: .34, gm: .4 } },
+  { id: 'dusk', name: '저녁 도시', day: 0.55, pano: 'sunset_jhbcentral', light: { sky: '#ffe4cc', gnd: '#6f6670', sun: '#ffc48a', si: .8, hi: .4, gm: .75 } },
+  { id: 'citynight', name: '밤 거리', day: 0.12, pano: 'hansaplatz', light: { sky: '#a6b2d4', gnd: '#3b3a3c', sun: '#ffd9a8', si: .35, hi: .34, gm: .4 } },
 ];
 GP.ENV_GROUND = [{ id: 'none', name: '없음' }, { id: 'pavers', name: '보도블록', size: 1.92 }, { id: 'brick', name: '벽돌 보도', size: 2 }, { id: 'asphalt', name: '아스팔트', size: 30 }, { id: 'grass', name: '잔디', size: 2 }];
 GP.envOf = st => { const e = (st && st.env) || {}; return { sky: GP.ENV_SKY.find(q => q.id === e.sky) || GP.ENV_SKY[0], ground: GP.ENV_GROUND.find(q => q.id === e.ground) || GP.ENV_GROUND[0], rot: +e.rot || 0 }; };
@@ -112,7 +112,8 @@ GP.LIGHTS = [
 ];
 GP.LIGHT_TONE = { day: { n: '주광색', k: '6500K', c: '#eef4ff' }, neutral: { n: '주백색', k: '4000K', c: '#fff5e4' }, warm: { n: '전구색', k: '3000K', c: '#ffd29a' } };
 GP.LIGHT_BODY = { white: { n: '화이트', c: '#eeeeec', m: .1, r: .45 }, black: { n: '블랙', c: '#1f2124', m: .3, r: .5 }, silver: { n: '실버', c: '#c4c8cc', m: .85, r: .3 }, gold: { n: '골드', c: '#c9a45c', m: .85, r: .3 } };
-GP.lightOf = (st) => { const l = (st && st.light) || {}, d = GP.LIGHTS.find(q => q.id === l.type) || GP.LIGHTS[0]; return { d, tone: GP.LIGHT_TONE[l.tone] ? l.tone : 'neutral', body: GP.LIGHT_BODY[l.body] ? l.body : 'white', gap: l.gap > .6 ? l.gap : d.gap }; };
+GP.lightOf = (st) => { const l = (st && st.light) || {}, d = GP.LIGHTS.find(q => q.id === l.type) || GP.LIGHTS[0]; const tn = GP.LIGHT_TONE[l.tone] ? l.tone : 'neutral', cus = /^#[0-9a-f]{6}$/i.test(l.color || '');
+  return { d, top: l.top === true, lum: l.lum >= 0 ? Math.min(3, l.lum) : 1, glow: cus ? l.color.toLowerCase() : GP.LIGHT_TONE[tn].c, k: cus ? (l.k > 0 ? l.k : 0) : { day: 6500, neutral: 4000, warm: 3000 }[tn], tone: tn, body: GP.LIGHT_BODY[l.body] ? l.body : 'white', gap: l.gap > .6 ? l.gap : d.gap }; };
 /* finish adjustments per surface (settings.texAdj[floor|wall|ceil]): brightness, contrast, saturation, warmth, each −60..60 */
 GP.TEX_ADJ = [['b', '밝기'], ['c', '대비'], ['s', '채도'], ['w', '색감']];
 /* colours for doors, windows, partitions (frame / leaf), glass and handles; a hex string works too */
