@@ -18,6 +18,7 @@ const IC = GP.IC = {
   matRect: sv('<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M3 12h18M9 5v14M15 5v14"/>'), matPoly: sv('<path d="M4 19V8l6-4 10 4v11z"/><path d="M4 13h16M10 4v15M15 6v13"/>'),
   zone: sv('<rect x="3" y="4" width="18" height="16" rx="2" stroke-dasharray="3 3"/><path d="M8 12h8"/>'),
   rotL: sv('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'), rotR: sv('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'),
+  xform: sv('<rect x="5" y="5" width="14" height="14" stroke-dasharray="2.5 2"/><rect x="3" y="3" width="4" height="4" fill="currentColor"/><rect x="17" y="3" width="4" height="4" fill="currentColor"/><rect x="3" y="17" width="4" height="4" fill="currentColor"/><rect x="17" y="17" width="4" height="4" fill="currentColor"/>'),
   pen: sv('<path d="M12 19.5 19.5 12l2 2-7.5 7.5z"/><path d="m18 13.5-1.5-7.5L3 3l3 13.5 7.5 1.5z"/><path d="m3 3 6.8 6.8"/><circle cx="11" cy="11" r="1.8"/>'),
   edit: sv('<path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-4-4L4 16z"/><path d="m14 6 4 4"/>'),
   folder: sv('<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>'), filePlus: sv('<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M12 11v6M9 14h6"/>'),
@@ -154,7 +155,7 @@ GP.on('selection', () => { ui.updateDistances(); GP.S.invalidate(); ui.renderIns
 
 /* ---------------- steps (tabs) & tools ---------------- */
 const STEP_TOOLS = {
-  space: [['select', '선택', 'select'], ['pen', '펜', 'pen'], ['vertex', '벽 모양', 'vertex'], ['part', '가벽', 'wall'], ['opening', '문·창문', 'door'], ['roomlabel', '공간 이름', 'room'], ['measure', '줄자', 'ruler'], ['note', '메모', 'note']],
+  space: [['select', '선택', 'select'], ['pen', '펜', 'pen'], ['vertex', '벽 모양', 'vertex'], ['xform', '크기 변형', 'xform'], ['part', '가벽', 'wall'], ['opening', '문·창문', 'door'], ['roomlabel', '공간 이름', 'room'], ['measure', '줄자', 'ruler'], ['note', '메모', 'note']],
   place: [['select', '선택', 'select'], ['multi', '여러 개', 'multi'], ['fillwall', '벽 채우기', 'fill'], ['measure', '줄자', 'ruler'], ['note', '메모', 'note']],
   floor: [['select', '선택', 'select'], ['matRect', '사각형', 'matRect'], ['matPoly', '모양대로', 'matPoly'], ['zoneRect', '존 표시', 'zone']],
 };
@@ -262,6 +263,7 @@ const HINTS = {
 ui.setHint = (custom) => {
   const h = $('#hint'); let s = custom;
   const v3 = GP.V3 && GP.V3.on;
+  if (!v3 && ui.tool === 'xform' && !custom) { h.innerHTML = ''; h.hidden = true; return; }      // its bar says it
   if (!v3 && ui.tool === 'pen') { h.innerHTML = ''; h.hidden = true; if (GP.pen) GP.pen.bar(); return; }      // the pen's own bar says it
   if (!v3 && (ui.tool === 'part' || ui.tool === 'matPoly')) { h.innerHTML = ''; h.hidden = true; if (GP.tools && GP.tools.drawBar) GP.tools.drawBar(); return; }   // the drawing bar says it (and keeps saying it)
   if (v3 && GP.V3.walking && !custom) { h.innerHTML = ''; h.hidden = true; return; }     // the walk mode shows its own help
@@ -515,6 +517,6 @@ GP.fillIcons(document);
 $('#undoBtn').innerHTML = IC.undo; $('#redoBtn').innerHTML = IC.redo; $('#helpBtn').innerHTML = IC.help; $('#menuBtn').innerHTML = IC.menu; modal.querySelector('[data-close]').innerHTML = IC.x;
 $('#undoBtn').addEventListener('click', () => GP.H.undo()); $('#redoBtn').addEventListener('click', () => GP.H.redo());
 GP.on('history', () => { $('#undoBtn').disabled = !GP.H.canUndo(); $('#redoBtn').disabled = !GP.H.canRedo(); });
-ui.renderTop = () => { const cl = $('#projClient'), info = [GP.P.client, GP.P.consultant ? '담당 ' + GP.P.consultant : ''].filter(Boolean).join(' · '); $('#projName').textContent = GP.P.name; cl.textContent = info || (GP.viewOnly ? '' : '＋ 고객사 · 담당자 입력'); cl.classList.toggle('empty', !info); const ms = $('#markSub'); if (ms) ms.textContent = GP.APP_SUB; document.title = `${GP.P.name} — ${GP.APP_NAME}`; };
+ui.renderTop = () => { const cl = $('#projClient'), info = [GP.P.client, GP.P.consultant ? '담당 ' + GP.P.consultant : ''].filter(Boolean).join(' · '); $('#projName').textContent = GP.P.name; cl.textContent = info || (GP.viewOnly ? '' : '＋ 고객사 입력'); cl.classList.toggle('empty', !info); const ms = $('#markSub'); if (ms) ms.textContent = GP.APP_SUB; document.title = `${GP.P.name} — ${GP.APP_NAME}`; };
 $('#projBtn').addEventListener('click', () => { if (!GP.viewOnly) GP.panels.editProjectInfo(); });
 })();

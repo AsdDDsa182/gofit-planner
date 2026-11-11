@@ -29,7 +29,7 @@ panels.renderSpace = () => {
   const fold = (id, title, val, body) => `<details class="fold" data-fold="${id}" ${sp.open.has(id) ? 'open' : ''}><summary><span class="fd-t">${title}</span>${val ? `<span class="fd-v">${val}</span>` : ''}</summary><div class="fd-b">${body}</div></details>`;
   const bb = G.bounds(L.room.pts);
   el.innerHTML = `<p class="lead">고객 매장의 벽 모양과 크기를 만들어요. 문·창문·가벽은 도면 위 도구로 넣어요.</p>
-  ${fold('make', '공간 만들기', `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`, `<button class="btn wide soft" data-pen="1" style="margin-bottom:8px">${IC.pen}펜으로 직접 그리기 <small class="note" style="margin-left:4px">클릭: 모서리 · 끌기: 곡선</small></button><div class="seg full" id="spMode"><button data-m="py" class="${sp.mode === 'py' ? 'on' : ''}">평수로</button><button data-m="shape" class="${sp.mode === 'shape' ? 'on' : ''}">모양 템플릿</button><button data-m="walk" class="${sp.mode === 'walk' ? 'on' : ''}">실측 입력</button></div>
+  ${fold('make', '공간 만들기', `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`, `<div class="row2" style="margin-bottom:8px"><button class="btn soft" data-pen="1" title="클릭: 모서리 · 누른 채 끌기: 곡선">${IC.pen}펜으로 그리기</button><button class="btn soft" data-xform="1" title="공간 전체를 상자 손잡이로 키우기 · 줄이기 · 돌리기 (T)">${IC.xform}크기 변형 <kbd>T</kbd></button></div><div class="seg full" id="spMode"><button data-m="py" class="${sp.mode === 'py' ? 'on' : ''}">평수로</button><button data-m="shape" class="${sp.mode === 'shape' ? 'on' : ''}">모양 템플릿</button><button data-m="walk" class="${sp.mode === 'walk' ? 'on' : ''}">실측 입력</button></div>
     <div id="spBody" class="blk" style="border:0;padding:0"></div>`)}
   ${fold('finish', '벽 · 바닥 마감', `${ui.texName(st.floorBase)} · ${ui.texName(st.wallTex || 'paint')}`, `<p class="note" style="margin:0">3D 보기와 제안서 3D 그림에 보여요. 바닥 무늬는 도면에도 연하게 보여요. 벽마다 다르게 하려면 도면에서 벽을 누르세요.</p>
     <span class="lbl">바닥</span>${ui.texGrid('floor', st.floorBase)}
@@ -92,7 +92,8 @@ function renderUL() {
 panels.renderUL = renderUL;
 const spEl = $('#panel-space');
 spEl.addEventListener('click', e => {
-  const t = e.target; if (t.closest('[data-pen]')) { ui.setTool('pen'); GP.toast('모서리를 차례로 클릭하세요. 휘어진 곳은 누른 채 끌면 곡선이 돼요. 첫 점을 누르면 완성!', { ms: 5000 }); return; }
+  const t = e.target; if (t.closest('[data-xform]')) { ui.setTool('xform'); return; }
+  if (t.closest('[data-pen]')) { ui.setTool('pen'); GP.toast('모서리를 차례로 클릭하세요. 휘어진 곳은 누른 채 끌면 곡선이 돼요. 첫 점을 누르면 완성!', { ms: 5000 }); return; }
   const m = t.closest('#spMode [data-m]'); if (m) { sp.mode = m.dataset.m; if (sp.mode === 'walk') sp.walk = null; panels.renderSpace(); return; }
   const shp = t.closest('[data-shape]'); if (shp) { sp.shape = shp.dataset.shape; renderSpBody(); applyRoomLive(SHAPES[sp.shape].make(sp.vals[sp.shape]), true); return; }
   if (t.id === 'fitApply') { const tg = +$('#fitPy').value; if (!(tg >= 3)) return; const P = GP.L().room.pts, A = Math.abs(G.area(P)), b = G.bounds(P); GP.CV.scaleAll(Math.sqrt(tg * U.PY / A), [b.minX, b.minZ]); GP.S.fit(); GP.toast(`모양은 그대로 두고 ${tg}평에 맞췄어요`); return; }

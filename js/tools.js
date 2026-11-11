@@ -74,8 +74,7 @@ function snapPoint(x, z, o) {
   const S = GP.S, L = GP.L(), tol = S.mpp() * 12, g = o.g || .05;
   if (!o.fine) {
     let best = null, bd = tol;
-    const cand = []; if (!o.noRoom) L.room.pts.forEach(p => cand.push(p)); L.partitions.forEach(p => p.pts.forEach(q => cand.push(q))); (o.extra || []).forEach(q => cand.push(q));
-    L.mats.forEach(m => m.pts.forEach(q => cand.push(q)));
+    const cand = []; if (!o.noRoom) { L.room.pts.forEach(p => cand.push(p)); L.partitions.forEach(p => p.pts.forEach(q => cand.push(q))); L.mats.forEach(m => m.pts.forEach(q => cand.push(q))); } (o.extra || []).forEach(q => cand.push(q));
     for (const c of cand) { if (o.skipPts && o.skipPts.has(c)) continue; const dd = Math.hypot(c[0] - x, c[1] - z); if (dd < bd) { bd = dd; best = c.slice(); } }
     if (best) return best;
   }
@@ -292,7 +291,7 @@ function onDown(e) {
   if (ui.placing) { press = { placing: true }; ghostUpdate(e.clientX, e.clientY, e.altKey); return; }
   const fp = S.floorAt(e.clientX, e.clientY);
   const t = ui.tool;
-  if (t === 'pen' && GP.pen) { GP.pen.down(e, fp); return; }
+  const ext = GP.toolExt && GP.toolExt[t]; if (ext) { ext.down(e, fp); return; }
   if (t !== 'select') { if (toolDown(t, e, fp)) return; }
   if (t !== 'select') { press = { x: e.clientX, y: e.clientY }; return; }
   const sd = !e.shiftKey && sideAt(e.clientX, e.clientY); if (sd) { startSide(sd.t, sd.i, fp); GP.tip.hide(); return; }
@@ -324,7 +323,7 @@ function onMove(e) {
   if (press && press.pan) { const dx = e.clientX - press.x, dy = e.clientY - press.y; if (!press.moved && Math.hypot(dx, dy) < 4) return; press.moved = true; S.panBy(dx, dy); press.x = e.clientX; press.y = e.clientY; canvas().style.cursor = 'grabbing'; GP.tip.hide(); return; }
   if (press && press.view) { const dx = e.clientX - press.x, dy = e.clientY - press.y; if (!press.moved && Math.hypot(dx, dy) < 5) return; press.moved = true; S.panBy(dx, dy); press.x = e.clientX; press.y = e.clientY; GP.tip.hide(); return; }
   if (press && press.marquee) { const m = $('#ovMarquee'); const r = S.canvas.getBoundingClientRect(); const x0 = Math.min(press.x, e.clientX) - r.left, y0 = Math.min(press.y, e.clientY) - r.top; m.hidden = false; m.style.left = x0 + 'px'; m.style.top = y0 + 'px'; m.style.width = Math.abs(e.clientX - press.x) + 'px'; m.style.height = Math.abs(e.clientY - press.y) + 'px'; return; }
-  if (ui.tool === 'pen' && GP.pen && !GP.viewOnly) { GP.pen.move(e); return; }
+  { const ext = !GP.viewOnly && GP.toolExt && GP.toolExt[ui.tool]; if (ext) { ext.move(e); return; } }
   if (draw) { toolMove(e); return; }
   if (drag) { dragMove(e); return; }
   if (ui.tool !== 'select' && !GP.viewOnly) { toolHover(e); return; }
@@ -343,7 +342,7 @@ function onUp(e) {
     const hits = tiny ? [] : GP.L().items.filter(it => { const [sx, sy] = S.toScreen(it.x, 0, it.z); return sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1; }).map(it => ({ k: 'item', id: it.uid }));
     press = null; if (hits.length) ui.select(hits, add); else if (!add && !ui.multi) ui.clearSel(); return;
   }
-  if (ui.tool === 'pen' && GP.pen) { GP.pen.up(e); return; }
+  { const ext = GP.toolExt && GP.toolExt[ui.tool]; if (ext) { ext.up(e); return; } }
   if (draw) { toolUp(e); return; }
   if (drag) {
     const d = drag; drag = null; canvas().style.cursor = '';
@@ -361,7 +360,7 @@ function viewerTap(e) {
   tools.clearHover();
 }
 function onDbl(e) {
-  if (ui.tool === 'pen' && GP.pen) { GP.pen.dbl(e); return; }
+  { const ext = GP.toolExt && GP.toolExt[ui.tool]; if (ext) { ext.dbl(e); return; } }
   if (draw && (draw.tool === 'part' || draw.tool === 'matPoly')) { finishDraw(); return; }
   if (!GP.viewOnly && ui.tool === 'vertex') { const fp = GP.S.floorAt(e.clientX, e.clientY), i = hoverWallSeg(fp); if (i >= 0 && !(GP.CV && GP.CV.of(GP.L(), i))) tools.addPointOnWall(i, [fp.x, fp.z]); return; }
   if (GP.viewOnly || ui.placing || ui.tool !== 'select') return;
@@ -561,6 +560,7 @@ tools.handleDown = (e, el) => {
   e.preventDefault(); e.stopPropagation(); const h = el.dataset.h;
   if (h === 'cp' && GP.CV) { GP.CV.cpDown(e, el); return; }
   if ((h === 'rr' || h === 'rcv') && GP.CV) { GP.CV.rcDown(e, el); return; }
+  if ((h === 'xf' || h === 'xfr') && GP.XF) { GP.XF.handleDown(e, el); return; }
   const target = tools.polyTarget();
   if (h === 'v' && target) {
     const i = +el.dataset.i, S = tools.selVs;
@@ -826,7 +826,7 @@ act.key = (e, mod, k) => {
   if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); if (tools.polyTarget() && tools.selV >= 0 && ui.tool === 'vertex') tools.deleteVertex(tools.selV); else act.delSel(); return; }
   const st = e.shiftKey ? .1 : .01; const mv = { ArrowLeft: [-st, 0], ArrowRight: [st, 0], ArrowUp: [0, -st], ArrowDown: [0, st] }[e.key];
   if (mv && ui.sel.length) { e.preventDefault(); act.nudge(mv[0], mv[1]); return; }
-  const tk = { v: 'select', m: 'measure' }[k]; if (tk && !(tk === 'measure' && GP.wiz && GP.wiz.on)) ui.setTool(tk);
+  const tk = { v: 'select', m: 'measure', t: ui.step === 'space' ? 'xform' : null }[k]; if (tk && !(tk === 'measure' && GP.wiz && GP.wiz.on)) ui.setTool(tk);
 };
 act.inspAction = async (a, b) => {
   const L = GP.L(), so = ui.selObj(), it = ui.selItems()[0];

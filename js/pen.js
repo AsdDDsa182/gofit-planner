@@ -324,6 +324,7 @@ pen.move = (e) => {
 pen.up = () => { if (!st || !st.down) return; const d = st.down; st.down = null; ui().setHint(); if (d.close) finish(); GP.emit('overlay'); pen.bar(); };
 pen.dbl = () => { if (st && st.A.length >= 3) finish(); };
 pen.key = (e) => {
+  if (GP.XF && GP.XF.key(e)) return true;
   if (ui().tool !== 'pen') return false; const k = e.key;
   if (/^[0-9.]$/.test(k) && st && st.A.length) { st.num = (st.num || '') + k; pen.bar(); return true; }
   if (k === 'Backspace') { e.preventDefault(); undo(); return true; }
@@ -363,6 +364,7 @@ pen.svg = (P) => {
   const S = GP.S, path = [], scr = p => S.toScreen(p[0], 0, p[1]).slice(0, 2).map(v => v.toFixed(1)).join(',');
   // curve handles of the room (wall-shape tool)
   if (ui().tool === 'vertex' && !GP.viewOnly) for (const h of CV.handles(GP.L())) for (const [c, a] of h.h) html += `<line x1="${S.toScreen(a[0], 0, a[1])[0]}" y1="${S.toScreen(a[0], 0, a[1])[1]}" x2="${S.toScreen(c[0], 0, c[1])[0]}" y2="${S.toScreen(c[0], 0, c[1])[1]}" stroke="#E0622B" stroke-width="1.3" opacity=".85"/>`;
+  if (GP.XF) html += GP.XF.svg();
   if (ui().tool !== 'pen' || !st) return html;
   const A = st.A, m = A.length; if (!m) return html;
   // guides
@@ -384,4 +386,112 @@ pen.svg = (P) => {
 };
 GP.on('tool', () => { if (ui().tool !== 'pen') st = null; pen.bar(); });
 GP.on('step', pen.bar);
+
+/* ================= free transform: the whole space in a box (Photoshop's Ctrl+T; here the T key / 「크기 변형」) =================
+   Corner handles scale keeping the proportions (Shift: each way on its own), side handles one way, ↻ turns, dragging inside
+   moves; Alt: about the centre. The room (with its curves and rounded corners) and, unless switched off, the equipment, floor,
+   zones, partitions, notes and measurements go along (equipment keeps its size). Doors stay at the same place along their wall.
+   The floor-plan picture follows a plain scale (no turn, same both ways). Enter / 적용 keeps it, Esc / 취소 puts it back. */
+const X = GP.XF = {};
+let xs = null, xbusy = false;
+const rotv = (v, d) => G.l2w(0, 0, d, v[0], v[1]);
+const XK = ['room', 'items', 'mats', 'zones', 'partitions', 'openings', 'dims', 'notes', 'rooms'];
+function xfStart() {
+  const L = GP.L(), b = G.bounds(L.room.pts), UL = GP.S.underlay, snap = {}; for (const k of XK) if (L[k] !== undefined) snap[k] = JSON.parse(JSON.stringify(L[k]));
+  xs = { snap, ul: UL ? { x: UL.x, z: UL.z, w: UL.w, scale: UL.scale } : null, c0: [b.cx, b.cz], W0: Math.max(.1, b.sx), H0: Math.max(.1, b.sz), sx: 1, sy: 1, d: 0, t: [0, 0], all: xs ? xs.all : true, changed: false };
+}
+const xc = () => add(xs.c0, xs.t);
+const xbox = () => { const c = xc(), W = xs.W0 * xs.sx, H = xs.H0 * xs.sy; return [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([i, j]) => add(c, rotv([i * W / 2, j * H / 2], xs.d))); };
+function xfApply() {
+  const L = GP.L(), S0 = xs.snap; xbusy = true;
+  for (const k of XK) if (S0[k] !== undefined) L[k] = JSON.parse(JSON.stringify(S0[k]));
+  const c = xc(), f = p => r3v(add(c, rotv([(p[0] - xs.c0[0]) * xs.sx, (p[1] - xs.c0[1]) * xs.sy], xs.d))), lin = v => r3v(rotv([v[0] * xs.sx, v[1] * xs.sy], xs.d));
+  const P0 = L.room.pts.map(p => p.slice()), parts0 = new Map(L.partitions.map(p => [p.id, p.pts.map(q => q.slice())]));
+  L.room.pts = L.room.pts.map(f);
+  for (const q of Object.values(L.room.curves || {})) { q.a = lin(q.a); q.b = lin(q.b); if (q.rc) { q.rc.p = f(q.rc.p); q.rc.r = U.r3(q.rc.r * Math.sqrt(Math.abs(xs.sx * xs.sy))); } }
+  if (xs.all) {
+    const mv = o => { const q = f([o.x, o.z]); o.x = q[0]; o.z = q[1]; };
+    L.items.forEach(it => { mv(it); if (xs.d) it.rot = U.normRot(it.rot + xs.d); }); L.notes.forEach(mv); L.rooms.forEach(mv);
+    [L.mats, L.zones, L.partitions].forEach(arr => arr.forEach(o => { o.pts = o.pts.map(f); }));
+    (L.dims || []).forEach(dd => { dd.a = f(dd.a); dd.b = f(dd.b); });
+  }
+  L.openings.forEach(o => {
+    let a, b; if (o.host === 'room') { const n = P0.length; a = [P0[o.seg], P0[(o.seg + 1) % n]]; b = [L.room.pts[o.seg], L.room.pts[(o.seg + 1) % n]]; }
+    else { const p0 = parts0.get(o.host), p1 = L.partitions.find(q => q.id === o.host); if (!p0 || !p1) return; a = [p0[o.seg], p0[o.seg + 1]]; b = [p1.pts[o.seg], p1.pts[o.seg + 1]]; }
+    if (!a[0] || !a[1] || !b[0] || !b[1]) return; const l0 = G.len(a[0], a[1]), l1 = G.len(b[0], b[1]); if (l0 > 1e-6) o.t = U.r3(o.t * l1 / l0);
+  });
+  const UL = GP.S.underlay; if (UL && xs.ul) { Object.assign(UL, xs.ul); if (xs.all && !xs.d && Math.abs(xs.sx - xs.sy) < 1e-6) { const q = f([UL.x, UL.z]); UL.x = q[0]; UL.z = q[1]; if (UL.kind === 'image') UL.w = xs.ul.w * xs.sx; else UL.scale = (xs.ul.scale || 1) * xs.sx; } GP.S.buildUnderlay(UL); }
+  CV.resample(L); xs.changed = !(xs.sx === 1 && xs.sy === 1 && !xs.d && !xs.t[0] && !xs.t[1]);
+  GP.checks.quick(); GP.S.dataChanged(); GP.emit('overlay'); xbar(); xbusy = false;
+}
+X.commit = (leave) => {
+  if (!xs) return; const ch = xs.changed; if (ch) { xbusy = true; GP.changed('all'); if (GP.S.underlay) GP.panels.saveUL(); xbusy = false; GP.toast(`크기 변형을 적용했어요 · ${(Math.abs(G.area(GP.L().room.pts)) / U.PY).toFixed(1)}평 (Ctrl+Z로 되돌리기)`); }
+  xs = null; if (leave) ui().setTool('vertex'); else xfStart(); GP.emit('overlay'); xbar();
+};
+X.cancel = (leave) => { if (!xs) return; if (xs.changed) { xs.sx = xs.sy = 1; xs.d = 0; xs.t = [0, 0]; xfApply(); xbusy = true; GP.changed('all', { commit: false }); xbusy = false; } xs = null; if (leave) ui().setTool('vertex'); GP.emit('overlay'); xbar(); };
+/* handles for the overlay */
+X.handles = () => {
+  if (!xs || ui().tool !== 'xform') return []; const c = xc(), W = xs.W0 * xs.sx, H = xs.H0 * xs.sy, out = [];
+  for (const [i, j] of [[-1, -1], [0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0]]) out.push({ cls: 'ov hd sq xf', html: '', pos: add(c, rotv([i * W / 2, j * H / 2], xs.d)), h: 'xf', cx: i, cz: j, title: i && j ? '끌어서 크기 바꾸기 (비율 그대로 · Shift: 가로세로 따로 · Alt: 가운데 기준)' : '끌어서 한 방향으로 늘이기 · 줄이기 (Alt: 가운데 기준)' });
+  out.push({ cls: 'ov hd rot', html: '↻', pos: add(c, rotv([0, -H / 2 - GP.S.mpp() * 44], xs.d)), h: 'xfr', title: '끌어서 돌리기 (15° 단위 · Shift/Ctrl: 1° · Alt: 자유)' });
+  return out;
+};
+let xd = null;
+X.handleDown = (e, el) => {
+  if (!xs) return; e.preventDefault(); e.stopPropagation(); try { el.setPointerCapture(e.pointerId); } catch (_) { }
+  const fp = GP.S.floorAt(e.clientX, e.clientY), c = xc();
+  if (el.dataset.h === 'xfr') { const v = sub([fp.x, fp.z], c); xd = { kind: 'rot', a0: Math.atan2(v[1], v[0]), d0: xs.d }; }
+  else { const ix = +el.dataset.cx, iy = +el.dataset.cz, W = xs.W0 * xs.sx, H = xs.H0 * xs.sy; xd = { kind: 'size', ix, iy, W, H, A: add(c, rotv([-ix * W / 2, -iy * H / 2], xs.d)), C: c }; }
+  window.addEventListener('pointermove', xMove); window.addEventListener('pointerup', xUp);
+};
+function xMove(e) {
+  if (!xd || !xs) return; const fp = GP.S.floorAt(e.clientX, e.clientY), q = GP.tools.gridOf(e, true);
+  if (xd.kind === 'move') { let dv = [fp.x - xd.f[0], fp.z - xd.f[1]]; if (!q.free) dv = dv.map(v => U.snap(v, q.g)); xs.t = r3v(add(xd.t0, dv)); xfApply(); ui().setHint(`옮기기 <b>${U.cm(vlen(dv))}cm</b>${GP.tools.gridHint(q, true)}`); return; }
+  if (xd.kind === 'rot') {
+    const v = sub([fp.x, fp.z], xc()); let d = xd.d0 + (Math.atan2(v[1], v[0]) - xd.a0) / U.DEG; d = ((d % 360) + 540) % 360 - 180;
+    d = e.altKey ? Math.round(d * 10) / 10 : U.snap(d, (e.shiftKey || e.ctrlKey || e.metaKey) ? 1 : 15); xs.d = d; xfApply();
+    ui().setHint(`돌리기 <b>${Math.round(d * 10) / 10}°</b> · 15° 단위 · <kbd>Shift</kbd>/<kbd>Ctrl</kbd> 1° · <kbd>Alt</kbd> 자유`); return;
+  }
+  const alt = e.altKey, A = alt ? xd.C : xd.A, v = rotv(sub([fp.x, fp.z], A), -xs.d), m = alt ? 2 : 1; let Wn = xd.W, Hn = xd.H;
+  if (xd.ix && xd.iy && !e.shiftKey) { let k = ((xd.ix * v[0]) * xd.W + (xd.iy * v[1]) * xd.H) / (xd.W * xd.W + xd.H * xd.H) * m; Wn = U.snap(xd.W * k, .01); k = Wn / xd.W; Hn = xd.H * k; }
+  else { if (xd.ix) Wn = U.snap(xd.ix * v[0] * m, .05 / GP.S.mpp() >= 20 ? .01 : .05); if (xd.iy) Hn = U.snap(xd.iy * v[1] * m, .05 / GP.S.mpp() >= 20 ? .01 : .05); }
+  Wn = Math.max(.3, Wn); Hn = Math.max(.3, Hn);
+  const c = alt ? xd.C : add(A, rotv([xd.ix * Wn / 2, xd.iy * Hn / 2], xs.d));
+  xs.sx = Wn / xs.W0; xs.sy = Hn / xs.H0; xs.t = sub(c, xs.c0); xfApply();
+  ui().setHint(`가로 <b>${Wn.toFixed(2)} m</b> × 세로 <b>${Hn.toFixed(2)} m</b> · ${(Math.abs(G.area(GP.L().room.pts)) / U.PY).toFixed(1)}평${xd.ix && xd.iy ? ' · <kbd>Shift</kbd> 가로세로 따로' : ''} · <kbd>Alt</kbd> 가운데 기준`);
+}
+function xUp() { window.removeEventListener('pointermove', xMove); window.removeEventListener('pointerup', xUp); xd = null; ui().setHint(); GP.emit('overlay'); }
+/* the canvas in this tool: drag inside the box to move it */
+X.down = (e, fp) => { if (!xs) xfStart(); if (!G.pip(fp.x, fp.z, xbox())) return; xd = { kind: 'move', f: [fp.x, fp.z], t0: xs.t.slice() }; window.addEventListener('pointermove', xMove); window.addEventListener('pointerup', xUp); };
+X.move = (e) => { if (!xs || xd) return; const fp = GP.S.floorAt(e.clientX, e.clientY); GP.S.canvas.style.cursor = G.pip(fp.x, fp.z, xbox()) ? 'move' : ''; };
+X.up = () => { };
+X.dbl = () => X.commit(true);
+X.key = (e) => { if (ui().tool !== 'xform' || !xs) return false; if (e.key === 'Enter') { X.commit(true); return true; } if (e.key === 'Escape') { X.cancel(true); return true; } return false; };
+X.svg = () => { if (!xs || ui().tool !== 'xform') return ''; const S = GP.S, pts = xbox().map(p => S.toScreen(p[0], 0, p[1]).slice(0, 2).map(v => v.toFixed(1)).join(',')).join(' '); return `<polygon points="${pts}" fill="rgba(36,80,224,.05)" stroke="#2450E0" stroke-width="1.5" stroke-dasharray="6 4"/>`; };
+/* its bar: numbers to type, the contents switch, keep / put back */
+const xb = document.createElement('div'); xb.className = 'drawbar xfbar'; xb.hidden = true;
+xb.innerHTML = `<div class="db-t"><b class="db-title">크기 변형</b><span class="db-info">모서리: 비율 그대로 · 변: 한 방향 · ↻ 돌리기 · 안쪽을 끌면 옮기기</span></div>
+  <div class="db-b xf-in"><label>가로<input type="number" id="xfW" step="0.01" min="0.3"><em>m</em></label><label>세로<input type="number" id="xfH" step="0.01" min="0.3"><em>m</em></label><label>비율<input type="number" id="xfK" step="1" min="5"><em>%</em></label><label>회전<input type="number" id="xfD" step="1"><em>°</em></label>
+  <label class="xf-all"><input type="checkbox" id="xfAll" checked>기구 · 바닥도 함께</label><button class="btn sm primary" data-xb="ok">적용 <kbd>Enter</kbd></button><button class="btn sm ghost" data-xb="cancel">취소 <kbd>Esc</kbd></button></div>`;
+$('#stage').appendChild(xb);
+function xbar() {
+  const on = !GP.viewOnly && ui().tool === 'xform' && !!xs && !(GP.V3 && GP.V3.on); xb.hidden = !on; if (!on) return;
+  const set = (id, v) => { const el = $('#' + id); if (el && document.activeElement !== el) el.value = v; };
+  set('xfW', (xs.W0 * xs.sx).toFixed(2)); set('xfH', (xs.H0 * xs.sy).toFixed(2)); set('xfK', Math.abs(xs.sx - xs.sy) < 1e-6 ? Math.round(xs.sx * 1000) / 10 : ''); set('xfD', Math.round(xs.d * 10) / 10); $('#xfAll').checked = xs.all;
+  const note = GP.S.underlay && xs.all && (xs.d || Math.abs(xs.sx - xs.sy) > 1e-6) ? ' · 도면 밑그림은 돌리기 · 한 방향 늘이기를 따라가지 않아요' : '';
+  xb.querySelector('.db-info').textContent = '모서리: 비율 그대로 (Shift 따로) · 변: 한 방향 · ↻ 돌리기 · 안쪽을 끌면 옮기기' + note;
+}
+xb.addEventListener('click', e => { const b = e.target.closest('[data-xb]'); if (!b) return; if (b.dataset.xb === 'ok') X.commit(true); else X.cancel(true); });
+xb.addEventListener('change', e => {
+  if (!xs) return; const id = e.target.id, v = parseFloat(e.target.value);
+  if (id === 'xfAll') { xs.all = e.target.checked; xfApply(); return; }
+  if (!isFinite(v)) return;
+  if (id === 'xfW' && v >= .3) xs.sx = v / xs.W0; else if (id === 'xfH' && v >= .3) xs.sy = v / xs.H0; else if (id === 'xfK' && v >= 5) xs.sx = xs.sy = v / 100; else if (id === 'xfD') xs.d = ((v % 360) + 540) % 360 - 180; else return;
+  xfApply();
+});
+xb.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { e.target.dispatchEvent(new Event('change', { bubbles: true })); X.commit(true); } else if (e.key === 'Escape') X.cancel(true); });
+GP.on('tool', () => { if (ui().tool === 'xform') { if (!xs) xfStart(); } else if (xs) { if (xs.changed) X.commit(false); xs = null; } xbar(); GP.emit('overlay'); });
+GP.on('changed', () => { if (xs && !xbusy && !xs.changed) xfStart(); xbar(); });      // the space changed some other way (undo, a typed length): a new box
+GP.on('project', () => { xs = null; xbar(); });
+GP.toolExt = { pen: { down: (e, fp) => pen.down(e, fp), move: e => pen.move(e), up: e => pen.up(e), dbl: e => pen.dbl(e) }, xform: { down: X.down, move: X.move, up: X.up, dbl: X.dbl } };
 })();
