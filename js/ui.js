@@ -364,10 +364,22 @@ $('#quoteBtn').addEventListener('click', () => { if ($('#quoteSheet').hidden) ui
 /* ---------------- wall / floor finish swatches (space panel, wizard floor step, wall inspector) ---------------- */
 ui.texGrid = (kind, cur, o) => {
   o = o || {}; const list = (o.inherit ? [{ id: '', name: o.inherit }] : []).concat(GP.TEX[kind]);
-  const face = t => t.size ? `background-image:url(${GP.texUrl(t.id, true)})` : t.id === 'paint' ? `background:${GP.P.settings.wallColor || '#eeede8'}` : t.id === 'concrete' ? 'background:#c7c9c6' : 'background:repeating-linear-gradient(45deg,#e6e8e5 0 4px,#fff 4px 8px)';
+  const face = t => t.size ? `background-image:url(${GP.texUrl(t.id, true)})` : t.id === 'paint' && kind === 'ceil' ? 'background:#f4f4f1' : t.id === 'paint' ? `background:${GP.P.settings.wallColor || '#eeede8'}` : t.id === 'concrete' ? 'background:#c7c9c6' : 'background:repeating-linear-gradient(45deg,#e6e8e5 0 4px,#fff 4px 8px)';
   return `<div class="texgrid" data-tk="${kind}"${o.wall != null ? ` data-wall="${o.wall}"` : ''}>${list.map(t => `<button class="texsw${(cur || '') === t.id ? ' on' : ''}" data-tex="${t.id}" title="${U.esc(t.name)}"><i style="${face(t)}"></i><span>${U.esc(t.name)}</span></button>`).join('')}</div>`;
 };
 ui.texName = id => (GP.texDef(id) || {}).name || '';
+/* level · contrast · saturation · warmth of one surface's finish */
+ui.adjBlock = (kind) => { const a = ((GP.P.settings.texAdj || {})[kind]) || {}, on = Object.values(a).some(v => v);
+  return `<details class="tex-adj"${on ? ' open' : ''}><summary>색감 조절${on ? ' <em>바뀜</em>' : ''}</summary>${GP.TEX_ADJ.map(([k, n]) => `<div class="rng"><span>${n}</span><input type="range" min="-60" max="60" step="1" value="${a[k] || 0}" data-tadj="${kind}" data-k="${k}"><b>${k === 'w' ? ((a[k] || 0) > 0 ? '따뜻 +' + a[k] : (a[k] || 0) < 0 ? '차갑 ' + a[k] : '0') : ((a[k] || 0) > 0 ? '+' : '') + (a[k] || 0)}</b></div>`).join('')}<button class="btn xs" data-tadjreset="${kind}">처음대로</button></details>`; };
+let tadjT = 0;
+document.addEventListener('input', e => {
+  const r = e.target.closest('[data-tadj]'); if (!r || GP.viewOnly) return; const st = GP.P.settings, kind = r.dataset.tadj, k = r.dataset.k, v = +r.value;
+  st.texAdj = st.texAdj || {}; st.texAdj[kind] = st.texAdj[kind] || {}; st.texAdj[kind][k] = v;
+  const b = r.parentElement.querySelector('b'); if (b) b.textContent = k === 'w' ? (v > 0 ? '따뜻 +' + v : v < 0 ? '차갑 ' + v : '0') : (v > 0 ? '+' : '') + v;
+  clearTimeout(tadjT); tadjT = setTimeout(() => GP.changed('settings', { commit: false }), 120);
+});
+document.addEventListener('change', e => { if (e.target.closest('[data-tadj]')) GP.changed('settings'); });
+document.addEventListener('click', e => { const b = e.target.closest('[data-tadjreset]'); if (!b || GP.viewOnly) return; const st = GP.P.settings; if (st.texAdj) delete st.texAdj[b.dataset.tadjreset]; GP.changed('settings'); GP.panels.renderSpace(); });
 document.addEventListener('click', e => { const b = e.target.closest('.texgrid [data-tex]'); if (!b || GP.viewOnly) return; const g = b.closest('.texgrid'); GP.act.setTex(g.dataset.tk, b.dataset.tex, g.dataset.wall != null ? +g.dataset.wall : null); });
 
 /* ---------------- inspector ---------------- */

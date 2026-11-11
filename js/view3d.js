@@ -84,10 +84,20 @@ function clear(g) { const shared = new Set(Object.values(matCache)); for (const 
 function mat(key, f) { return matCache[key] || (matCache[key] = f()); }
 /* finish images (GP.TEX): loaded once, repeated per metre (the floor's and the wall planes' UVs are in metres) */
 const texCache = {}; let texLoading = 0;
-function finishTex(id) {
-  if (texCache[id]) return texCache[id]; const d = GP.texDef(id); texLoading++;
-  const t = new THREE.TextureLoader().load(GP.texUrl(id), () => { texLoading--; dirty = true; }, undefined, () => { texLoading--; });
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; t.repeat.set(1 / d.size, 1 / d.size); return (texCache[id] = t);
+function finishTex(id, adj) {
+  const ak = GP.texAdjKey(adj), key = id + (ak && /[^0,]/.test(ak) ? '|' + ak : ''); if (texCache[key]) return texCache[key]; const d = GP.texDef(id); texLoading++; let t;
+  if (key === id) t = new THREE.TextureLoader().load(GP.texUrl(id), () => { texLoading--; dirty = true; }, undefined, () => { texLoading--; });
+  else {      // adjusted: drawn through a canvas filter (level · contrast · saturation), warmth as a coloured overlay
+    const c = document.createElement('canvas'); t = new THREE.Texture(); const im = new Image(); im.crossOrigin = 'anonymous';      // (the picture goes in once it is drawn: a texture first sent at another size keeps that size)
+    im.onload = () => { c.width = im.naturalWidth; c.height = im.naturalHeight; const x = c.getContext('2d'); x.filter = GP.texFilter(adj); x.drawImage(im, 0, 0); x.filter = 'none'; const w = (adj && adj.w) || 0; if (w) { x.globalCompositeOperation = 'overlay'; x.fillStyle = w > 0 ? `rgba(255,170,90,${Math.abs(w) / 60 * .45})` : `rgba(90,150,255,${Math.abs(w) / 60 * .45})`; x.fillRect(0, 0, c.width, c.height); x.globalCompositeOperation = 'source-over'; } t.image = c; t.needsUpdate = true; texLoading--; dirty = true; };
+    im.onerror = () => { texLoading--; }; im.src = GP.texUrl(id);
+  }
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; t.repeat.set(1 / d.size, 1 / d.size); return (texCache[key] = t);
+}
+/* a plain colour with the same adjustments (paint, the default concrete) */
+function adjHex(hex, a) {
+  if (!a) return hex; const c = new THREE.Color(hex), h = {}; c.getHSL(h); h.l = U.clamp(h.l * (1 + (a.b || 0) / 100), 0, 1); h.s = U.clamp(h.s * (1 + (a.s || 0) / 100), 0, 1); c.setHSL(h.h, h.s, h.l);
+  const w = (a.w || 0) / 60; if (w) c.lerp(new THREE.Color(w > 0 ? '#ffb070' : '#7aa8ff'), Math.abs(w) * .25); return '#' + c.getHexString();
 }
 const finishOf = id => { const d = GP.texDef(id); return d && d.size ? d : null; };
 /* the finished floor is matt (Lambert): under the strong overhead light a standard material's highlight lays a grey haze over the whole
@@ -136,10 +146,10 @@ let wallMeshes = [];
 function buildRoom() {
   const g = groups.room; clear(g); wallMeshes = [];
   const L = GP.L(), st = GP.P.settings, P = L.room.pts; if (P.length < 3) return;
-  const fg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); fg.rotateX(-Math.PI / 2); const fd = finishOf(st.floorBase), floor = new THREE.Mesh(fg, LINE ? CADM() : fd ? mat('floor:' + fd.id, () => new THREE.MeshLambertMaterial({ color: '#d0d0d0', map: finishTex(fd.id) })) : mat('floor', () => std('#dcdcdc', { map: V3.tex.concrete, roughness: .85 }))); floor.receiveShadow = true; floor.position.y = -.001; floor.userData.own = true; g.add(floor);
+  const fg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); fg.rotateX(-Math.PI / 2); const fd = finishOf(st.floorBase), TA = st.texAdj || {}, fk = GP.texAdjKey(TA.floor), floor = new THREE.Mesh(fg, LINE ? CADM() : fd ? mat('floor:' + fd.id + fk, () => new THREE.MeshLambertMaterial({ color: '#d0d0d0', map: finishTex(fd.id, TA.floor) })) : mat('floor' + fk, () => std(adjHex('#dcdcdc', TA.floor), { map: V3.tex.concrete, roughness: .85 }))); floor.receiveShadow = true; floor.position.y = -.001; floor.userData.own = true; g.add(floor);
   const H = V3.cut ? Math.min(1.1, st.wallH) : st.wallH, O = G.offset(P, WALL_T, true), n = P.length, marks = L.wallMarks || {};
   if (!LINE && !V3.cut) {
-    const cg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); cg.rotateX(-Math.PI / 2); const ceil = new THREE.Mesh(cg, mat('ceil', () => new THREE.MeshBasicMaterial({ color: '#c4c8c6', side: THREE.BackSide }))); ceil.position.y = H; ceil.userData.own = true; g.add(ceil);
+    const cg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); cg.rotateX(-Math.PI / 2); const cd = (GP.TEX.ceil || []).find(t => t.id === st.ceilTex && t.size), ck = GP.texAdjKey(TA.ceil), ceil = new THREE.Mesh(cg, cd ? mat('ceil:' + cd.id + ck, () => new THREE.MeshBasicMaterial({ color: cd.id === 'ceil_glow' ? '#ffffff' : '#d2d4d3', map: finishTex(cd.id, TA.ceil), side: THREE.BackSide })) : mat('ceil' + ck, () => new THREE.MeshBasicMaterial({ color: adjHex('#c4c8c6', TA.ceil), side: THREE.BackSide }))); ceil.position.y = H; ceil.userData.own = true; g.add(ceil);
     const bb0 = G.bounds(P), nx = Math.max(1, Math.round(bb0.sx / 2.6)), nz = Math.max(1, Math.round(bb0.sz / 2.6)), lg = mat('lampGeo', () => new THREE.PlaneGeometry(1.2, .3)), lm = mat('lamp', () => new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false })); let made = 0;
     for (let i = 0; i < nx && made < 80; i++) for (let j = 0; j < nz && made < 80; j++) { const x = bb0.minX + bb0.sx * (i + .5) / nx, z = bb0.minZ + bb0.sz * (j + .5) / nz; if (!G.pip(x, z, P)) continue; const lp = new THREE.Mesh(lg, lm); lp.rotation.x = Math.PI / 2; lp.position.set(x, H - .012, z); g.add(lp); made++; }
   }
@@ -161,12 +171,12 @@ function buildRoom() {
       for (let k = 0; k <= nM; k++) { const sv = Lc * k / nM; let j = 1; while (j < us.length - 1 && us[j] < sv) j++; const f = (sv - us[j - 1]) / ((us[j] - us[j - 1]) || 1), p0 = M[j - 1], p1 = M[j], tx = p1[0] - p0[0], tz = p1[1] - p0[1]; const me = own(new THREE.Mesh(bx, fm)); me.position.set(p0[0] + tx * f, H / 2, p0[1] + tz * f); me.rotation.y = -Math.atan2(tz, tx); me.castShadow = true; }
       continue;
     }
-    const wm = LINE ? new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }) : std(st.wallColor || '#eeede8', { roughness: .92, transparent: true, opacity: 1 });
+    const wm = LINE ? new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }) : std(adjHex(st.wallColor || '#eeede8', TA.wall), { roughness: .92, transparent: true, opacity: 1 });
     const add = (geo, m, shadow) => { const me = new THREE.Mesh(geo, m); me.castShadow = !!shadow; me.receiveShadow = true; me.userData.own = true; if (LINE) addEdges(me); g.add(me); return me; };
     add(stripGeo(Q, N_, 0, H, us), wm, true); add(stripGeo(Oq, out, 0, H, us), wm, true); add(capGeo(Q, Oq, H), wm, false);
     wallMeshes.push({ mat: wm, nx: -mid[0], nz: -mid[1] });
     const wd = !LINE && finishOf((L.wallTex || {})[c.s] || st.wallTex);
-    if (wd) { const tm = std('#ffffff', { map: finishTex(wd.id), roughness: wd.rough, transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }); add(stripGeo(Q.map((p, q) => [p[0] + N_[q][0] * .004, p[1] + N_[q][1] * .004]), N_, 0, H, us), tm, false); wallMeshes.push({ mat: tm, nx: -mid[0], nz: -mid[1] }); }
+    if (wd) { const tm = std('#ffffff', { map: finishTex(wd.id, TA.wall), roughness: wd.rough, transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }); add(stripGeo(Q.map((p, q) => [p[0] + N_[q][0] * .004, p[1] + N_[q][1] * .004]), N_, 0, H, us), tm, false); wallMeshes.push({ mat: tm, nx: -mid[0], nz: -mid[1] }); }
     const bbC = { dark: '#2f3236', white: '#efefec' }[st.baseboard || 'dark'];
     if (bbC && !LINE) { const bm = std(bbC, { roughness: .6, transparent: true, opacity: 1 }), Bq = Q.map((p, q) => [p[0] + N_[q][0] * .012, p[1] + N_[q][1] * .012]); add(stripGeo(Bq, N_, 0, .08, us), bm, false); add(capGeo(Q, Bq, .08), bm, false); wallMeshes.push({ mat: bm, nx: -mid[0], nz: -mid[1] }); }
   }
@@ -174,13 +184,13 @@ function buildRoom() {
     if (oneCurve.has(i)) continue;
     const j = (i + 1) % n, a = P[i], b = P[j], Ls = G.len(a, b); if (Ls < 1e-3) continue;
     const e = G.edge(P, i), ops = L.openings.filter(o => o.host === 'room' && o.seg === i);
-    const wm = LINE ? new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }) : std(st.wallColor || '#eeede8', { roughness: .92, transparent: true, opacity: 1 });
+    const wm = LINE ? new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }) : std(adjHex(st.wallColor || '#eeede8', TA.wall), { roughness: .92, transparent: true, opacity: 1 });
     const inner = s => [a[0] + e.dx * s, a[1] + e.dz * s], outer = s => s <= 1e-6 ? O[i] : s >= Ls - 1e-6 ? O[j] : [a[0] + e.dx * s - e.nx * WALL_T, a[1] + e.dz * s - e.nz * WALL_T];
     for (const [s0, s1, y0, y1] of pieces(Ls, H, ops)) { const me = new THREE.Mesh(prismGeo([inner(s0), inner(s1), outer(s1), outer(s0)], y0, y1), wm); me.castShadow = true; me.receiveShadow = true; me.userData.own = true; if (LINE) addEdges(me); g.add(me); }
     // the wall's finish: a thin plane on its room side, UVs in metres along the wall and up from the floor
     const wd = !LINE && finishOf((L.wallTex || {})[i] || st.wallTex);
     if (wd) {
-      const tm = std('#ffffff', { map: finishTex(wd.id), roughness: wd.rough, transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+      const tm = std('#ffffff', { map: finishTex(wd.id, TA.wall), roughness: wd.rough, transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
       for (const [s0, s1, y0, y1] of pieces(Ls, H, ops)) {
         const w = s1 - s0, h = y1 - y0; if (w < .02 || h < .02) continue; const geo = new THREE.PlaneGeometry(w, h), uv = geo.attributes.uv;
         for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) ? s1 : s0, uv.getY(k) ? y1 : y0);

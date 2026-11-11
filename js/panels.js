@@ -31,10 +31,11 @@ panels.renderSpace = () => {
   el.innerHTML = `<p class="lead">고객 매장의 벽 모양과 크기를 만들어요. 문·창문·가벽은 도면 위 도구로 넣어요.</p>
   ${fold('make', '공간 만들기', L.room.empty ? '아직 없음' : `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`, `<div class="row2" style="margin-bottom:8px"><button class="btn soft" data-pen="1" title="클릭: 모서리 · 누른 채 끌기: 곡선">${IC.pen}펜으로 그리기</button><button class="btn soft" data-xform="1" title="공간 전체를 상자 손잡이로 키우기 · 줄이기 · 돌리기 (T)">${IC.xform}크기 변형 <kbd>T</kbd></button></div><button class="btn ghost sm" data-clearroom="1" style="margin:-2px 0 8px;align-self:flex-start">벽 비우고 처음부터 그리기</button><div class="seg full" id="spMode"><button data-m="py" class="${sp.mode === 'py' ? 'on' : ''}">평수로</button><button data-m="shape" class="${sp.mode === 'shape' ? 'on' : ''}">모양 템플릿</button><button data-m="walk" class="${sp.mode === 'walk' ? 'on' : ''}">실측 입력</button></div>
     <div id="spBody" class="blk" style="border:0;padding:0"></div>`)}
-  ${fold('finish', '벽 · 바닥 마감', `${ui.texName(st.floorBase)} · ${ui.texName(st.wallTex || 'paint')}`, `<p class="note" style="margin:0">3D 보기와 제안서 3D 그림에 보여요. 바닥 무늬는 도면에도 연하게 보여요. 벽마다 다르게 하려면 도면에서 벽을 누르세요.</p>
-    <span class="lbl">바닥</span>${ui.texGrid('floor', st.floorBase)}
-    <span class="lbl">벽 (모든 벽)</span>${ui.texGrid('wall', st.wallTex || 'paint')}
-    <div class="row2"><label class="fld"><span>페인트 색</span><input type="color" id="wallColor" value="${U.esc(st.wallColor || '#eeede8')}"></label><label class="fld"><span>걸레받이</span><select id="baseboard">${[['dark', '블랙'], ['white', '화이트'], ['none', '없음']].map(([k, n]) => `<option value="${k}" ${(st.baseboard || 'dark') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>`)}
+  ${fold('finish', '벽 · 바닥 · 천장 마감', `${ui.texName(st.floorBase)} · ${ui.texName(st.wallTex || 'paint')} · ${((GP.TEX.ceil.find(t => t.id === (st.ceilTex || 'paint')) || {}).name || '흰 도장')}`, `<p class="note" style="margin:0">3D 보기와 제안서 3D 그림에 보여요. 바닥 무늬는 도면에도 연하게 보여요. 벽마다 다르게 하려면 도면에서 벽을 누르세요. 「색감 조절」로 밝기 · 대비 · 채도 · 색감을 바꿀 수 있어요.</p>
+    <span class="lbl">바닥</span>${ui.texGrid('floor', st.floorBase)}${ui.adjBlock('floor')}
+    <span class="lbl">벽 (모든 벽)</span>${ui.texGrid('wall', st.wallTex || 'paint')}${ui.adjBlock('wall')}
+    <div class="row2"><label class="fld"><span>페인트 색</span><input type="color" id="wallColor" value="${U.esc(st.wallColor || '#eeede8')}"></label><label class="fld"><span>걸레받이</span><select id="baseboard">${[['dark', '블랙'], ['white', '화이트'], ['none', '없음']].map(([k, n]) => `<option value="${k}" ${(st.baseboard || 'dark') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>
+    <span class="lbl">천장 <small class="note">(3D에서 안쪽에서 볼 때 · 걸어 보기)</small></span>${ui.texGrid('ceil', st.ceilTex || 'paint')}${ui.adjBlock('ceil')}`)}
   ${fold('ceil', '천장 높이', `${st.wallH}m`, `<label class="fld"><span>바닥에서 천장까지</span>${numI('ceilH', st.wallH, .05, 'm', 'min="2" max="8"')}</label><p class="note" style="margin:0">기구마다 쓸 때 필요한 높이(트레드밀 위 사람 키, 스텝밀 맨 위 계단 등)를 이 높이로 점검해요. 3D 벽 높이로도 쓰여요.</p>`)}
   ${fold('trace', '고객 도면 대고 그리기', GP.S.underlay ? '도면 깔림' : '', `<p class="note">받은 평면도 사진이나 캐드 파일(DXF)을 깔고 <b>펜</b>으로 벽 모서리를 따라 찍으면 실제 모양 그대로 만들 수 있어요. 그다음 확실히 아는 벽 하나의 길이를 넣으면 전체 크기가 맞춰져요.</p>
     <div class="row2"><label class="btn file" style="position:relative;overflow:hidden">이미지·PDF 캡처<input type="file" id="ulImg" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label><label class="btn file" style="position:relative;overflow:hidden">캐드 파일 (DXF)<input type="file" id="ulDxf" accept=".dxf" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label></div>
@@ -48,7 +49,7 @@ panels.renderSpace = () => {
 function foldVals() {
   const L = GP.L(), A = Math.abs(G.area(L.room.pts)), bb = G.bounds(L.room.pts), set = (id, v) => { const el = $(`#panel-space [data-fold="${id}"] .fd-v`); if (el) el.textContent = v; };
   set('make', L.room.empty ? '아직 없음' : `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`); set('ceil', `${GP.P.settings.wallH}m`); set('vt', `${L.room.pts.length - (GP.CV ? GP.CV.inner(L).size : 0)}개`);
-  set('finish', `${ui.texName(GP.P.settings.floorBase)} · ${ui.texName(GP.P.settings.wallTex || 'paint')}`);
+  set('finish', `${ui.texName(GP.P.settings.floorBase)} · ${ui.texName(GP.P.settings.wallTex || 'paint')} · ${((GP.TEX.ceil.find(t => t.id === (GP.P.settings.ceilTex || 'paint')) || {}).name || '흰 도장')}`);
 }
 panels.openFold = (id) => sp.open.add(id);
 GP.on('project', () => { sp.py = null; sp.walk = null; });      // a typed 평수 or half-entered wall walk belongs to the project it was typed in

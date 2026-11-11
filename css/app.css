@@ -604,8 +604,8 @@ details.more>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--i
 .fold>summary::-webkit-details-marker{display:none}
 .fold>summary::before{content:'';width:7px;height:7px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .15s;flex:none;margin-right:2px}
 .fold[open]>summary::before{transform:rotate(45deg)}
-.fold>summary .fd-t{flex:1}
-.fold>summary .fd-v{font:500 12px var(--f-mono);color:var(--muted)}
+.fold>summary .fd-t{flex:1 0 auto;white-space:nowrap}
+.fold>summary .fd-v{font:500 12px var(--f-mono);color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
 .fold>summary:hover{background:var(--panel-2);border-radius:12px}
 .fold .fd-b{display:flex;flex-direction:column;gap:10px;padding:2px 12px 12px}
 .eqc-box{display:flex;flex-direction:column;gap:5px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2);font-size:12.5px}
@@ -625,6 +625,7 @@ details.more>summary{cursor:pointer;font-size:12px;font-weight:600;color:var(--i
 .arc-sec .seg.full button{flex:1;font-size:12px}.rng .seg{display:flex;grid-column:2/4}.rng .seg button{flex:1;font-size:11.5px;padding:4px 2px}
 .rng{display:grid;grid-template-columns:58px minmax(0,1fr) 74px;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2)}.rng input[type=range]{width:100%;margin:0}.rng b{font:600 12px var(--f-mono);color:var(--ink);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hd.arcp{width:20px;height:20px;background:none;border:0;box-shadow:none;cursor:grab}.hd.arca{width:12px;height:12px;background:#fff;border:2px solid #E0622B;cursor:move}.hd.arcr{width:10px;height:10px;background:#fff;border:2px solid #E0622B;border-radius:2px;cursor:ew-resize}.hd.arcp::before{content:'';position:absolute;inset:4px;border-radius:2px;background:#E0622B;border:2px solid #fff;box-shadow:0 0 0 1px #E0622B,0 1px 3px rgba(0,0,0,.3);transform:rotate(45deg)}      /* (the diamond turns inside: turning the handle itself would turn its placement too) */
+.tex-adj{font-size:12.5px}.tex-adj>summary{cursor:pointer;color:var(--ink-2);padding:2px 0}.tex-adj>summary em{font-style:normal;color:var(--accent);font-size:11px;margin-left:4px}.tex-adj .rng{margin-top:6px}.tex-adj .btn{margin-top:6px}
 .pl-lead{display:flex;align-items:center;gap:7px;margin:0;font-size:12.5px;color:var(--muted)}
 .pl-lead svg{width:15px;height:15px;flex:none}
 .pl-groups button{flex:1;display:inline-flex;align-items:center;justify-content:center;gap:4px;padding:6px 4px}

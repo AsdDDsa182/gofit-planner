@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.19.0';
+GP.VERSION = '2.20.0';
 GP.APP_SUB = '짐 스튜디오'; GP.APP_NAME = 'GOFIT ' + GP.APP_SUB;      // the app's name: the top bar, window title, menus (manifest.webmanifest and index.html <title> say it too);
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
@@ -241,7 +241,7 @@ GP.newProject = (o) => {
   return {
     v: 2, id, name: o.name || '새 프로젝트', client: o.client || '', consultant: o.consultant || '',
     createdAt: Date.now(), updatedAt: Date.now(),
-    settings: { wallH: 2.8, wallColor: '#eeede8', floorBase: 'concrete', wallTex: 'paint', frameColor: 'black', seatColor: 'black', accent: '#f08a1c', shroud: '#141517' },      // floorBase / wallTex: GP.TEX ids; frameColor / seatColor: GP.EQ_FRAME / GP.EQ_SEAT ids (strength equipment)
+    settings: { wallH: 2.8, wallColor: '#eeede8', floorBase: 'concrete', wallTex: 'paint', frameColor: 'black', seatColor: 'black', ceilTex: 'paint', accent: '#f08a1c', shroud: '#141517' },      // floorBase / wallTex: GP.TEX ids; frameColor / seatColor: GP.EQ_FRAME / GP.EQ_SEAT ids (strength equipment)
     variants: [{ id: U.uid('v'), name: 'A안', layout: GP.newLayout(o.pts, o.empty) }], cur: 0,
     images: {},
   };
@@ -289,7 +289,8 @@ function sanitizeLayout(L) {
 }
 function sanitizeProject(p) {
   const s = p.settings, d = GP.newProject().settings; s.wallColor = sHex(s.wallColor, d.wallColor); s.wallH = U.clamp(sNum(s.wallH, d.wallH), 2, 8); s.accent = sHex(s.accent, d.accent); s.shroud = sHex(s.shroud, d.shroud);
-  for (const k of ['floorBase', 'wallTex', 'frameColor', 'seatColor']) s[k] = sWord(s[k]) || d[k]; if (s.baseboard != null && sWord(s.baseboard) === undefined) delete s.baseboard;
+  for (const k of ['floorBase', 'wallTex', 'frameColor', 'seatColor', 'ceilTex']) s[k] = sWord(s[k]) || d[k];
+  { const a = s.texAdj, o = {}; if (a && typeof a === 'object') for (const f of ['floor', 'wall', 'ceil']) if (a[f] && typeof a[f] === 'object') { const q = {}; for (const k of ['b', 'c', 's', 'w']) { const v = sNum(a[f][k]); if (v) q[k] = U.clamp(Math.round(v), -60, 60); } if (Object.keys(q).length) o[f] = q; } if (Object.keys(o).length) s.texAdj = o; else delete s.texAdj; } if (s.baseboard != null && sWord(s.baseboard) === undefined) delete s.baseboard;
   p.id = sWord(p.id) || U.uid('p'); p.name = sTxt(p.name, 120) || '새 프로젝트'; p.client = sTxt(p.client, 120); p.consultant = sTxt(p.consultant, 60); for (const k of ['createdAt', 'updatedAt']) p[k] = sNum(p[k], Date.now());
   for (const k of ['custName', 'custTel', 'siteAddr', 'consTel', 'consEmail']) if (p[k] != null) p[k] = sTxt(p[k], 160);
   for (const id of Object.keys(p.images)) { const im = p.images[id], ok = v => v && typeof v.src === 'string' && v.src.startsWith('data:image/'); if (!ok(im) || !WORD.test(id)) { delete p.images[id]; continue; } p.images[id] = { src: im.src, w: sNum(im.w, 1), h: sNum(im.h, 1), cut: im.cut === null ? null : ok(im.cut) ? { src: im.cut.src, w: sNum(im.cut.w, 1), h: sNum(im.cut.h, 1) } : undefined }; }

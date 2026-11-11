@@ -31,6 +31,18 @@ GP.TEX = {
     { id: 'floor_marble', name: '대리석', size: 1.2, rough: .3 },
     { id: 'floor_carpet', name: '카펫 타일', size: 1, rough: 1 },
     { id: 'floor_terrazzo', name: '테라조', size: 1, rough: .5 },
+    { id: 'floor_rubber_black', name: '스포츠 고무 (블랙)', size: 1, rough: .95 },
+    { id: 'floor_rubber_grey', name: '스포츠 고무 (그레이 칩)', size: 1, rough: .95 },
+    { id: 'floor_rubber_blue', name: '스포츠 고무 (블루 칩)', size: 1, rough: .95 },
+    { id: 'floor_laminate', name: '라미네이트 마루', size: 1.7, rough: .55 },
+    { id: 'floor_wood_brown', name: '원목 마루', size: 1.7, rough: .6 },
+    { id: 'floor_parquet', name: '파케이', size: 2.25, rough: .55 },
+    { id: 'floor_parquet_diag', name: '사선 파케이', size: 2.36, rough: .55 },
+    { id: 'floor_wood_dark', name: '다크 우드 판재', size: 2, rough: .7 },
+    { id: 'floor_concrete_dark', name: '다크 콘크리트', size: 2, rough: .6 },
+    { id: 'floor_check_tile', name: '체크 타일', size: 3, rough: .4 },
+    { id: 'floor_stone_beige', name: '베이지 석재 타일', size: 1.5, rough: .45 },
+    { id: 'floor_terracotta', name: '테라코타 타일', size: 2.08, rough: .7 },
   ],
   wall: [
     { id: 'paint', name: '페인트' },
@@ -41,8 +53,33 @@ GP.TEX = {
     { id: 'wall_subway_tile', name: '서브웨이 타일', size: .9, rough: .25 },
     { id: 'wall_slate', name: '슬레이트 석재', size: 1.2, rough: .85 },
     { id: 'wall_plaster_dark', name: '다크 미장', size: 2, rough: .85 },
+    { id: 'wall_plaster_white', name: '흰 미장', size: 1, rough: .9 },
+    { id: 'wall_plaster_grey', name: '그레이 미장', size: 3.2, rough: .9 },
+    { id: 'wall_beige', name: '베이지 도장', size: 3, rough: .9 },
+    { id: 'wall_brick_grey', name: '회색 벽돌', size: 2, rough: .9 },
+    { id: 'wall_brick_large', name: '큰 적벽돌', size: 2, rough: .9 },
+    { id: 'wall_brick_blue', name: '블루 페인트 벽돌', size: 1.8, rough: .85 },
+    { id: 'wall_sandstone', name: '샌드스톤 벽돌', size: 2, rough: .9 },
+    { id: 'wall_limestone', name: '석회암 블록', size: 3, rough: .9 },
+    { id: 'wall_planks_white', name: '화이트워시 판재', size: 1, rough: .8 },
+    { id: 'wall_wood_panel', name: '우드 패널', size: .6, rough: .7 },
+    { id: 'wall_plywood', name: '합판', size: 1.2, rough: .75 },
+    { id: 'wall_metal_green', name: '골강판', size: 3, rough: .55 },
+    { id: 'wall_climbing', name: '클라이밍 월', size: 2.2, rough: .85 },
+  ],
+  ceil: [
+    { id: 'paint', name: '흰 도장' },
+    { id: 'ceil_mineral', name: '텍스 천장 (600각)', size: 1.2, rough: .95 },
+    { id: 'ceil_gypsum', name: '석고보드 줄눈', size: 2.4, rough: .9 },
+    { id: 'ceil_black', name: '노출 천장 (블랙)', size: 2.4, rough: .9 },
+    { id: 'ceil_concrete', name: '노출 콘크리트', size: 1.2, rough: .9 },
+    { id: 'ceil_wood_louver', name: '우드 루버', size: 1.2, rough: .7 },
+    { id: 'ceil_perforated', name: '타공 금속판', size: 1.2, rough: .5 },
+    { id: 'ceil_glow', name: '바리솔 (빛 천장)', size: 2, rough: .9 },
   ],
 };
+/* finish adjustments per surface (settings.texAdj[floor|wall|ceil]): brightness, contrast, saturation, warmth, each −60..60 */
+GP.TEX_ADJ = [['b', '밝기'], ['c', '대비'], ['s', '채도'], ['w', '색감']];
 /* colours for doors, windows, partitions (frame / leaf), glass and handles; a hex string works too */
 GP.FINISH = {
   white: { n: '화이트', c: '#f1f1ee' }, ivory: { n: '아이보리', c: '#e8e2d2' }, grey: { n: '그레이', c: '#a7abaf' }, charcoal: { n: '차콜', c: '#4a4e53' }, black: { n: '블랙', c: '#232528' },
@@ -56,7 +93,9 @@ GP.logoImage = (it) => {
   if (im.cut === undefined && !im._cutting) { im._cutting = true; U.knockout(im.src).then(r => { im.cut = r; delete im._cutting; GP.S.invalidate(); if (GP.V3 && GP.V3.on) GP.V3.rebuild(); GP.emit('dirty'); }).catch(() => { im.cut = null; delete im._cutting; }); }
   return !it.bgKeep && im.cut ? im.cut : im;
 };
-GP.texDef = id => GP.TEX.floor.find(t => t.id === id) || GP.TEX.wall.find(t => t.id === id) || null;
+GP.texDef = id => GP.TEX.floor.find(t => t.id === id) || GP.TEX.wall.find(t => t.id === id) || GP.TEX.ceil.find(t => t.id === id && t.size) || null;
+GP.texFilter = a => { a = a || {}; return `brightness(${1 + (a.b || 0) / 100}) contrast(${1 + (a.c || 0) / 100}) saturate(${1 + (a.s || 0) / 100})`; };
+GP.texAdjKey = a => a ? GP.TEX_ADJ.map(([k]) => Math.round(a[k] || 0)).join(',') : '';
 GP.texUrl = (id, thumb) => `assets/tex/${thumb ? 'thumb/' : ''}${id}.jpg`;
 GP.EQUIP_CATS = new Set(['cardio', 'machine', 'plate', 'cable', 'rack', 'bench', 'storage', 'func', 'stretch', 'air']);
 /* Colour options of strength equipment: the paint (frame, brackets, the stack tower's shrouds) and the upholstery.

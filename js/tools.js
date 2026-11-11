@@ -738,6 +738,7 @@ act.setZ = (it, zAbs) => {
 act.setTex = (kind, id, wall) => {
   const P = GP.P, L = GP.L();
   if (kind === 'floor') P.settings.floorBase = id || 'concrete';
+  else if (kind === 'ceil') P.settings.ceilTex = id || 'paint';
   else if (wall != null) { L.wallTex = L.wallTex || {}; const cv = GP.CV && GP.CV.of(L, wall), N = L.room.pts.length, ws = cv ? [...Array(cv.n).keys()].map(k => (cv.s + k) % N) : [wall]; ws.forEach(w => { if (id) L.wallTex[w] = id; else delete L.wallTex[w]; }); }      // (a curve: all its pieces)
   else P.settings.wallTex = id || 'paint';
   GP.changed(['room', 'settings']); ui.renderInspector();
