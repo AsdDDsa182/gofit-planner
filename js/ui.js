@@ -161,6 +161,7 @@ const STEP_TOOLS = {
 };
 ui.setStep = (step) => {
   if (!STEP_TOOLS[step]) step = 'place';
+  if (step !== 'space' && !GP.viewOnly && GP.roomEmpty && GP.roomEmpty()) step = 'space';      // no space yet: equipment and floor wait
   ui.step = step; $$('#steps button').forEach(b => b.classList.toggle('on', b.dataset.step === step));
   if (!$('#quoteSheet').hidden) ui.closeQuote();
   ['space', 'place', 'floor'].forEach(s => { $('#panel-' + s).hidden = s !== step; });
@@ -187,7 +188,7 @@ ui.renderGuideBits = () => {
     eh.innerHTML = ''; eh.hidden = true; void html; ui.setHint();   // the hint line says it now (no card over the plan)
   }
 };
-$('#stepNext') && $('#stepNext').addEventListener('click', e => { const b = e.target.closest('[data-next]'); if (!b) return; const n = b.dataset.next; if (n === 'quote') ui.openQuote(); else ui.setStep(n); $('#side .panel:not([hidden])') && ($('#side .panel:not([hidden])').scrollTop = 0); });
+$('#stepNext') && $('#stepNext').addEventListener('click', e => { const b = e.target.closest('[data-next]'); if (!b) return; const n = b.dataset.next; if (n === 'quote') ui.openQuote(); else { if (n !== 'space' && GP.roomEmpty()) GP.toast('먼저 공간을 만들어 주세요. 가운데 「공간 만들기」에서 펜으로 그리거나 평수로 시작할 수 있어요', { bad: true, ms: 4500 }); ui.setStep(n); } $('#side .panel:not([hidden])') && ($('#side .panel:not([hidden])').scrollTop = 0); });
 GP.on('changed', () => ui.renderGuideBits()); GP.on('placing', () => ui.renderGuideBits()); GP.on('project', () => ui.renderGuideBits());
 ui.renderTools = () => {
   const t = $('#tools'); const list = STEP_TOOLS[ui.step] || [];
@@ -202,7 +203,7 @@ ui.setTool = (id) => {
   ui.tool = id;
   ui.renderTools(); ui.setHint(); GP.emit('tool', id); GP.emit('overlay'); GP.S.invalidate();
 };
-$('#steps').addEventListener('click', e => { const b = e.target.closest('[data-step]'); if (b) ui.setStep(b.dataset.step); });
+$('#steps').addEventListener('click', e => { const b = e.target.closest('[data-step]'); if (!b) return; if (b.dataset.step !== 'space' && GP.roomEmpty()) GP.toast('먼저 공간을 만들어 주세요. 가운데 「공간 만들기」에서 펜으로 그리거나 평수로 시작할 수 있어요', { bad: true, ms: 4500 }); ui.setStep(b.dataset.step); });
 /* divider shadow under the step tabs while the panel is scrolled */
 ['space', 'place', 'floor'].forEach(s => $('#panel-' + s).addEventListener('scroll', e => $('#side').classList.toggle('scrolled', e.target.scrollTop > 2), { passive: true }));
 /* colour / line-only (CAD) style — applies to the plan, the 3D view and exports */

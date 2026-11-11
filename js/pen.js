@@ -286,8 +286,8 @@ pen.bar = () => {
   bar.querySelector('.db-title').textContent = n ? `벽 그리는 중 · 점 ${n}개` : '펜으로 벽 그리기';
   bar.querySelector('.db-info').innerHTML = st && st.num ? `길이 <b>${st.num} m</b> 입력 중 · <kbd>Enter</kbd>로 확정`
     : !n ? '모서리를 <b>클릭</b>하세요. 휘어진 곳은 <b>누른 채 끌면</b> 곡선이 돼요.'
-    : n < 3 ? '다음 모서리를 <b>클릭</b> · 곡선은 <b>누른 채 끌기</b> · 숫자를 치고 Enter: 그 길이로 · <kbd>Shift</kbd> 45° · <kbd>Ctrl</kbd> 1cm'
-    : '<b>첫 점</b>을 누르면 완성돼요 · 곡선은 <b>누른 채 끌기</b> (<kbd>Alt</kbd>: 한쪽 손잡이만)';
+    : n < 3 ? (st.A[n - 1].out ? '다음 모서리를 <b>클릭</b> · 곡선을 끊으려면 마지막 점을 <kbd>Alt</kbd>+클릭' : '다음 모서리를 <b>클릭</b> · 곡선은 <b>누른 채 끌기</b> · 숫자를 치고 Enter: 그 길이로 · <kbd>Shift</kbd> 45° · <kbd>Ctrl</kbd> 1cm')
+    : '<b>첫 점</b>을 누르면 완성돼요 · 곡선은 <b>누른 채 끌기</b> · 마지막 점 <kbd>Alt</kbd>+클릭: 곡선 끊기';
   bar.querySelector('[data-pb="done"]').hidden = n < 3; bar.querySelector('[data-pb="undo"]').hidden = !n;
 };
 bar.addEventListener('click', e => { const b = e.target.closest('[data-pb]'); if (!b) return; const a = b.dataset.pb; if (a === 'done') finish(); else if (a === 'undo') undo(); else if (a === 'cancel') { if (st) pen.cancel(); else ui().setTool('select'); } pen.bar(); });
@@ -304,7 +304,8 @@ function snapA(fp, e) {
 pen.down = (e, fp) => {
   if (!st) { st = { A: [] }; if (ui().sel.length) ui().clearSel(); }
   if (st.A.length >= 3 && scrDist(st.A[0].p, e) < 11) { st.down = { close: true, sx: e.clientX, sy: e.clientY }; return; }
-  const p = snapA(fp, e); const last = st.A[st.A.length - 1]; if (last && G.len(last.p, p) < .02) { st.down = { idx: st.A.length - 1, sx: e.clientX, sy: e.clientY }; return; }
+  const last = st.A[st.A.length - 1]; if (last && scrDist(last.p, e) < 10) { st.down = { idx: st.A.length - 1, sx: e.clientX, sy: e.clientY, alt: e.altKey }; return; }      // the last point again: drag = its handles, Alt+click = cut
+  const p = snapA(fp, e);
   st.A.push({ p, in: null, out: null }); st.num = ''; st.down = { idx: st.A.length - 1, sx: e.clientX, sy: e.clientY }; GP.emit('overlay'); pen.bar();
 };
 pen.move = (e) => {
@@ -317,11 +318,15 @@ pen.move = (e) => {
     if (st.down.close) { a.in = mul(v, -1); if (a.out && !e.altKey) a.out = v; }
     else { a.out = v; if (!e.altKey) a.in = mul(v, -1); }
     ui().setHint(`곡선 손잡이 <b>${U.cm(vlen(v))}cm</b> · <kbd>Alt</kbd> 한쪽만 · <kbd>Shift</kbd> 45°`);
-  } else if (st) { st.cur = snapA(fp, e); st.hoverFirst = st.A.length >= 3 && scrDist(st.A[0].p, e) < 11; GP.S.canvas.style.cursor = st.hoverFirst ? 'pointer' : 'crosshair'; }
+  } else if (st) { st.cur = snapA(fp, e); st.hoverFirst = st.A.length >= 3 && scrDist(st.A[0].p, e) < 11; const onLast = st.A.length && scrDist(st.A[st.A.length - 1].p, e) < 10; st.hoverLast = onLast; GP.S.canvas.style.cursor = st.hoverFirst ? 'pointer' : onLast ? (e.altKey ? 'alias' : 'move') : 'crosshair'; }
   else { GP.S.canvas.style.cursor = 'crosshair'; }
   GP.emit('overlay');
 };
-pen.up = () => { if (!st || !st.down) return; const d = st.down; st.down = null; ui().setHint(); if (d.close) finish(); GP.emit('overlay'); pen.bar(); };
+pen.up = () => {
+  if (!st || !st.down) return; const d = st.down; st.down = null; ui().setHint();
+  if (d.alt && !d.moved && d.idx != null) { const a = st.A[d.idx]; if (a && a.out) { a.out = null; GP.toast('여기서 곡선을 끊었어요. 다음 벽은 곧게 이어져요', { ms: 2500 }); } }
+  if (d.close) finish(); GP.emit('overlay'); pen.bar();
+};
 pen.dbl = () => { if (st && st.A.length >= 3) finish(); };
 pen.key = (e) => {
   if (GP.XF && GP.XF.key(e)) return true;
@@ -374,7 +379,8 @@ pen.svg = (P) => {
   for (let k = 1; k < m; k++) path.push(seg(A[k - 1], A[k]));
   const last = A[m - 1], cur = st.cur && !st.down ? st.cur : null;
   html += `<path d="${path.join(' ')}" stroke="#1F2429" stroke-width="2.5" fill="none" stroke-linejoin="round" stroke-linecap="round" opacity=".85"/>`;
-  if (cur) { const close = st.hoverFirst; const tgt = close ? A[0] : { p: cur, in: null }; html += `<path d="M${scr(last.p)} ${seg(last, tgt)}" stroke="#2450E0" stroke-width="2.5" fill="none" stroke-dasharray="${close ? '0' : '6 4'}"/>`; }
+  if (cur && !st.hoverLast) { const close = st.hoverFirst; const tgt = close ? A[0] : { p: cur, in: null }; html += `<path d="M${scr(last.p)} ${seg(last, tgt)}" stroke="#2450E0" stroke-width="2.5" fill="none" stroke-dasharray="${close ? '0' : '6 4'}"/>`; }
+  if (st.hoverLast && last.out && m > 0) { const [x, y] = S.toScreen(last.p[0], 0, last.p[1]); html += `<g transform="translate(${x},${y - 22})"><rect x="-62" y="-11" width="124" height="19" rx="4" fill="#E0622B"/><text x="0" y="2.5" text-anchor="middle" font-size="11.5" font-weight="700" fill="#fff" font-family="Pretendard,Malgun Gothic,sans-serif">Alt+클릭: 곡선 끊기</text></g>`; }
   // handles of the point being dragged / the last point
   const hp = st.down && st.down.close ? A[0] : st.down ? A[st.down.idx] : last;
   for (const v of [hp.in, hp.out]) if (v && vlen(v) > .01) { const [ax, ay] = S.toScreen(hp.p[0], 0, hp.p[1]), q = add(hp.p, v), [bx, by] = S.toScreen(q[0], 0, q[1]); html += `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="#E0622B" stroke-width="1.4"/><circle cx="${bx}" cy="${by}" r="4.5" fill="#E0622B" stroke="#fff" stroke-width="1.5"/>`; }
