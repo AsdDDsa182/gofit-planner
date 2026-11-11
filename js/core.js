@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.25.7';
+GP.VERSION = '2.25.8';
 GP.APP_SUB = '짐 스튜디오'; GP.APP_NAME = 'GOFIT ' + GP.APP_SUB;      // the app's name: the top bar, window title, menus (manifest.webmanifest and index.html <title> say it too);
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });

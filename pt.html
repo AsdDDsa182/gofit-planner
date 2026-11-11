@@ -49,8 +49,8 @@
   <label>속도 <select id="load" title="그래픽카드를 얼마나 쓸지 — 빠르게는 그동안 컴퓨터가 버벅일 수 있어요"><option value=".8" selected>빠르게</option><option value=".45">보통</option><option value=".2">조용히</option></select></label>
   <label>해상도 <select id="res"><option value="auto" selected>자동 (빠름)</option><option value="1">선명하게 (원본)</option><option value="0.5">절반</option></select></label>
   <label title="샘플이 적을 때 거친 점을 부드럽게 지워요"><input type="checkbox" id="dn" checked> 노이즈 제거</label>
-  <label>밝기 <input type="range" id="exp" min="-2" max="2" step="0.1" value="0"></label>
-  <label>조명 세기 <input type="range" id="lit" min="0" max="3" step="0.1" value="1"></label>
+  <label title="카메라 노출처럼 그림 전체(실내 · 창밖)를 밝게 · 어둡게 — 다시 계산하지 않아요">노출(전체 밝기) <input type="range" id="exp" min="-2" max="2" step="0.1" value="0"></label>
+  <label title="천장 조명만 세게 · 약하게 — 창밖 하늘 · 햇빛은 그대로라 실내와 바깥의 밝기 차이가 달라져요 (다시 계산해요)">천장 조명 세기 <input type="range" id="lit" min="0" max="3" step="0.1" value="1"></label>
   <span class="sep"></span>
   <button id="pause">일시정지</button><button id="save" class="pri">이미지 저장</button><button id="close">닫기</button>
 </div>
@@ -163,7 +163,7 @@ window.PT = { get pt() { return pt; }, get scene() { return scene; }, get camera
 $('#goal').onchange = e => { goal = +e.target.value; last = -1; };
 $('#res').onchange = e => { RES = e.target.value; pt.renderScale = autoScale(); pt.reset(); };
 $('#dn').onchange = e => { DENOISE = e.target.checked; pt.reset(); };
-$('#exp').oninput = e => { renderer.toneMappingExposure = Math.pow(2, +e.target.value); pt.reset(); };
+$('#exp').oninput = e => { renderer.toneMappingExposure = Math.pow(2, +e.target.value); if (pt && goal && pt.samples >= goal) pt.renderSample(); };      // exposure is applied when the picture is shown: nothing to compute again (a finished picture is drawn once more)
 $('#lit').oninput = () => { if (D) { setLights(); pt.reset(); } };
 $('#pause').onclick = e => { running = !running; e.target.textContent = running ? '일시정지' : '계속'; };
 $('#save').onclick = () => { cv.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `GOFIT_실사렌더_${Math.floor(pt.samples)}샘플.png`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png'); };
