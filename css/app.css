@@ -164,7 +164,7 @@ input[type=color]{width:34px;height:28px;padding:2px;border-radius:7px}
 #overlay>div{position:absolute;inset:0}
 .ov{position:absolute;left:0;top:0;will-change:transform;white-space:nowrap}
 .wl{font:600 11.5px/1 var(--f-mono);color:#2A3037;background:rgba(251,251,249,.95);padding:4px 6px;border-radius:4px;box-shadow:0 0 0 1px rgba(40,46,52,.14)}
-.wl.edit{pointer-events:auto;cursor:text;box-shadow:0 0 0 1px #2450E0}
+.wl.edit{pointer-events:auto;cursor:text;box-shadow:0 0 0 1px rgba(40,46,52,.22)}.wl.edit:hover{box-shadow:0 0 0 1.5px #2450E0;color:#2450E0}
 .wl.hi{background:#2450E0;color:#fff;box-shadow:none}
 .wl input{width:74px;border:0;outline:none;font:600 12px var(--f-mono);padding:3px 4px;background:#fff;color:#1B2024}
 .hd{width:16px;height:16px;border-radius:50%;background:#fff;border:2px solid #2450E0;color:#2450E0;font:700 8.5px/12px var(--f-mono);text-align:center;cursor:move;pointer-events:auto;touch-action:none;box-shadow:0 1px 3px rgba(0,0,0,.25)}
@@ -172,7 +172,10 @@ input[type=color]{width:34px;height:28px;padding:2px;border-radius:7px}
 .hd.sq{border-radius:3px;width:13px;height:13px}
 .hd.side{width:24px;height:10px;border-radius:5px;background:#2450E0;border:2px solid #fff;box-shadow:0 0 0 1px #2450E0,0 1px 3px rgba(0,0,0,.25)}
 .wl.side{font-size:11px;padding:3px 5px;background:rgba(255,255,255,.92)}
-.hd.mid{background:#2450E0;color:#fff;font:700 14px/12px var(--f-ui);opacity:.85;cursor:copy}
+.hd.vx{border-color:#2A3037;color:#2A3037}.hd.vx.sel{background:#2450E0;border-color:#2450E0;color:#fff}
+.hd.mid{width:18px;height:18px;background:#16A05A;border:2px solid #fff;color:#fff;font:700 15px/14px var(--f-ui);box-shadow:0 0 0 1px #16A05A,0 1px 3px rgba(0,0,0,.3);opacity:0;transition:opacity .12s;cursor:copy}
+.hd.mid.show,.hd.mid:hover{opacity:1}
+@media (hover:none){.hd.mid{opacity:.9}}
 .hd.rot{border-color:#E0622B;color:#E0622B;cursor:grab}
 .hd.oe{border-radius:3px;width:12px;height:22px;border-color:#E0622B;background:#fff;cursor:ew-resize}
 .ang{font:600 10.5px/1 var(--f-mono);color:#6A4A00;background:rgba(255,236,190,.95);padding:3px 5px;border-radius:4px}

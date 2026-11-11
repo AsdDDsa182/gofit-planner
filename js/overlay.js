@@ -66,9 +66,9 @@ OV.syncHandles = () => {
     for (let i = 0; i < segs; i++) {
       const a = P[i], b = P[(i + 1) % n], mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
       if (sizable) { const e = G.edge(P, i); let r = Math.atan2(b[1] - a[1], b[0] - a[0]) / U.DEG; if (r > 90) r -= 180; if (r <= -90) r += 180; hspecs.push({ cls: 'ov hd side', html: '', pos: mid, h: 'e', i, rot: r, cur: GP.tools.resizeCursor(-e.nx, -e.nz), title: '끌어서 크기 조절 · Alt+끌기: 변 꺾기' }); }
-      else hspecs.push({ cls: 'ov hd mid', html: '+', pos: mid, h: 'm', i, title: '끌어서 꺾기' });
+      else hspecs.push({ cls: 'ov hd mid' + (GP.tools.hoverSeg === i ? ' show' : ''), html: '+', pos: mid, h: 'm', i, title: '점 추가 · 끌면 그 자리에서 벽이 꺾여요 (벽을 더블클릭해도 점이 생겨요)' });
     }
-    for (let i = 0; i < n; i++) hspecs.push({ cls: 'ov hd' + (GP.tools.selV === i || GP.tools.selVs.has(i) ? ' sel' : ''), html: room ? i + 1 : '', pos: P[i], h: 'v', i, title: sizable ? '끌어서 크기 조절 (두 변 함께) · Alt+끌기: 이 점만 옮기기 · Shift+클릭 여러 개 선택 · 더블클릭 삭제' : '끌어서 이동 · Shift+클릭 여러 개 선택 · 더블클릭 삭제' });
+    for (let i = 0; i < n; i++) hspecs.push({ cls: 'ov hd vx' + (GP.tools.selV === i || GP.tools.selVs.has(i) ? ' sel' : ''), html: room ? i + 1 : '', pos: P[i], h: 'v', i, title: sizable ? '끌어서 크기 조절 (두 변 함께) · Alt+끌기: 이 점만 옮기기 · Shift+클릭 여러 개 선택 · 더블클릭 삭제' : '끌어서 이동 (Ctrl: 1cm 미세 · Alt: 자유) · 방향키 1cm, Shift+방향키 10cm · Shift+클릭 여러 개 선택 · 더블클릭 삭제' });
   }
   const its = u.selItems();
   if (its.length === 1 && u.sel.length === 1 && u.tool === 'select') {

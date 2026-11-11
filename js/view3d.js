@@ -441,7 +441,7 @@ function dragTo(e) {
   const d = mv; if (e.pointerId !== d.id) return;
   if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 4) return;
   const fp = floorAt(e); if (!fp) return; d.moved = true; GP.tip.hide();
-  GP.tools.moveItems(d, fp, e.altKey);
+  const q = GP.tools.gridOf(e); GP.tools.moveItems(d, fp, e.altKey, q.zoom ? .05 : q.g);      // (the plan's zoom says nothing here)
   for (const s of d.start) { const it = GP.findItem(s.uid), r = roots.get(s.uid); if (it && r) { r.position.x = it.x; r.position.z = it.z; r.rotation.y = -it.rot * DEG; } }
   markSel(); dirty = true;
 }
