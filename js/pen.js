@@ -573,70 +573,71 @@ ARC.followWall = () => {
   }
   GP.changed('items'); GP.toast(`${rows.length}대를 곡선 벽을 따라 놓았어요${T > D.L ? ' · 곡선보다 줄이 길어서 끝쪽 기구는 곡선 밖에 걸쳐요' : ''}`, { ms: 3500 });
 };
-/* bending: a session per selection keeps the straight row it started from, the angle and the centre of the bend (0 = the first
-   end, 1 = the other, .5 = the middle; the item there stays put and unturned, the row curls away from it). Moving the centre or the
-   angle again works from that same straight row; anything else that moves the machines starts a new session. */
+/* pulling part of a row (like a magnet / Photoshop's puppet pin): the selected machines are held where they were; a point (◆) pulled
+   away from its place on the row drags the machines within a dashed circle round that place along with it — the nearest most,
+   fading to none at the circle, those outside it stay exactly — and each one turns with the row's new line there.
+   Session per selection (in the first machine's frame: x along the row, +z its front): the row as it was, the place (anchor),
+   the pull, the circle's radius. Anything else that moves the machines starts a new session. */
 let bs = null, arcBusy = false;
 const selKey = () => ui().selItems().map(it => it.uid).sort().join(',');
 function session() {
   const its = ui().selItems(); if (its.length < 2) return null; const key = selKey();
-  if (!bs || bs.key !== key) { const snap = its.map(it => ({ it, x: it.x, z: it.z, rot: it.rot })), ref = snap[0], loc = snap.map(q => { const [lx, lz] = G.w2l(ref.x, ref.z, ref.rot, q.x, q.z); return { q, lx, lz }; }); const x0 = Math.min(...loc.map(o => o.lx)), x1 = Math.max(...loc.map(o => o.lx)); bs = { key, snap, ref, loc, x0, x1, z0: loc.reduce((t, o) => t + o.lz, 0) / loc.length, deg: 0, pivot: .5 }; }
+  if (!bs || bs.key !== key) {
+    const snap = its.map(it => ({ it, x: it.x, z: it.z, rot: it.rot })), ref = snap[0], loc = snap.map(q => { const [lx, lz] = G.w2l(ref.x, ref.z, ref.rot, q.x, q.z); return { q, lx, lz }; });
+    const x0 = Math.min(...loc.map(o => o.lx)), x1 = Math.max(...loc.map(o => o.lx)), z0 = loc.reduce((t, o) => t + o.lz, 0) / loc.length;
+    bs = { key, snap, ref, loc, x0, x1, z0, anchor: [(x0 + x1) / 2, z0], pull: [0, 0], R: Math.max(1, (x1 - x0) / 2) };
+  }
   return bs;
 }
-function bendApply(commit) {
-  const S0 = session(); if (!S0) return; const { ref, loc, x0, x1, z0 } = S0, span = x1 - x0, p = x0 + span * S0.pivot, kap = span > .1 ? S0.deg * DEGR / span : 0;
+const wOf = (r, R) => r >= R ? 0 : (1 - (r / R) ** 2) ** 2;      // 1 at the place, 0 at the circle, smooth both ends
+function pullApply(commit) {
+  const S0 = session(); if (!S0) return; const { ref, loc, anchor: A, pull: D, R } = S0;
   for (const o of loc) {
-    if (Math.abs(kap) < 1e-4) { o.q.it.x = o.q.x; o.q.it.z = o.q.z; o.q.it.rot = o.q.rot; continue; }
-    const s = o.lx - p, R = 1 / kap + (o.lz - z0), lx = p + R * Math.sin(kap * s), lz = z0 - 1 / kap + R * Math.cos(kap * s), [x, z] = G.l2w(ref.x, ref.z, ref.rot, lx, lz);
-    o.q.it.x = U.r3(x); o.q.it.z = U.r3(z); o.q.it.rot = U.normRot(o.q.rot - kap * s / DEGR);
+    const dx = o.lx - A[0], dz = o.lz - A[1], r = Math.hypot(dx, dz), w = wOf(r, R);
+    if (!w) { o.q.it.x = o.q.x; o.q.it.z = o.q.z; o.q.it.rot = o.q.rot; continue; }
+    const dw = -4 * (1 - (r / R) ** 2) * dx / (R * R), phi = Math.atan2(dw * D[1], 1 + dw * D[0]);      // the row's new direction there: d/dx of (x + w·Dx, z + w·Dz)
+    const [x, z] = G.l2w(ref.x, ref.z, ref.rot, o.lx + w * D[0], o.lz + w * D[1]); o.q.it.x = U.r3(x); o.q.it.z = U.r3(z); o.q.it.rot = U.normRot(o.q.rot + phi / DEGR);
   }
   if (commit) { arcBusy = true; GP.changed('items'); arcBusy = false; ui().renderInspector(); } else { GP.checks.quick(); GP.S.invalidate(); GP.emit('overlay'); }
 }
-ARC.bend = (deg, done) => { const S0 = session(); if (!S0) return; S0.deg = deg; bendApply(done); };
-ARC.pivotTo = (v, done) => { const S0 = session(); if (!S0) return; S0.pivot = U.clamp(v, 0, 1); bendApply(done); };
-ARC.deg = () => bs && bs.key === selKey() ? bs.deg : 0;
-ARC.pivot = () => bs && bs.key === selKey() ? bs.pivot : .5;
-const pivotName = v => v < .02 ? '처음 고른 쪽 끝' : v > .98 ? '반대쪽 끝' : Math.abs(v - .5) < .02 ? '가운데' : `${Math.round(v * 100)}%`;
-ARC.pivotText = () => pivotName(ARC.pivot());
-ARC.straight = () => { const S0 = session(); if (!S0) return; S0.deg = 0; bendApply(true); };
-ARC.center = () => ARC.pivotTo(.5, true);
-GP.on('changed', () => { if (!arcBusy && bs) bs = null; });      // moved some other way: the next bend starts from where they are
-/* the control point: off the row by d → bent by d / (row length) × 120° (as far off as the row is long: 120°); in front: front
-   convex, behind: concave. Along the row: the centre of the bend. */
-const GAIN = 120;
-function devOf(S0, deg) { return deg / GAIN * (S0.x1 - S0.x0); }
-function degFor(S0, d) { const v = d / (S0.x1 - S0.x0) * GAIN; return Math.abs(v) < .5 ? 0 : Math.round(U.clamp(v, -150, 150)); }
+ARC.radius = () => bs && bs.key === selKey() ? bs.R : null;
+ARC.setRadius = (R, done) => { const S0 = session(); if (!S0) return; S0.R = Math.max(.3, R); pullApply(done); };
+ARC.straight = () => { const S0 = session(); if (!S0) return; S0.pull = [0, 0]; pullApply(true); };
+ARC.center = () => {}; ARC.deg = () => 0; ARC.pivot = () => .5; ARC.pivotText = () => '';      // (the earlier arc controls)
+GP.on('changed', () => { if (!arcBusy && bs) bs = null; });      // moved some other way: the next pull starts from where they are
 function frame() {
   const u = ui(); if (GP.viewOnly || u.tool !== 'select' || u.step !== 'place' || u.selItems().length < 2 || u.sel.length !== u.selItems().length) return null;
   if (bs && bs.key === selKey()) return bs;
-  const its = u.selItems(), ref = its[0], l = its.map(it => G.w2l(ref.x, ref.z, ref.rot, it.x, it.z)); return { ref, x0: Math.min(...l.map(v => v[0])), x1: Math.max(...l.map(v => v[0])), z0: l.reduce((t, v) => t + v[1], 0) / l.length, deg: 0, pivot: .5 };
+  const its = u.selItems(), ref = its[0], l = its.map(it => G.w2l(ref.x, ref.z, ref.rot, it.x, it.z)), x0 = Math.min(...l.map(v => v[0])), x1 = Math.max(...l.map(v => v[0])), z0 = l.reduce((t, v) => t + v[1], 0) / l.length;
+  return { ref, x0, x1, z0, anchor: [(x0 + x1) / 2, z0], pull: [0, 0], R: Math.max(1, (x1 - x0) / 2) };
 }
+const W_ = (F, p) => G.l2w(F.ref.x, F.ref.z, F.ref.rot, p[0], p[1]);
 ARC.handles = () => {
-  const F = frame(); if (!F || F.x1 - F.x0 < .1) return []; const span = F.x1 - F.x0, base = F.x0 + span * F.pivot, pos = G.l2w(F.ref.x, F.ref.z, F.ref.rot, base, F.z0 + devOf(F, F.deg));      // (straight: on the row, at its centre)
-  return [{ cls: 'ov hd arcp', html: '', pos, h: 'arcp', title: '끌어서 줄 휘기 · 줄에서 멀리 끌수록 많이 휘어요 · 좌우로 옮기면 휘는 중심이 바뀌어요' }];
+  const F = frame(); if (!F) return []; const A = F.anchor, D = F.pull;
+  const out = [{ cls: 'ov hd arcp', html: '', pos: W_(F, [A[0] + D[0], A[1] + D[1] + GP.S.mpp() * 30]), h: 'arcp', title: '끌어당기기 · 점선 원 안의 기구가 따라와요 (가까울수록 많이)' }];
+  out.push({ cls: 'ov hd arca', html: '', pos: W_(F, A), h: 'arca', title: '잡을 곳 옮기기 (원이 같이 움직여요)' });
+  out.push({ cls: 'ov hd arcr', html: '', pos: W_(F, [A[0] + F.R, A[1]]), h: 'arcr', title: '영향 범위 크기 바꾸기' });
+  return out;
 };
 ARC.svg = () => {
-  const F = frame(); if (!F || F.x1 - F.x0 < .1) return ''; const S = GP.S, span = F.x1 - F.x0, b = G.l2w(F.ref.x, F.ref.z, F.ref.rot, F.x0 + span * F.pivot, F.z0), h = ARC.handles()[0]; if (!h) return '';
-  const [bx, by] = S.toScreen(b[0], 0, b[1]), [hx, hy] = S.toScreen(h.pos[0], 0, h.pos[1]), txt = F.deg ? `휘기 ${F.deg > 0 ? '+' : ''}${F.deg}° · ${pivotName(F.pivot)}` : '끌어서 휘기';
-  return `<line x1="${bx}" y1="${by}" x2="${hx}" y2="${hy}" stroke="#E0622B" stroke-width="1.4" stroke-dasharray="4 3"/><circle cx="${bx}" cy="${by}" r="3" fill="#E0622B"/><g transform="translate(${hx},${hy - 20})"><rect x="${-(txt.length * 6.2 + 12) / 2}" y="-10" width="${txt.length * 6.2 + 12}" height="18" rx="4" fill="#E0622B"/><text x="0" y="3" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="Pretendard,Malgun Gothic,sans-serif">${txt}</text></g>`;
+  const F = frame(); if (!F) return ''; const S = GP.S, A = W_(F, F.anchor), [ax, ay] = S.toScreen(A[0], 0, A[1]), r = F.R / S.mpp(), h = ARC.handles(), [px, py] = S.toScreen(h[0].pos[0], 0, h[0].pos[1]), [rx, ry] = S.toScreen(h[2].pos[0], 0, h[2].pos[1]);
+  const txt = `영향 범위 ${F.R.toFixed(1)} m`, w = txt.length * 6.4 + 12;
+  return `<circle cx="${ax}" cy="${ay}" r="${r}" fill="rgba(224,98,43,.05)" stroke="#E0622B" stroke-width="1.4" stroke-dasharray="6 5"/><line x1="${ax}" y1="${ay}" x2="${px}" y2="${py}" stroke="#E0622B" stroke-width="1.4" stroke-dasharray="3 3"/><g transform="translate(${rx + w / 2 + 10},${ry})"><rect x="${-w / 2}" y="-10" width="${w}" height="18" rx="4" fill="#E0622B"/><text x="0" y="3" text-anchor="middle" font-size="11" font-weight="700" fill="#fff" font-family="Pretendard,Malgun Gothic,sans-serif">${txt}</text></g>`;
 };
-let pd = null;
 ARC.pivotDown = (e, el) => {
   e.preventDefault(); e.stopPropagation(); const S0 = session(); if (!S0) return; try { el.setPointerCapture(e.pointerId); } catch (_) { }
-  pd = true; const mv = ev => {
-    if (!pd) return; const fp = GP.S.floorAt(ev.clientX, ev.clientY), [lx, lz] = G.w2l(S0.ref.x, S0.ref.z, S0.ref.rot, fp.x, fp.z), span = S0.x1 - S0.x0; let v = U.clamp((lx - S0.x0) / span, 0, 1);
-    const tol = Math.min(.03, GP.S.mpp() * 10 / span); let bw = null, bd = tol; for (const w of [0, .5, 1, ...S0.loc.map(o => (o.lx - S0.x0) / span)]) { const d = Math.abs(w - v); if (d < bd) { bd = d; bw = w; } } if (bw != null) v = bw;      // sticks to a machine's middle / an end / the middle, only when close
-    S0.pivot = v; S0.deg = ev.altKey ? S0.deg : degFor(S0, lz - S0.z0); bendApply(false);
-    ui().setHint(`휘는 정도 <b>${S0.deg > 0 ? '+' : ''}${S0.deg}°</b> · 휘는 중심 <b>${pivotName(v)}</b> · 줄에서 멀리 끌수록 많이 휘어요 · 앞으로: 앞쪽 볼록, 뒤로: 오목 · <kbd>Alt</kbd>: 휘는 정도는 그대로 중심만`);
-    const a = $('#arcBend'), b = $('#arcPivot'); if (a) { a.value = S0.deg; $('#arcV').textContent = (S0.deg > 0 ? '+' : '') + S0.deg + '°'; } if (b) { b.value = Math.round(v * 100); $('#arcP').textContent = pivotName(v); }
+  const kind = el.dataset.h, loc = ev => { const fp = GP.S.floorAt(ev.clientX, ev.clientY); return G.w2l(S0.ref.x, S0.ref.z, S0.ref.rot, fp.x, fp.z); }, p0 = loc(e), pull0 = S0.pull.slice(), anc0 = S0.anchor.slice();      // (by how far the pointer went: no jump on the first move)
+  const mv = ev => {
+    const p = loc(ev);
+    if (kind === 'arcp') { S0.pull = [U.r3(pull0[0] + p[0] - p0[0]), U.r3(pull0[1] + p[1] - p0[1])]; ui().setHint(`끌어당기는 중 <b>${U.cm(Math.hypot(...S0.pull))}cm</b> · 점선 원 안의 기구만 따라와요`); }
+    else if (kind === 'arca') { let q = [anc0[0] + p[0] - p0[0], anc0[1] + p[1] - p0[1]]; const tol = GP.S.mpp() * 10; for (const o of S0.loc) if (Math.hypot(o.lx - q[0], o.lz - q[1]) < tol) { q = [o.lx, o.lz]; break; } S0.anchor = [U.r3(q[0]), U.r3(q[1])]; ui().setHint('잡을 곳 옮기는 중 · 기구 가운데에 가까우면 붙어요'); }
+    else { S0.R = Math.max(.3, U.r3(Math.hypot(p[0] - S0.anchor[0], p[1] - S0.anchor[1]))); ui().setHint(`영향 범위 <b>${S0.R.toFixed(2)} m</b>`); const sl = $('#arcR'); if (sl) { sl.value = S0.R; $('#arcRV').textContent = S0.R.toFixed(1) + ' m'; } }
+    pullApply(false);
   };
-  const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); pd = null; ui().setHint(); bendApply(true); GP.emit('overlay'); };
+  const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); ui().setHint(); pullApply(true); GP.emit('overlay'); };
   window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up);
 };
-document.addEventListener('input', e => {
-  if (e.target.id === 'arcBend') { const v = +e.target.value; const l = $('#arcV'); if (l) l.textContent = (v > 0 ? '+' : '') + v + '°'; ARC.bend(v, false); }
-  else if (e.target.id === 'arcPivot') { const v = +e.target.value / 100; const l = $('#arcP'); if (l) l.textContent = pivotName(v); ARC.pivotTo(v, false); }
-});
-document.addEventListener('change', e => { if (e.target.id === 'arcBend') ARC.bend(+e.target.value, true); else if (e.target.id === 'arcPivot') ARC.pivotTo(+e.target.value / 100, true); });
+document.addEventListener('input', e => { if (e.target.id !== 'arcR') return; const v = +e.target.value; const l = $('#arcRV'); if (l) l.textContent = v.toFixed(1) + ' m'; ARC.setRadius(v, false); });
+document.addEventListener('change', e => { if (e.target.id === 'arcR') ARC.setRadius(+e.target.value, true); });
 GP.toolExt = { pen: { down: (e, fp) => pen.down(e, fp), move: e => pen.move(e), up: e => pen.up(e), dbl: e => pen.dbl(e) }, xform: { down: X.down, move: X.move, up: X.up, dbl: X.dbl } };
 })();

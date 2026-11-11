@@ -561,7 +561,7 @@ tools.handleDown = (e, el) => {
   if (h === 'cp' && GP.CV) { GP.CV.cpDown(e, el); return; }
   if ((h === 'rr' || h === 'rcv') && GP.CV) { GP.CV.rcDown(e, el); return; }
   if ((h === 'xf' || h === 'xfr') && GP.XF) { GP.XF.handleDown(e, el); return; }
-  if (h === 'arcp' && GP.ARC) { GP.ARC.pivotDown(e, el); return; }
+  if ((h === 'arcp' || h === 'arca' || h === 'arcr') && GP.ARC) { GP.ARC.pivotDown(e, el); return; }
   const target = tools.polyTarget();
   if (h === 'v' && target) {
     const i = +el.dataset.i, S = tools.selVs;
