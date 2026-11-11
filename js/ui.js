@@ -365,8 +365,8 @@ const HINTS = {
   zoneRect: '<b>드래그</b>해서 존(유산소 존 등) 영역을 그려요',
   fillwall: '기구를 줄 세울 <b>벽을 클릭</b>하세요',
   placing: '<b>클릭</b>해서 놓기 · <kbd>R</kbd> 회전 · <kbd>Shift</kbd>+클릭 연속 배치 · <kbd>Alt</kbd> 자석 끄기',
-  select3d: '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>·방향키 이동 · <kbd>Q</kbd>/<kbd>E</kbd> 아래/위 · <kbd>Shift</kbd> 빨리 · 빈 곳을 끌면 회전 · 기구를 눌러 선택 → 끌어서 이동 · <kbd>R</kbd> 회전 · <kbd>Del</kbd> 삭제',
-  other3d: '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>·방향키 이동 · <kbd>Q</kbd>/<kbd>E</kbd> 아래/위 · 끌면 회전 · 벽·문·바닥은 <b>2D 도면</b>에서 고쳐요',
+  select3d: '끌기 둘러보기 · 오른쪽 끌기 옮기기 · 휠 앞뒤 · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · <kbd>Q</kbd>/<kbd>E</kbd> 아래/위 · 기구를 눌러 선택 → 끌어서 이동 · <kbd>R</kbd> 회전',
+  other3d: '끌기 둘러보기 · 오른쪽 끌기 옮기기 · 휠 앞뒤 · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · <kbd>Q</kbd>/<kbd>E</kbd> 아래/위 · 벽·문·바닥은 <b>2D 도면</b>에서',
   placing3d: '원하는 곳을 <b>눌러서</b> 놓기 · <kbd>R</kbd> 회전 · <kbd>Shift</kbd>+클릭 연속 배치',
 };
 ui.setHint = (custom) => {

@@ -4,7 +4,7 @@
                       not have yet (about 20 MB stayed put instead of being fetched again each time). They are still asked for
                       from the site first, so a changed picture or model arrives when online.
    MODELS (kept)      3D libraries and files that never change under the same address: cache first. */
-const CACHE = 'gofit-planner-v3.27.0', ASSETS = 'gofit-assets-v1', MODELS = 'gofit-models-v2';
+const CACHE = 'gofit-planner-v3.27.1', ASSETS = 'gofit-assets-v1', MODELS = 'gofit-models-v2';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/core.js', 'js/catalog.js', 'js/media.js', 'vendor/three.min.js', 'vendor/OrbitControls.js', 'js/m3-parts.js', 'js/m3-models-a.js', 'js/m3-models-b.js', 'js/render3d.js', 'js/symbols.js', 'js/plan.js', 'js/checks.js', 'js/ui.js', 'js/overlay.js', 'js/tools.js', 'js/pen.js', 'js/panels.js', 'js/export.js', 'js/viewer3d.js', 'js/view3d.js', 'js/backup.js', 'js/wizard.js', 'js/app.js',
