@@ -46,6 +46,7 @@
 <div class="bar">
   <span id="st">준비 중…</span><span class="sep"></span>
   <label>목표 <select id="goal"><option value="200">빠르게 (200)</option><option value="600" selected>보통 (600)</option><option value="1500">고품질 (1500)</option><option value="0">계속</option></select></label>
+  <label>속도 <select id="load" title="그래픽카드를 얼마나 쓸지 — 빠르게는 그동안 컴퓨터가 버벅일 수 있어요"><option value=".8">빠르게</option><option value=".45" selected>보통</option><option value=".2">조용히</option></select></label>
   <label>해상도 <select id="res"><option value="0.5">절반 (빠름)</option><option value="1" selected>그대로</option></select></label>
   <label>밝기 <input type="range" id="exp" min="-2" max="2" step="0.1" value="0"></label>
   <label>조명 세기 <input type="range" id="lit" min="0" max="3" step="0.1" value="1"></label>
@@ -128,12 +129,12 @@ async function start(d) {
 }
 /* as many samples a frame as the graphics card can do: each frame's work is timed to the end (gl.finish) and the count adjusted
    so the work fills most of the time between frames (one sample a frame, as before, left the card mostly idle) */
-let last = -1, prevT = performance.now(), dtAvg = 16, rate = 0, rs = 0, rt = performance.now();
+let last = -1, prevT = performance.now(), dtAvg = 16, rate = 0, rs = 0, rt = performance.now(), LOAD = .45;      // (the share of the time between frames the card works: the rest is left to the desktop and other programs)
 function loop() {
   requestAnimationFrame(loop); const now = performance.now(), dt = now - prevT; prevT = now; dtAvg = dtAvg * .9 + Math.min(250, dt) * .1; if (!running || !pt) return;
   const gl = renderer.getContext(), t0 = performance.now(); let n = 0;
   for (; n < spf && (!goal || pt.samples < goal); n++) pt.renderSample();
-  if (n) { gl.finish(); const work = performance.now() - t0, aim = Math.min(60, Math.max(14, dtAvg * .75)); if (work < aim * .7 && spf < 256) spf = Math.min(256, Math.ceil(spf * 1.35)); else if (work > aim * 1.3 && spf > 1) spf = Math.max(1, Math.floor(spf / 1.35)); }
+  if (n) { gl.finish(); const work = performance.now() - t0, aim = Math.min(45, Math.max(6, dtAvg * LOAD)); if (work < aim * .7 && spf < 256) spf = Math.min(256, Math.ceil(spf * 1.35)); else if (work > aim * 1.3 && spf > 1) spf = Math.max(1, Math.floor(spf / 1.35)); }
   const s = Math.floor(pt.samples); if (now - rt > 700) { rate = Math.max(0, (pt.samples - rs) / ((now - rt) / 1000)); rs = pt.samples; rt = now; }
   if (s !== last) { last = s; const done = goal && s >= goal; $('#st').textContent = (done ? `완성 · ${s} 샘플` : `${s}${goal ? ' / ' + goal : ''} 샘플 · 초당 ${Math.round(rate)}`) + (GPU ? ` · ${GPU}` : ''); $('#prog').style.width = goal ? Math.min(100, s / goal * 100) + '%' : '0'; }
 }
@@ -145,8 +146,14 @@ $('#exp').oninput = e => { renderer.toneMappingExposure = Math.pow(2, +e.target.
 $('#lit').oninput = () => { if (D) { setLights(); pt.reset(); } };
 $('#pause').onclick = e => { running = !running; e.target.textContent = running ? '일시정지' : '계속'; };
 $('#save').onclick = () => { cv.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `GOFIT_실사렌더_${Math.floor(pt.samples)}샘플.png`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }, 'image/png'); };
-$('#close').onclick = () => post({ type: 'pt-close' });
-window.addEventListener('keydown', e => { if (e.key === 'Escape') post({ type: 'pt-close' }); });
+$('#load').onchange = e => { LOAD = +e.target.value; spf = 1; };
+/* closing: stop, free the graphics card's memory and the context at once (not whenever the browser gets round to it) */
+function shutdown() { running = false; try { pt && pt.dispose(); } catch (_) { } try { scene && scene.traverse(o => { if (o.geometry) o.geometry.dispose(); const m = o.material; for (const q of Array.isArray(m) ? m : m ? [m] : []) { for (const k in q) if (q[k] && q[k].isTexture) q[k].dispose(); q.dispose(); } }); } catch (_) { } try { renderer && renderer.dispose(); renderer && renderer.forceContextLoss(); } catch (_) { } pt = null; }
+window.ptShutdown = shutdown;
+const leave = () => { shutdown(); post({ type: 'pt-close' }); };
+$('#close').onclick = leave;
+window.addEventListener('keydown', e => { if (e.key === 'Escape') leave(); });
+window.addEventListener('pagehide', shutdown);
 </script>
 </body>
 </html>

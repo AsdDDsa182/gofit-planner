@@ -601,7 +601,7 @@ V3.ptScene = async () => {
 };
 V3.ptOpen = () => {
   if (document.querySelector('.pt-ov')) return; const ov = document.createElement('div'); ov.className = 'pt-ov'; ov.innerHTML = '<iframe src="pt.html" title="실사 렌더"></iframe>'; document.body.appendChild(ov);
-  const close = () => { window.removeEventListener('message', on); ov.remove(); };
+  const close = () => { window.removeEventListener('message', on); const f = ov.firstChild; try { f.contentWindow.ptShutdown && f.contentWindow.ptShutdown(); } catch (_) { } f.src = 'about:blank'; setTimeout(() => ov.remove(), 50); dirty = true; };      // the render stopped and its graphics memory freed before the frame goes
   const on = async e => {
     if (e.origin !== location.origin || !e.data) return; const t = e.data.type;
     if (t === 'pt-close') { close(); return; }
