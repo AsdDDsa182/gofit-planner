@@ -108,6 +108,14 @@ CV.bend = (L, i, a, b, nFix) => {
   const C = L.room.curves || {}, out = {}; for (const k of Object.keys(C)) out[+k > i ? +k + d : +k] = C[k];
   out[i] = { n, a: r3v(a), b: r3v(b) }; L.room.curves = out; return CV.list(L).find(c => c.s === i);
 };
+/* a curved wall as one glass wall (a shop front): v = a GP.GLASS id, or '' to make it a wall again */
+CV.setGlass = (L, s, v) => { const c = (L.room.curves || {})[s]; if (!c) return false; if (v) c.glass = GP.GLASS[v] ? v : 'clear'; else delete c.glass; return true; };
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-cglass]'); if (!b || GP.viewOnly) return; const s = +b.dataset.s, v = b.dataset.cglass;
+  if (CV.setGlass(GP.L(), s, v)) { GP.changed('room'); GP.toast(v ? '곡선 벽을 통유리로 바꿨어요' : '통유리를 벽으로 되돌렸어요'); ui().renderInspector(); GP.closePop(); }
+});
+const glassRow = (c) => `<div class="mount" style="grid-template-columns:repeat(${Object.keys(GP.GLASS).length + 1},1fr)"><button class="${c.ref.glass ? '' : 'on'}" data-cglass="" data-s="${c.s}">벽</button>${Object.entries(GP.GLASS).map(([k, g]) => `<button class="${c.ref.glass === k ? 'on' : ''}" data-cglass="${k}" data-s="${c.s}" title="통유리 · ${g.n}">유리 ${g.n}</button>`).join('')}</div>`;
+CV.glassRow = glassRow;
 /* corner i rounded with radius r (a second point is added for where the arc meets the next wall) */
 CV.round = (L, i, r) => {
   const P = L.room.pts, N = P.length; if (CV.inner(L).has(i) || CV.ends(L).has(i)) return null;
@@ -198,6 +206,7 @@ CV.curvePop = (el, s) => {
   GP.popover(el, `<div class="ph">곡선 벽 · 길이 ${L0.toFixed(2)} m</div><div class="ang-pop"><div class="unit"><input type="number" id="cvLen" step="0.01" min="0.3" value="${L0.toFixed(2)}"><em>m</em></div>
     <button class="mi def" data-act="len"><div><b>이 길이에 맞춰 전체를 같은 비율로</b><small>도면을 대고 그렸을 때 · <kbd>Enter</kbd></small></div></button>
     <button class="mi" data-act="flat"><div><b>직선으로 펴기</b><small>곡선을 한 장의 곧은 벽으로 바꿔요</small></div></button>
+    <div class="ph" style="margin-top:4px">통유리</div>${glassRow(c)}
     <p class="note">모양은 곡선 양 끝의 <b style="color:#E0622B">주황 손잡이</b>를 끌거나(한쪽만 길게 당기면 그쪽이 더 휘어요), 곡선을 직접 끌어서 바꿔요(잡은 곳이 가장 많이 휘어요). 곡선을 더블클릭하면 그 자리에 점이 생겨 둘로 나뉘어요.</p></div>`, (act) => {
     if (act === 'flat') { CV.flatten(GP.L(), s); GP.changed(['room', 'openings']); GP.toast('곡선을 곧은 벽으로 폈어요'); return false; }
     if (act === 'len') { const v = parseFloat($('#cvLen').value); if (!(v >= .3 && v < 500)) { GP.toast('0.3m 이상으로 넣어 주세요', { bad: true }); return true; } if (Math.abs(v - L0) < .0005) return false; const k = v / L0, b = G.bounds(GP.L().room.pts); CV.scaleAll(k, [b.minX, b.minZ]); GP.S.fit(); GP.toast(`전체를 ${(k * 100).toFixed(1)}%로 맞췄어요 (Ctrl+Z로 되돌리기)`, { ms: 4000 }); return false; }
@@ -553,8 +562,8 @@ const ARC = GP.ARC = {};
 const DEGR = Math.PI / 180;
 ARC.hasCurve = () => !!(GP.P && CV.list(GP.L()).length);
 ARC.followWall = () => {
-  const its = ui().selItems(); if (its.length < 1) return; const L = GP.L(), P = L.room.pts;
-  const cx = its.reduce((s, it) => s + it.x, 0) / its.length, cz = its.reduce((s, it) => s + it.z, 0) / its.length;
+  const us = GP.units(ui().selItems()); if (us.length < 1) return; const L = GP.L(), P = L.room.pts;
+  const cx = us.reduce((s, u) => s + u.x, 0) / us.length, cz = us.reduce((s, u) => s + u.z, 0) / us.length;
   let best = null; for (const c of CV.list(L)) { const k = CV.ctrl(L, c), D = dense(k.p0, k.c1, k.c2, k.p3, 200); let d = Infinity; for (const q of D.pts) d = Math.min(d, Math.hypot(q[0] - cx, q[1] - cz)); if (!best || d < best.d) best = { c, k, D, d }; }
   if (best) {      // curves meeting end to end (a split curve, a wavy wall) are one path to follow
     const all = CV.list(L), chain = [best.c]; let q;
@@ -565,16 +574,16 @@ ARC.followWall = () => {
   if (!best) { GP.toast('곡선 벽이 없어요. 벽 모양 도구에서 벽을 Alt+끌기 하거나 펜으로 곡선 벽을 만들어 주세요', { bad: true, ms: 4500 }); return; }
   const { k, D } = best, at = s => { s = U.clamp(s, 0, D.L); let j = 1; while (j < D.acc.length - 1 && D.acc[j] < s) j++; const f = (s - D.acc[j - 1]) / ((D.acc[j] - D.acc[j - 1]) || 1), a = D.pts[j - 1], b = D.pts[j]; const p = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], t = unit(sub(b, a)); let n = [-t[1], t[0]]; if (!G.pip(p[0] + n[0] * .05, p[1] + n[1] * .05, P)) n = [t[1], -t[0]]; return { p, n }; };
   const sOf = it => { let bs = 0, bd = Infinity; D.pts.forEach((q, j) => { const d = Math.hypot(q[0] - it.x, q[1] - it.z); if (d < bd) { bd = d; bs = D.acc[j]; } }); return bs; };
-  const rows = its.map(it => { const s = sOf(it), { n } = at(s), kk = ((Math.round(U.angNorm(-it.rot * DEGR - Math.atan2(n[0], n[1])) / (Math.PI / 2)) % 4) + 4) % 4, dm = GP.dims(it); return { it, s, k: kk, along: kk % 2 ? dm.d : dm.w, half: kk % 2 ? dm.w / 2 : dm.d / 2 }; }).sort((a, b) => a.s - b.s);
+  const rows = us.map(u => { const s = sOf(u), { n } = at(s), kk = ((Math.round(U.angNorm(-u.rot * DEGR - Math.atan2(n[0], n[1])) / (Math.PI / 2)) % 4) + 4) % 4; return { u, s, k: kk, along: kk % 2 ? u.d : u.w, half: kk % 2 ? u.w / 2 : u.d / 2 }; }).sort((a, b) => a.s - b.s);      // (a group goes as one piece)
   const gap = Math.max(0, (+(($('#mGap') || {}).value) || (ui().lastGap ?? 50)) / 100), T = rows.reduce((s, r) => s + r.along, 0) + gap * (rows.length - 1);
   const mean = rows.reduce((s, r) => s + r.s, 0) / rows.length; let cur = U.clamp(mean - T / 2, 0, Math.max(0, D.L - T));
   for (const r of rows) {
     const { p, n } = at(cur + r.along / 2), rot = U.normRot(-(Math.atan2(n[0], n[1]) + r.k * Math.PI / 2) / DEGR); let off = r.half + .02;
-    const place = () => { r.it.x = U.r3(p[0] + n[0] * off); r.it.z = U.r3(p[1] + n[1] * off); r.it.rot = rot; };
-    place(); for (let q = 0; q < 50 && !G.rectInside(GP.footprint(r.it), P); q++) { off += .01; place(); }      // where the wall bulges in, a little further off
+    const place = () => GP.unitPlace(r.u, p[0] + n[0] * off, p[1] + n[1] * off, rot), inside = () => r.u.members.every(m => G.rectInside(GP.footprint(m.it), P));
+    place(); for (let q = 0; q < 50 && !inside(); q++) { off += .01; place(); }      // where the wall bulges in, a little further off
     cur += r.along + gap;
   }
-  GP.changed('items'); GP.toast(`${rows.length}대를 곡선 벽을 따라 놓았어요${T > D.L ? ' · 곡선보다 줄이 길어서 끝쪽 기구는 곡선 밖에 걸쳐요' : ''}`, { ms: 3500 });
+  GP.changed('items'); GP.toast(`${rows.length}${us.some(u => u.group) ? '개(그룹은 한 덩어리로)' : '대'}를 곡선 벽을 따라 놓았어요${T > D.L ? ' · 곡선보다 줄이 길어서 끝쪽 기구는 곡선 밖에 걸쳐요' : ''}`, { ms: 3500 });
 };
 /* bending a row, two ways (the panel's [기본 | 정밀]):
    기본 — the whole row on one arc ("휘는 정도"), the middle stays; spacing along the arc as it was.
@@ -598,9 +607,10 @@ function rowFrame(its) {
 function session() {
   const its = ui().selItems(); if (its.length < 2) return null; const key = selKey();
   if (!bs || bs.key !== key) {
-    const F = rowFrame(its), items = its.map(it => { const [lx, lz] = G.w2l(F.ox, F.oz, F.rot, it.x, it.z); return { it, x: it.x, z: it.z, rot: it.rot, lx, lz }; }).sort((p, q) => p.lx - q.lx);
+    const us = GP.units(its); if (us.length < 2) return null;      // a group goes as one piece
+    const F = rowFrame(us), items = us.map(u => { const [lx, lz] = G.w2l(F.ox, F.oz, F.rot, u.x, u.z); return { u, x: u.x, z: u.z, rot: u.rot, lx, lz }; }).sort((p, q) => p.lx - q.lx);
     const x0 = items[0].lx, x1 = items[items.length - 1].lx, z0 = items.reduce((t, o) => t + o.lz, 0) / items.length;
-    const before = new Set(); for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) if (G.overlap(GP.footprint(items[i].it), GP.footprint(items[j].it))) before.add(i + ',' + j);
+    const feet = items.map(o => GP.unitFeet(o.u, o.x, o.z, o.rot)), hit = (A, B) => A.some(a => B.some(b => G.overlap(a, b))), before = new Set(); for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) if (hit(feet[i], feet[j])) before.add(i + ',' + j);
     bs = { key, F, items, x0, x1, z0, before, deg: 0, anchor: [(x0 + x1) / 2, z0], pull: [0, 0], R: Math.max(1, (x1 - x0) / 2) };
   }
   return bs;
@@ -632,12 +642,12 @@ function placePull(S0, pull) {
 }
 /* would these places make two machines overlap (that did not before)? */
 function clashes(S0, pl) {
-  const fp = S0.items.map((o, i) => GP.footprint(Object.assign({}, o.it, pl[i])));
-  for (let i = 0; i < fp.length; i++) for (let j = i + 1; j < fp.length; j++) if (!S0.before.has(i + ',' + j) && G.overlap(fp[i], fp[j])) return true;
+  const fp = S0.items.map((o, i) => GP.unitFeet(o.u, pl[i].x, pl[i].z, pl[i].rot));
+  for (let i = 0; i < fp.length; i++) for (let j = i + 1; j < fp.length; j++) if (!S0.before.has(i + ',' + j) && fp[i].some(a => fp[j].some(b => G.overlap(a, b)))) return true;
   return false;
 }
 function put(S0, pl, commit) {
-  S0.items.forEach((o, i) => { o.it.x = U.r3(pl[i].x); o.it.z = U.r3(pl[i].z); o.it.rot = U.normRot(pl[i].rot); });
+  S0.items.forEach((o, i) => GP.unitPlace(o.u, pl[i].x, pl[i].z, pl[i].rot));
   if (commit) { arcBusy = true; GP.changed('items'); arcBusy = false; ui().renderInspector(); } else { GP.checks.quick(); GP.S.invalidate(); GP.emit('overlay'); }
 }
 /* the largest part (0..1) of a change that does not make machines overlap */
@@ -664,7 +674,7 @@ ARC.center = () => {}; ARC.pivot = () => .5; ARC.pivotText = () => '';
 GP.on('changed', () => { if (!arcBusy && bs) bs = null; });      // moved some other way: the next bend starts from where they are
 /* the panel section (ui.js renderMulti) */
 ARC.panelHtml = () => {
-  const its = ui().selItems(); if (its.length < 2) return ''; const S0 = session(), fine = arcMode() === 'fine', span = S0 ? S0.x1 - S0.x0 : 4, R = S0 ? S0.R : Math.max(1, span / 2), dv = S0 ? S0.deg : 0;
+  const its = ui().selItems(); if (its.length < 2 || GP.units(its).length < 2) return ''; const S0 = session(), fine = arcMode() === 'fine', span = S0 ? S0.x1 - S0.x0 : 4, R = S0 ? S0.R : Math.max(1, span / 2), dv = S0 ? S0.deg : 0;
   return `<div class="sec arc-sec"><span class="lbl">곡선으로 놓기</span>${ARC.hasCurve() ? '<button class="btn sm soft wide" data-act="arcWall" title="가장 가까운 곡선 벽을 따라, 지금 순서 · 위 간격으로 · 벽 쪽을 벽에 대고">가까운 곡선 벽을 따라 놓기</button>' : ''}
     <div class="seg full sm"><button data-arcmode="basic" class="${fine ? '' : 'on'}">기본 · 줄 전체 휘기</button><button data-arcmode="fine" class="${fine ? 'on' : ''}">정밀 · 일부만 당기기</button></div>
     ${fine ? `<div class="rng"><span>영향 범위</span><input type="range" id="arcR" min="0.5" max="${Math.max(4, Math.ceil(span * 1.2))}" step="0.1" value="${R.toFixed(1)}"><b id="arcRV">${R.toFixed(1)} m</b></div>

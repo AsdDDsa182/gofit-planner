@@ -407,11 +407,11 @@ function inspItem(it) {
     + (GP.act.canDupAgain() ? `<button class="btn sm soft wide" data-act="dupAgain" title="Shift+D">같은 간격으로 하나 더 복제</button>` : '');
 }
 function renderMulti(items) {
-  insp.hidden = false; const grouped = items.every(it => it.grp && it.grp === items[0].grp), anyG = items.some(it => it.grp);
+  insp.hidden = false; const grouped = items.every(it => it.grp && it.grp === items[0].grp), anyG = items.some(it => it.grp), nU = GP.units ? GP.units(items).length : items.length, rowT = nU > 1;      // (a whole group is one piece: lining up needs two pieces)
   insp.innerHTML = head(grouped ? `그룹 · ${items.length}개` : `${items.length}개 선택`, grouped ? '하나만 고르려면 Ctrl+클릭' : '함께 이동·회전·복제할 수 있어요', 'var(--accent)')
     + `<div class="acts">${grouped ? '<button class="btn sm" data-act="ungroup" title="Ctrl+Shift+G">그룹 풀기</button>' : `<button class="btn sm primary" data-act="group" title="Ctrl+G">그룹으로 묶기</button>${anyG ? '<button class="btn sm" data-act="ungroup">그룹 풀기</button>' : ''}`}</div>`
-    + `<div class="sec"><span class="lbl">간격 맞추기</span><div class="row2"><label class="fld"><span>기구 사이 간격</span>${num('mGap', GP.ui.lastGap ?? 50, 5, 'cm', 'min="0"')}</label><button class="btn sm" data-act="gap">간격 적용</button></div><button class="btn sm soft" data-act="even">양끝 고정하고 균등하게</button></div>`
-    + `<div class="sec"><span class="lbl">줄 맞추기 (처음 고른 기구 기준)</span><div class="acts"><button class="btn sm" data-act="alignF">앞선</button><button class="btn sm" data-act="alignC">가운데</button><button class="btn sm" data-act="alignB">뒷선</button></div></div>`
+    + (rowT ? `<div class="sec"><span class="lbl">간격 맞추기${anyG ? ' <small class="note">(그룹은 한 덩어리로)</small>' : ''}</span><div class="row2"><label class="fld"><span>기구 사이 간격</span>${num('mGap', GP.ui.lastGap ?? 50, 5, 'cm', 'min="0"')}</label><button class="btn sm" data-act="gap">간격 적용</button></div><button class="btn sm soft" data-act="even">양끝 고정하고 균등하게</button></div>`
+    + `<div class="sec"><span class="lbl">줄 맞추기 (처음 고른 기구 · 그룹 기준)</span><div class="acts"><button class="btn sm" data-act="alignF">앞선</button><button class="btn sm" data-act="alignC">가운데</button><button class="btn sm" data-act="alignB">뒷선</button></div></div>` : '')
     + (GP.ARC ? GP.ARC.panelHtml() : '')
     + `<div class="acts"><button class="btn sm" data-act="grot">90° 회전</button><button class="btn sm" data-act="mdup">복제</button><button class="btn sm" data-act="saveset">세트로 저장</button><button class="btn sm danger" data-act="mdel">삭제</button></div>`
     + (GP.act.canDupAgain() ? `<button class="btn sm soft wide" data-act="dupAgain" title="Shift+D">같은 간격으로 하나 더 복제</button>` : '');
@@ -469,7 +469,13 @@ function inspRoom(r) { const A = GP.calc.regionArea(r.x, r.z); insp.innerHTML = 
 function inspNote(n) { insp.innerHTML = head('메모', '도면에 표시돼요', '#E0622B') + `<label class="fld"><span>내용</span><textarea id="nT" rows="3">${U.esc(n.text || '')}</textarea></label><div class="acts"><button class="btn sm danger" data-act="odel">삭제</button></div>`; setTimeout(() => { const t = $('#nT'); if (t && n._new) { t.focus(); delete n._new; } }, 30); }
 function inspDim(d) { insp.innerHTML = head('치수', `${G.len(d.a, d.b).toFixed(2)} m`, '#1F2429') + `<div class="acts"><button class="btn sm danger" data-act="odel">삭제</button></div>`; }
 function inspWall(i) {
-  const L = GP.L(), e = G.edge(L.room.pts, i), mk = (L.wallMarks || {})[i];
+  const L = GP.L(), e = G.edge(L.room.pts, i), mk = (L.wallMarks || {})[i], cv = GP.CV && GP.CV.of(L, i);
+  if (cv && !cv.ref.rc) {      // a piece of a curved wall: the curve as a whole
+    insp.innerHTML = head(cv.ref.glass ? '통유리 곡선 벽' : '곡선 벽', `길이 ${GP.CV.len(L, cv).toFixed(2)} m`, cv.ref.glass ? '#3B7FC4' : '#2B3036')
+      + `<div class="sec"><span class="lbl">벽 / 통유리</span>${GP.CV.glassRow(cv)}<p class="note" style="margin:0">곡선 벽에는 문 · 창문 대신 통유리를 쓸 수 있어요(곡선 전체). 모양은 벽 모양 도구에서 바꿔요.</p></div>`
+      + (cv.ref.glass ? '' : `<div class="sec"><span class="lbl">벽 재질 <small class="note">(3D에 보여요)</small></span>${ui.texGrid('wall', (L.wallTex || {})[i] || '', { inherit: '공간 기본', wall: i })}</div>`);
+    GP.fillIcons(insp); return;
+  }
   insp.innerHTML = head(`벽 ${i + 1}`, `길이 ${e.L.toFixed(2)} m`, '#2B3036')
     + `<label class="fld"><span>길이 (끝쪽이 늘어나요)</span>${num('wL', e.L.toFixed(2), .01, 'm', 'min=".3"')}</label>`
     + `<div class="sec"><span class="lbl">벽 재질 <small class="note">(3D에 보여요)</small></span>${ui.texGrid('wall', (L.wallTex || {})[i] || '', { inherit: '공간 기본', wall: i })}</div>`

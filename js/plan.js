@@ -199,7 +199,7 @@ S.drawPlan = (x, V, o) => {
   if (lay.dims && P.length >= 3 && !L.room.empty && !(scr && ui.tool === 'vertex') && GP.CV) for (const c of GP.CV.list(L)) {      // a curved wall: one length
     const k = GP.CV.ctrl(L, c), m = GP.CV.at(k.p0, k.c1, k.c2, k.p3, .5), e = G.edge(P, (c.s + Math.floor(c.n / 2)) % P.length), off = WALL_T + .38, [ax, ay] = toS(e.a[0], e.a[1]), [bx, by] = toS(e.b[0], e.b[1]);
     let ang = Math.atan2(by - ay, bx - ax); if (ang > Math.PI / 2) ang -= Math.PI; if (ang <= -Math.PI / 2) ang += Math.PI; const [sx, sy] = toS(m[0] - e.nx * off, m[1] - e.nz * off);
-    pill('곡선 ' + GP.CV.len(L, c).toFixed(2) + ' m', sx, sy, `600 11.5px ${MONO}`, 'rgba(255,255,255,.96)', '#2A3037', ang, 'rgba(40,46,52,.2)');
+    pill((c.ref.glass ? '통유리 ' : '곡선 ') + GP.CV.len(L, c).toFixed(2) + ' m', sx, sy, `600 11.5px ${MONO}`, 'rgba(255,255,255,.96)', '#2A3037', ang, 'rgba(40,46,52,.2)');
   }
   if (lay.dims && P.length >= 3 && !L.room.empty && !(scr && ui.tool === 'vertex')) for (let i = 0; i < P.length; i++) {
     if (GP.CV && GP.CV.of(L, i)) continue;
@@ -287,7 +287,12 @@ function drawWalls(x, L, px, sel, hov, scr) {
     const inner = t => [a[0] + e.dx * t, a[1] + e.dz * t];
     const outer = t => t <= 1e-6 ? O[i] : t >= Ls - 1e-6 ? O[j] : [a[0] + e.dx * t - e.nx * WALL_T, a[1] + e.dz * t - e.nz * WALL_T];
     const hi = scr && ((GP.OV && GP.OV.hiWall && GP.OV.hiWall.has(i)) || sel.has('wall:' + i) || (GP.tools && GP.tools.wallSel && GP.tools.wallSel(i)));
-    const pieces = wallPieces(Ls, ops);
+    const pieces = wallPieces(Ls, ops), gcv = GP.CV && GP.CV.of(L, i);
+    if (gcv && gcv.ref.glass) {      // a glass curve: light glass between the wall's faces, a line down its middle
+      const q = [inner(0), inner(Ls), outer(Ls), outer(0)], m0 = [a[0] - e.nx * WALL_T / 2, a[1] - e.nz * WALL_T / 2], m1 = [b[0] - e.nx * WALL_T / 2, b[1] - e.nz * WALL_T / 2];
+      if (!thin) { x.beginPath(); q.forEach((p, k) => k ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); x.fillStyle = hi ? '#2450E0' : S._line ? '#FFFFFF' : '#E2EEF8'; x.fill(); }
+      x.beginPath(); x.moveTo(m0[0], m0[1]); x.lineTo(m1[0], m1[1]); x.strokeStyle = hi ? '#2450E0' : S._line ? '#1B1F23' : '#3B7FC4'; x.lineWidth = (thin ? 2 : 1.4) * px; x.stroke(); continue;
+    }
     if (thin) { for (const [s0, s1] of pieces) { const p = inner(s0), q = inner(s1); x.beginPath(); x.moveTo(p[0], p[1]); x.lineTo(q[0], q[1]); x.strokeStyle = hi ? '#2450E0' : '#1F2429'; x.lineWidth = (hi ? 3 : 2) * px; x.lineCap = 'round'; x.stroke(); } continue; }
     for (const [s0, s1] of pieces) { const q = [inner(s0), inner(s1), outer(s1), outer(s0)]; x.beginPath(); q.forEach((p, k) => k ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); if (S._line && !hi) { x.fillStyle = '#FFFFFF'; x.fill(); hatchPoly(x, q, px); x.beginPath(); q.forEach((p, k) => k ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); x.strokeStyle = '#1B1F23'; x.lineWidth = 1.3 * px; x.stroke(); } else { x.fillStyle = hi ? '#2450E0' : '#2B3036'; x.fill(); x.strokeStyle = hi ? '#2450E0' : '#2B3036'; x.lineWidth = .6 * px; x.stroke(); } }
     if (marks[i] === 'mirror') for (const [s0, s1] of pieces) {

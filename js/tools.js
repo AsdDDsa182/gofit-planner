@@ -443,7 +443,7 @@ function toolDown(t, e, fp) {
   if (t === 'measure') { const p = snapPoint(fp.x, fp.z, { e, alt: e.altKey, prev: draw && draw.a, shift: e.shiftKey }); if (!draw) { draw = { tool: 'measure', a: p, b: p }; } else { const d = { id: U.uid('d'), a: draw.a, b: p }; if (G.len(d.a, d.b) > .02) { L.dims.push(d); draw = null; GP.changed('annot'); ui.select([{ k: 'dim', id: d.id }]); GP.toast(`길이 ${G.len(d.a, d.b).toFixed(2)} m`); } } GP.emit('overlay'); return true; }
   if (t === 'note') { const n = { id: U.uid('n'), x: U.r3(fp.x), z: U.r3(fp.z), text: '', _new: true }; L.notes.push(n); GP.changed('annot'); ui.setTool('select'); ui.select([{ k: 'note', id: n.id }]); return true; }
   if (t === 'roomlabel') { if (!G.pip(fp.x, fp.z, L.room.pts)) { GP.toast('방 안쪽을 눌러 주세요', { bad: true }); return true; } const r = { id: U.uid('r'), x: U.r3(fp.x), z: U.r3(fp.z), name: '공간 이름', _new: true }; L.rooms.push(r); GP.changed('annot'); ui.setTool('select'); ui.select([{ k: 'room', id: r.id }]); return true; }
-  if (t === 'opening') { const h = openingHover(fp); if (!h) { GP.toast('벽이나 가벽 가까이를 눌러 주세요', { bad: true }); return true; } if (h.host === 'room' && GP.CV && GP.CV.of(L, h.seg)) { GP.toast('곡선 벽에는 문 · 창문을 달 수 없어요. 직선 벽에 달아 주세요', { bad: true, ms: 4000 }); return true; } const k = ui.openingKind; const w = tools.openingWidth(k); const o = { id: U.uid('o'), host: h.host, seg: h.seg, t: U.r3(U.clamp(U.snap(h.t, .05), w / 2, h.L - w / 2)), w, h: k === 'window' ? 1.2 : 2.1, sill: .9, kind: k }; L.openings.push(o); tools.preview = null; GP.changed('openings'); ui.setTool('select'); ui.select([{ k: 'opening', id: o.id }]); return true; }
+  if (t === 'opening') { const h = openingHover(fp); if (!h) { GP.toast('벽이나 가벽 가까이를 눌러 주세요', { bad: true }); return true; } if (h.host === 'room' && GP.CV && GP.CV.of(L, h.seg)) { const c = GP.CV.of(L, h.seg), on = !c.ref.glass; GP.CV.setGlass(L, c.s, on ? 'clear' : ''); GP.changed('room'); GP.toast(on ? '곡선 벽을 통유리로 바꿨어요 · 다시 누르면 벽으로 돌아가요 (곡선에는 문 · 창문 대신 통유리만 돼요)' : '통유리를 벽으로 되돌렸어요', { ms: 4500 }); return true; } const k = ui.openingKind; const w = tools.openingWidth(k); const o = { id: U.uid('o'), host: h.host, seg: h.seg, t: U.r3(U.clamp(U.snap(h.t, .05), w / 2, h.L - w / 2)), w, h: k === 'window' ? 1.2 : 2.1, sill: .9, kind: k }; L.openings.push(o); tools.preview = null; GP.changed('openings'); ui.setTool('select'); ui.select([{ k: 'opening', id: o.id }]); return true; }
   if (t === 'fillwall') { const h = wallHover(fp); if (!h) { GP.toast('벽 가까이를 눌러 주세요', { bad: true }); return true; } GP.panels.fillWallDialog(h); return true; }
   return false;
 }
@@ -738,7 +738,7 @@ act.setZ = (it, zAbs) => {
 act.setTex = (kind, id, wall) => {
   const P = GP.P, L = GP.L();
   if (kind === 'floor') P.settings.floorBase = id || 'concrete';
-  else if (wall != null) { L.wallTex = L.wallTex || {}; if (id) L.wallTex[wall] = id; else delete L.wallTex[wall]; }
+  else if (wall != null) { L.wallTex = L.wallTex || {}; const cv = GP.CV && GP.CV.of(L, wall), N = L.room.pts.length, ws = cv ? [...Array(cv.n).keys()].map(k => (cv.s + k) % N) : [wall]; ws.forEach(w => { if (id) L.wallTex[w] = id; else delete L.wallTex[w]; }); }      // (a curve: all its pieces)
   else P.settings.wallTex = id || 'paint';
   GP.changed(['room', 'settings']); ui.renderInspector();
   if (!(GP.V3 && GP.V3.on) && GP.texDef(id) && GP.texDef(id).size && !act._texTold) { act._texTold = true; GP.toast(kind === 'floor' ? '바닥 재질은 3D 보기에서 제대로 보여요 (도면에는 연하게)' : '벽 재질은 3D 보기에서 보여요', { ms: 3500 }); }
@@ -804,20 +804,45 @@ act.makeRow = (n, gapCm) => {
   for (let i = 1; i < n; i++) { const [x, z] = G.l2w(it.x, it.z, it.rot, i * (d.w + gap), 0); const c = Object.assign(U.clone(it), { uid: U.uid(), x: U.r3(x), z: U.r3(z) }); L.items.push(c); out.push(c); }
   GP.changed('items'); ui.select(out.map(q => ({ k: 'item', id: q.uid }))); GP.toast(`${n}대를 한 줄로 놓았어요`);
 };
+/* the units of a selection: a group picked as a whole moves as one piece (its members keep their places to each other); a machine
+   on its own (or one member picked out of its group with Ctrl+click) is its own unit. A unit is a virtual machine: the box of its
+   members in the frame of its first member (x, z, rot, w, d) and where each member sits in that box. */
+GP.units = (its) => {
+  const L = GP.L(), sel = new Set(its.map(it => it.uid)), groups = new Map(), raw = [];
+  for (const it of its) {
+    const whole = it.grp && L.items.filter(q => q.grp === it.grp).every(q => sel.has(q.uid));
+    if (whole) { if (!groups.has(it.grp)) { const l = []; groups.set(it.grp, l); raw.push(l); } groups.get(it.grp).push(it); } else raw.push([it]);
+  }
+  return raw.map(list => {
+    const f = list[0], r = f.rot;
+    if (list.length === 1) { const d = GP.dims(f); return { x: f.x, z: f.z, rot: r, w: d.w, d: d.d, members: [{ it: f, lx: 0, lz: 0, dr: 0 }] }; }
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (const it of list) for (const p of GP.footprint(it)) { const [lx, lz] = G.w2l(f.x, f.z, r, p[0], p[1]); x0 = Math.min(x0, lx); x1 = Math.max(x1, lx); z0 = Math.min(z0, lz); z1 = Math.max(z1, lz); }
+    const [x, z] = G.l2w(f.x, f.z, r, (x0 + x1) / 2, (z0 + z1) / 2);
+    return { x, z, rot: r, w: x1 - x0, d: z1 - z0, group: true, members: list.map(it => { const [lx, lz] = G.w2l(x, z, r, it.x, it.z); return { it, lx, lz, dr: it.rot - r }; }) };
+  });
+};
+/* a unit put at (x, z) turned to rot: its members follow as one piece */
+GP.unitPlace = (u, x, z, rot) => { for (const m of u.members) { const [wx, wz] = G.l2w(x, z, rot, m.lx, m.lz); m.it.x = U.r3(wx); m.it.z = U.r3(wz); m.it.rot = U.normRot(rot + m.dr); } };
+GP.unitFeet = (u, x, z, rot) => u.members.map(m => { const [wx, wz] = G.l2w(x, z, rot, m.lx, m.lz); return GP.footprint(Object.assign({}, m.it, { x: wx, z: wz, rot: rot + m.dr })); });
+const oneUnit = () => GP.toast('그룹 하나만 골랐어요. 그룹끼리(또는 다른 기구와) 맞추려면 함께 고르세요 · 그룹 안 기구끼리는 Ctrl+클릭으로 골라요', { ms: 4500 });
+/* the box of each unit in the frame of the unit the first picked machine is in */
+function unitBoxes(its) {
+  const us = GP.units(its), ref = us.find(u => u.members.some(m => m.it === its[0])) || us[0];
+  return { us, ref, rot: ref.rot, box: us.map(u => { let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const m of u.members) for (const p of GP.footprint(m.it)) { const [lx, lz] = G.w2l(ref.x, ref.z, ref.rot, p[0], p[1]); x0 = Math.min(x0, lx); x1 = Math.max(x1, lx); z0 = Math.min(z0, lz); z1 = Math.max(z1, lz); } return { u, x0, x1, z0, z1 }; }) };
+}
+const shiftUnit = (u, rot, dx, dz) => { const [wx, wz] = G.l2w(0, 0, rot, dx, dz); u.members.forEach(m => { m.it.x = U.r3(m.it.x + wx); m.it.z = U.r3(m.it.z + wz); }); };
 act.align = (mode) => {
-  const its = ui.selItems(); if (its.length < 2) return; const ref = its[0], rot = ref.rot;
-  const loc = its.map(it => { const [lx, lz] = G.w2l(ref.x, ref.z, rot, it.x, it.z); const d = GP.dims(it); return { it, lx, lz, dd: d.d }; });
-  const t = mode === 'F' ? Math.max(...loc.map(q => q.lz + q.dd / 2)) : mode === 'B' ? Math.min(...loc.map(q => q.lz - q.dd / 2)) : loc[0].lz;
-  loc.forEach(q => { const nz = mode === 'F' ? t - q.dd / 2 : mode === 'B' ? t + q.dd / 2 : t; const [x, z] = G.l2w(ref.x, ref.z, rot, q.lx, nz); q.it.x = U.r3(x); q.it.z = U.r3(z); });
+  const its = ui.selItems(); if (its.length < 2) return; const { us, ref, rot, box } = unitBoxes(its); if (us.length < 2) return oneUnit();
+  const rb = box.find(b => b.u === ref), t = mode === 'F' ? Math.max(...box.map(b => b.z1)) : mode === 'B' ? Math.min(...box.map(b => b.z0)) : (rb.z0 + rb.z1) / 2;
+  box.forEach(b => shiftUnit(b.u, rot, 0, mode === 'F' ? t - b.z1 : mode === 'B' ? t - b.z0 : t - (b.z0 + b.z1) / 2));
   GP.changed('items');
 };
 act.gap = (gapCm, even) => {
-  const its = ui.selItems(); if (its.length < 2) return; const ref = its[0], rot = ref.rot; ui.lastGap = gapCm;
-  const loc = its.map(it => { const [lx, lz] = G.w2l(ref.x, ref.z, rot, it.x, it.z); const d = GP.dims(it); const c = Math.cos((it.rot - rot) * DEG), s = Math.sin((it.rot - rot) * DEG); const wx = Math.abs(d.w * c) + Math.abs(d.d * s); return { it, lx, lz, wx }; }).sort((a, b) => a.lx - b.lx);
-  let g = gapCm / 100;
-  if (even) { const span = loc[loc.length - 1].lx + loc[loc.length - 1].wx / 2 - (loc[0].lx - loc[0].wx / 2); const sumW = loc.reduce((s, q) => s + q.wx, 0); g = (span - sumW) / (loc.length - 1); }
-  let cur = loc[0].lx - loc[0].wx / 2;
-  loc.forEach(q => { const nx = cur + q.wx / 2; const [x, z] = G.l2w(ref.x, ref.z, rot, nx, q.lz); q.it.x = U.r3(x); q.it.z = U.r3(z); cur += q.wx + g; });
+  const its = ui.selItems(); if (its.length < 2) return; ui.lastGap = gapCm; const { us, rot, box } = unitBoxes(its); if (us.length < 2) return oneUnit();
+  box.sort((p, q) => (p.x0 + p.x1) - (q.x0 + q.x1)); let g = gapCm / 100;
+  if (even) { const span = box[box.length - 1].x1 - box[0].x0, sumW = box.reduce((s, b) => s + b.x1 - b.x0, 0); g = (span - sumW) / (box.length - 1); }
+  let cur = box[0].x0; box.forEach(b => { shiftUnit(b.u, rot, cur - b.x0, 0); cur += (b.x1 - b.x0) + g; });
   GP.changed('items'); if (even) GP.toast(`간격 ${Math.round(g * 100)}cm로 맞췄어요`);
 };
 act.clipboard = null;

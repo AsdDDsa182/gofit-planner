@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.18.1';
+GP.VERSION = '2.19.0';
 GP.APP_SUB = '짐 스튜디오'; GP.APP_NAME = 'GOFIT ' + GP.APP_SUB;      // the app's name: the top bar, window title, menus (manifest.webmanifest and index.html <title> say it too);
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
@@ -262,7 +262,7 @@ const GONE = { latlong: 'latpull', multipress: 'shoulder', backext: 'abback' };
 /* curved walls: { start corner: { n pieces, a, b control offsets } } (pen.js) */
 function sCurves(c, N) {
   const out = {}; if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
-  for (const k of Object.keys(c)) { const s = +k, q = c[k], n = q ? +q.n : NaN, a = q && sPts([q.a], 1), b = q && sPts([q.b], 1); if (Number.isInteger(s) && s >= 0 && s < N && Number.isInteger(n) && n >= 2 && n < N && a && b) { out[s] = { n, a: a[0], b: b[0] }; const rp = q.rc && sPts([q.rc.p], 1), rr = q.rc && sNum(q.rc.r); if (rp && rr > 0) out[s].rc = { p: rp[0], r: rr }; } }
+  for (const k of Object.keys(c)) { const s = +k, q = c[k], n = q ? +q.n : NaN, a = q && sPts([q.a], 1), b = q && sPts([q.b], 1); if (Number.isInteger(s) && s >= 0 && s < N && Number.isInteger(n) && n >= 2 && n < N && a && b) { out[s] = { n, a: a[0], b: b[0] }; const rp = q.rc && sPts([q.rc.p], 1), rr = q.rc && sNum(q.rc.r); if (rp && rr > 0) out[s].rc = { p: rp[0], r: rr }; if (typeof q.glass === 'string' && /^[a-z]{2,12}$/.test(q.glass)) out[s].glass = q.glass; } }
   return Object.keys(out).length ? out : null;
 }
 function sanitizeLayout(L) {

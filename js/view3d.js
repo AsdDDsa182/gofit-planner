@@ -152,6 +152,15 @@ function buildRoom() {
     const N_ = idx.map((k, q) => { const e0 = E[Math.max(0, q - 1)], e1 = E[Math.min(E.length - 1, q)], x = e0.nx + e1.nx, z = e0.nz + e1.nz, l = Math.hypot(x, z) || 1; return [x / l, z / l]; });
     const us = [0]; for (let q = 1; q < Q.length; q++) us.push(us[q - 1] + G.len(Q[q - 1], Q[q]));
     const out = N_.map(v => [-v[0], -v[1]]), mid = N_[Math.floor(N_.length / 2)];
+    if (c.ref.glass) {
+      const off = (k, d) => Q.map((p, q) => [p[0] - N_[q][0] * d, p[1] - N_[q][1] * d]), M = off(0, WALL_T / 2), A = off(0, WALL_T / 2 - .03), B = off(0, WALL_T / 2 + .03), Lc = us[us.length - 1];
+      const fm = mat('gframe', () => std('#2f3236', { roughness: .45, metalness: .35, side: THREE.DoubleSide })), own = me => { me.userData.own = true; g.add(me); return me; };
+      own(new THREE.Mesh(stripGeo(M, N_, .06, H - .06, us), LINE ? CADM() : glassMat(c.ref.glass)));
+      for (const [y0, y1] of [[0, .06], [H - .06, H]]) { const s1 = own(new THREE.Mesh(stripGeo(A, N_, y0, y1, us), fm)), s2 = own(new THREE.Mesh(stripGeo(B, out, y0, y1, us), fm)); s1.castShadow = s2.castShadow = true; own(new THREE.Mesh(capGeo(A, B, y1), fm)); if (y0 > 0) own(new THREE.Mesh(capGeo(A, B, y0), fm)); }
+      const nM = Math.max(1, Math.round(Lc / 1.2)), bx = new THREE.BoxGeometry(.05, Math.max(.1, H - .12), .06);
+      for (let k = 0; k <= nM; k++) { const sv = Lc * k / nM; let j = 1; while (j < us.length - 1 && us[j] < sv) j++; const f = (sv - us[j - 1]) / ((us[j] - us[j - 1]) || 1), p0 = M[j - 1], p1 = M[j], tx = p1[0] - p0[0], tz = p1[1] - p0[1]; const me = own(new THREE.Mesh(bx, fm)); me.position.set(p0[0] + tx * f, H / 2, p0[1] + tz * f); me.rotation.y = -Math.atan2(tz, tx); me.castShadow = true; }
+      continue;
+    }
     const wm = LINE ? new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }) : std(st.wallColor || '#eeede8', { roughness: .92, transparent: true, opacity: 1 });
     const add = (geo, m, shadow) => { const me = new THREE.Mesh(geo, m); me.castShadow = !!shadow; me.receiveShadow = true; me.userData.own = true; if (LINE) addEdges(me); g.add(me); return me; };
     add(stripGeo(Q, N_, 0, H, us), wm, true); add(stripGeo(Oq, out, 0, H, us), wm, true); add(capGeo(Q, Oq, H), wm, false);
