@@ -18,7 +18,7 @@ const sp = { mode: 'py', shape: 'rect', vals: {}, walk: null, open: new Set(['ma
 for (const k in SHAPES) sp.vals[k] = Object.fromEntries(SHAPES[k].ps.map(p => [p[0], p[2]]));
 let liveT = 0;
 function applyRoomLive(P, fit) {
-  const L = GP.L(); L.room.pts = P.map(p => [U.r3(p[0]), U.r3(p[1])]);
+  const L = GP.L(); L.room.pts = P.map(p => [U.r3(p[0]), U.r3(p[1])]); delete L.room.curves;
   GP.changed('room', { commit: false, fast: true }); clearTimeout(liveT);
   liveT = setTimeout(() => { const n = GP.pruneWalls(); if (n) { GP.changed('openings', { commit: false }); GP.toast(`벽 개수가 줄어서 문·창문 ${n}개를 지웠어요 (Ctrl+Z로 되돌릴 수 있어요)`, { ms: 4500 }); } GP.H.commit(); if (fit) GP.S.fit(); }, 700);
 }
@@ -29,25 +29,25 @@ panels.renderSpace = () => {
   const fold = (id, title, val, body) => `<details class="fold" data-fold="${id}" ${sp.open.has(id) ? 'open' : ''}><summary><span class="fd-t">${title}</span>${val ? `<span class="fd-v">${val}</span>` : ''}</summary><div class="fd-b">${body}</div></details>`;
   const bb = G.bounds(L.room.pts);
   el.innerHTML = `<p class="lead">고객 매장의 벽 모양과 크기를 만들어요. 문·창문·가벽은 도면 위 도구로 넣어요.</p>
-  ${fold('make', '공간 만들기', `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`, `<div class="seg full" id="spMode"><button data-m="py" class="${sp.mode === 'py' ? 'on' : ''}">평수로</button><button data-m="shape" class="${sp.mode === 'shape' ? 'on' : ''}">모양 템플릿</button><button data-m="walk" class="${sp.mode === 'walk' ? 'on' : ''}">실측 입력</button></div>
+  ${fold('make', '공간 만들기', `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`, `<button class="btn wide soft" data-pen="1" style="margin-bottom:8px">${IC.pen}펜으로 직접 그리기 <small class="note" style="margin-left:4px">클릭: 모서리 · 끌기: 곡선</small></button><div class="seg full" id="spMode"><button data-m="py" class="${sp.mode === 'py' ? 'on' : ''}">평수로</button><button data-m="shape" class="${sp.mode === 'shape' ? 'on' : ''}">모양 템플릿</button><button data-m="walk" class="${sp.mode === 'walk' ? 'on' : ''}">실측 입력</button></div>
     <div id="spBody" class="blk" style="border:0;padding:0"></div>`)}
   ${fold('finish', '벽 · 바닥 마감', `${ui.texName(st.floorBase)} · ${ui.texName(st.wallTex || 'paint')}`, `<p class="note" style="margin:0">3D 보기와 제안서 3D 그림에 보여요. 바닥 무늬는 도면에도 연하게 보여요. 벽마다 다르게 하려면 도면에서 벽을 누르세요.</p>
     <span class="lbl">바닥</span>${ui.texGrid('floor', st.floorBase)}
     <span class="lbl">벽 (모든 벽)</span>${ui.texGrid('wall', st.wallTex || 'paint')}
     <div class="row2"><label class="fld"><span>페인트 색</span><input type="color" id="wallColor" value="${U.esc(st.wallColor || '#eeede8')}"></label><label class="fld"><span>걸레받이</span><select id="baseboard">${[['dark', '블랙'], ['white', '화이트'], ['none', '없음']].map(([k, n]) => `<option value="${k}" ${(st.baseboard || 'dark') === k ? 'selected' : ''}>${n}</option>`).join('')}</select></label></div>`)}
   ${fold('ceil', '천장 높이', `${st.wallH}m`, `<label class="fld"><span>바닥에서 천장까지</span>${numI('ceilH', st.wallH, .05, 'm', 'min="2" max="8"')}</label><p class="note" style="margin:0">기구마다 쓸 때 필요한 높이(트레드밀 위 사람 키, 스텝밀 맨 위 계단 등)를 이 높이로 점검해요. 3D 벽 높이로도 쓰여요.</p>`)}
-  ${fold('trace', '고객 도면 대고 그리기', GP.S.underlay ? '도면 깔림' : '', `<p class="note">받은 평면도 사진이나 캐드 파일(DXF)을 깔고 <b>벽 모양</b> 도구로 꼭짓점을 맞추면 실제 모양 그대로 만들 수 있어요.</p>
+  ${fold('trace', '고객 도면 대고 그리기', GP.S.underlay ? '도면 깔림' : '', `<p class="note">받은 평면도 사진이나 캐드 파일(DXF)을 깔고 <b>펜</b>으로 벽 모서리를 따라 찍으면 실제 모양 그대로 만들 수 있어요. 그다음 확실히 아는 벽 하나의 길이를 넣으면 전체 크기가 맞춰져요.</p>
     <div class="row2"><label class="btn file" style="position:relative;overflow:hidden">이미지·PDF 캡처<input type="file" id="ulImg" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label><label class="btn file" style="position:relative;overflow:hidden">캐드 파일 (DXF)<input type="file" id="ulDxf" accept=".dxf" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label></div>
-    <div id="ulCtl"></div>`)}
+    <div id="ulCtl"></div>${GP.S.underlay ? `<button class="btn wide primary" data-pen="1" style="margin-top:8px">${IC.pen}펜으로 따라 그리기</button>` : ''}`)}
   ${fold('fit', '지금 모양 그대로 평수 맞추기', '', `<div class="row2"><label class="fld"><span>목표 평수 (지금 ${(A / U.PY).toFixed(1)}평)</span>${numI('fitPy', (A / U.PY).toFixed(1), .5, '평', 'min="3"')}</label><button class="btn" id="fitApply">비율 유지하고 맞추기</button></div>`)}
   ${fold('logo', '고객 로고', '', `<p class="note">로고 이미지를 올리면 벽에 붙는 로고가 생겨요.</p><label class="btn wide file" style="position:relative;overflow:hidden">로고 이미지 올리기<input type="file" id="logoFile" accept="image/*" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>`)}
-  ${fold('vt', '꼭짓점 좌표 (m)', `${L.room.pts.length}개`, `<table class="tbl" id="vtable"></table>`)}`;
+  ${fold('vt', '꼭짓점 좌표 (m)', `${L.room.pts.length - (GP.CV ? GP.CV.inner(L).size : 0)}개`, `<table class="tbl" id="vtable"></table>`)}`;
   renderSpBody(); renderVTable(); renderUL();
 };
 /* the closed folds' titles keep showing the current size, ceiling and corner count */
 function foldVals() {
   const L = GP.L(), A = Math.abs(G.area(L.room.pts)), bb = G.bounds(L.room.pts), set = (id, v) => { const el = $(`#panel-space [data-fold="${id}"] .fd-v`); if (el) el.textContent = v; };
-  set('make', `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`); set('ceil', `${GP.P.settings.wallH}m`); set('vt', `${L.room.pts.length}개`);
+  set('make', `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`); set('ceil', `${GP.P.settings.wallH}m`); set('vt', `${L.room.pts.length - (GP.CV ? GP.CV.inner(L).size : 0)}개`);
   set('finish', `${ui.texName(GP.P.settings.floorBase)} · ${ui.texName(GP.P.settings.wallTex || 'paint')}`);
 }
 panels.openFold = (id) => sp.open.add(id);
@@ -77,8 +77,8 @@ function shpCalc() { const P = SHAPES[sp.shape].make(sp.vals[sp.shape]); const A
 function pyRect() { const py = +($('#pyIn').value) || 0, r = +($('#pyRatio').value) || 1.5; sp.py = py; sp.ratio = r; const A = py * U.PY, d = U.snap(Math.sqrt(A / r), .05), w = U.snap(d * r, .05); const c = $('#pyCalc'); if (c) c.textContent = `≈ ${A.toFixed(1)}㎡ · 가로 ${w.toFixed(2)} m × 세로 ${d.toFixed(2)} m`; return [[0, 0], [w, 0], [w, d], [0, d]]; }
 function hiWallsFor(k) { const V = Object.assign({}, sp.vals[sp.shape]); const P0 = SHAPES[sp.shape].make(V); V[k] = V[k] + .37; const P1 = SHAPES[sp.shape].make(V); const out = new Set(); if (P0.length === P1.length) for (let i = 0; i < P0.length; i++) if (Math.abs(G.len(P0[i], P0[(i + 1) % P0.length]) - G.len(P1[i], P1[(i + 1) % P1.length])) > 1e-6) out.add(i); return out; }
 function renderVTable() {
-  const vt = $('#vtable'); if (!vt || vt.contains(document.activeElement)) return; const P = GP.L().room.pts;
-  vt.innerHTML = '<thead><tr><th>#</th><th>X</th><th>Y</th><th></th></tr></thead><tbody>' + P.map((p, i) => `<tr><td class="mono">${i + 1}</td><td><input type="number" step="0.01" data-i="${i}" data-c="0" value="${p[0].toFixed(2)}"></td><td><input type="number" step="0.01" data-i="${i}" data-c="1" value="${p[1].toFixed(2)}"></td><td><button class="x" data-vdel="${i}" ${P.length <= 3 ? 'disabled' : ''}>×</button></td></tr>`).join('') + '</tbody>';
+  const vt = $('#vtable'); if (!vt || vt.contains(document.activeElement)) return; const P = GP.L().room.pts, inner = GP.CV ? GP.CV.hidden(GP.L()) : new Set();      // (the inner points of curves are not listed: they follow the curve)
+  vt.innerHTML = '<thead><tr><th>#</th><th>X</th><th>Y</th><th></th></tr></thead><tbody>' + P.map((p, i) => inner.has(i) ? '' : `<tr><td class="mono">${GP.CV ? GP.CV.num(GP.L(), i) : i + 1}</td><td><input type="number" step="0.01" data-i="${i}" data-c="0" value="${p[0].toFixed(2)}"></td><td><input type="number" step="0.01" data-i="${i}" data-c="1" value="${p[1].toFixed(2)}"></td><td><button class="x" data-vdel="${i}" ${P.length <= 3 ? 'disabled' : ''}>×</button></td></tr>`).join('') + '</tbody>';
 }
 function renderUL() {
   const c = $('#ulCtl'); if (!c) return; const UL = GP.S.underlay; if (!UL) { c.innerHTML = ''; return; }
@@ -92,9 +92,10 @@ function renderUL() {
 panels.renderUL = renderUL;
 const spEl = $('#panel-space');
 spEl.addEventListener('click', e => {
-  const t = e.target; const m = t.closest('#spMode [data-m]'); if (m) { sp.mode = m.dataset.m; if (sp.mode === 'walk') sp.walk = null; panels.renderSpace(); return; }
+  const t = e.target; if (t.closest('[data-pen]')) { ui.setTool('pen'); GP.toast('모서리를 차례로 클릭하세요. 휘어진 곳은 누른 채 끌면 곡선이 돼요. 첫 점을 누르면 완성!', { ms: 5000 }); return; }
+  const m = t.closest('#spMode [data-m]'); if (m) { sp.mode = m.dataset.m; if (sp.mode === 'walk') sp.walk = null; panels.renderSpace(); return; }
   const shp = t.closest('[data-shape]'); if (shp) { sp.shape = shp.dataset.shape; renderSpBody(); applyRoomLive(SHAPES[sp.shape].make(sp.vals[sp.shape]), true); return; }
-  if (t.id === 'fitApply') { const tg = +$('#fitPy').value; if (!(tg >= 3)) return; const L = GP.L(), P = L.room.pts, A = Math.abs(G.area(P)), s = Math.sqrt(tg * U.PY / A), b = G.bounds(P); L.room.pts = P.map(p => [U.r3(b.minX + (p[0] - b.minX) * s), U.r3(b.minZ + (p[1] - b.minZ) * s)]); const sc = (o) => { o.x = U.r3(b.minX + (o.x - b.minX) * s); o.z = U.r3(b.minZ + (o.z - b.minZ) * s); }; L.items.forEach(sc); L.rooms.forEach(sc); L.notes.forEach(sc); [L.mats, L.zones].forEach(arr => arr.forEach(o => { o.pts = o.pts.map(p => [U.r3(b.minX + (p[0] - b.minX) * s), U.r3(b.minZ + (p[1] - b.minZ) * s)]); })); L.partitions.forEach(o => { o.pts = o.pts.map(p => [U.r3(b.minX + (p[0] - b.minX) * s), U.r3(b.minZ + (p[1] - b.minZ) * s)]); }); L.openings.forEach(o => { o.t = U.r3(o.t * s); }); GP.changed('all'); GP.S.fit(); GP.toast(`모양은 그대로 두고 ${tg}평에 맞췄어요`); return; }
+  if (t.id === 'fitApply') { const tg = +$('#fitPy').value; if (!(tg >= 3)) return; const P = GP.L().room.pts, A = Math.abs(G.area(P)), b = G.bounds(P); GP.CV.scaleAll(Math.sqrt(tg * U.PY / A), [b.minX, b.minZ]); GP.S.fit(); GP.toast(`모양은 그대로 두고 ${tg}평에 맞췄어요`); return; }
   if (t.id === 'walkAdd') { sp.walk.push({ len: 3, turn: 90 }); renderSpBody(); applyRoomLive(walkToPts(sp.walk)); return; }
   if (t.id === 'walkReset') { sp.walk = roomToWalk(GP.L().room.pts); renderSpBody(); return; }
   const wd = t.closest('[data-del]'); if (wd) { sp.walk.splice(+wd.dataset.del, 1); renderSpBody(); applyRoomLive(walkToPts(sp.walk)); return; }
@@ -112,7 +113,7 @@ spEl.addEventListener('input', e => {
 });
 spEl.addEventListener('change', e => {
   const t = e.target;
-  if (t.dataset.c != null && t.dataset.i != null && t.closest('#vtable')) { const P = GP.L().room.pts, i = +t.dataset.i, v = +t.value; if (isFinite(v) && P[i]) { P[i][+t.dataset.c] = U.r3(v); GP.changed('room'); } return; }
+  if (t.dataset.c != null && t.dataset.i != null && t.closest('#vtable')) { const P = GP.L().room.pts, i = +t.dataset.i, v = +t.value; if (isFinite(v) && P[i]) { if (GP.CV) GP.CV.release(GP.L(), i); P[i][+t.dataset.c] = U.r3(v); GP.changed('room'); } return; }
   if (t.id === 'baseboard') { GP.P.settings.baseboard = t.value; GP.changed(['room', 'settings']); return; }
   if (t.id === 'wallColor') { GP.P.settings.wallColor = t.value; GP.changed(['room', 'settings']); return; }
   if (t.id === 'ceilH') { const v = U.clamp(+t.value || 2.8, 2, 8); GP.P.settings.wallH = U.r2(v); t.value = GP.P.settings.wallH; GP.changed('all'); GP.toast(`천장 높이 ${GP.P.settings.wallH}m 기준으로 다시 점검했어요`); return; }

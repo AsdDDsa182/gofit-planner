@@ -74,13 +74,13 @@ function snapPoint(x, z, o) {
   const S = GP.S, L = GP.L(), tol = S.mpp() * 12, g = o.g || .05;
   if (!o.fine) {
     let best = null, bd = tol;
-    const cand = []; L.room.pts.forEach(p => cand.push(p)); L.partitions.forEach(p => p.pts.forEach(q => cand.push(q))); (o.extra || []).forEach(q => cand.push(q));
+    const cand = []; if (!o.noRoom) L.room.pts.forEach(p => cand.push(p)); L.partitions.forEach(p => p.pts.forEach(q => cand.push(q))); (o.extra || []).forEach(q => cand.push(q));
     L.mats.forEach(m => m.pts.forEach(q => cand.push(q)));
     for (const c of cand) { if (o.skipPts && o.skipPts.has(c)) continue; const dd = Math.hypot(c[0] - x, c[1] - z); if (dd < bd) { bd = dd; best = c.slice(); } }
     if (best) return best;
   }
   if (o.prev && o.shift) { const dx = x - o.prev[0], dz = z - o.prev[1], ang = Math.atan2(dz, dx), l = Math.hypot(dx, dz), a2 = Math.round(ang / (Math.PI / 4)) * Math.PI / 4; return [U.r3(o.prev[0] + Math.cos(a2) * U.snap(l, g)), U.r3(o.prev[1] + Math.sin(a2) * U.snap(l, g))]; }
-  if (!o.fine) { const P = L.room.pts; for (let i = 0; i < P.length; i++) { if (o.skipWalls && o.skipWalls.has(i)) continue; const c = G.closest(x, z, P[i], P[(i + 1) % P.length]); if (c.d < tol) { return [U.r3(c.x), U.r3(c.z)]; } } }
+  if (!o.fine && !o.noRoom) { const P = L.room.pts; for (let i = 0; i < P.length; i++) { if (o.skipWalls && o.skipWalls.has(i)) continue; const c = G.closest(x, z, P[i], P[(i + 1) % P.length]); if (c.d < tol) { return [U.r3(c.x), U.r3(c.z)]; } } }
   let sx = U.snap(x, g), sz = U.snap(z, g);
   if (o.prev && !o.fine) { if (Math.abs(sx - o.prev[0]) < tol) sx = o.prev[0]; if (Math.abs(sz - o.prev[1]) < tol) sz = o.prev[1]; }
   return [U.r3(sx), U.r3(sz)];
@@ -214,6 +214,7 @@ const pointers = new Map(); let pinch = null;
 tools.cancel = () => {
   if (ui.placing) { ui.placing = null; GP.S.clearGhost(); GP.emit('placing'); }
   if (tools.selVs) tools.selVs.clear();
+  if (GP.pen) GP.pen.cancel();
   draw = null; drag = null; press = null; hover = null; tools.preview = null; if (GP.S.canvas) GP.S.canvas.style.cursor = ''; $('#ovMarquee').hidden = true; GP.emit('overlay'); ui.setHint(); GP.S.invalidate();
 };
 tools.getDraw = () => draw; tools.getHover = () => hover;
@@ -291,6 +292,7 @@ function onDown(e) {
   if (ui.placing) { press = { placing: true }; ghostUpdate(e.clientX, e.clientY, e.altKey); return; }
   const fp = S.floorAt(e.clientX, e.clientY);
   const t = ui.tool;
+  if (t === 'pen' && GP.pen) { GP.pen.down(e, fp); return; }
   if (t !== 'select') { if (toolDown(t, e, fp)) return; }
   if (t !== 'select') { press = { x: e.clientX, y: e.clientY }; return; }
   const sd = !e.shiftKey && sideAt(e.clientX, e.clientY); if (sd) { startSide(sd.t, sd.i, fp); GP.tip.hide(); return; }
@@ -322,6 +324,7 @@ function onMove(e) {
   if (press && press.pan) { const dx = e.clientX - press.x, dy = e.clientY - press.y; if (!press.moved && Math.hypot(dx, dy) < 4) return; press.moved = true; S.panBy(dx, dy); press.x = e.clientX; press.y = e.clientY; canvas().style.cursor = 'grabbing'; GP.tip.hide(); return; }
   if (press && press.view) { const dx = e.clientX - press.x, dy = e.clientY - press.y; if (!press.moved && Math.hypot(dx, dy) < 5) return; press.moved = true; S.panBy(dx, dy); press.x = e.clientX; press.y = e.clientY; GP.tip.hide(); return; }
   if (press && press.marquee) { const m = $('#ovMarquee'); const r = S.canvas.getBoundingClientRect(); const x0 = Math.min(press.x, e.clientX) - r.left, y0 = Math.min(press.y, e.clientY) - r.top; m.hidden = false; m.style.left = x0 + 'px'; m.style.top = y0 + 'px'; m.style.width = Math.abs(e.clientX - press.x) + 'px'; m.style.height = Math.abs(e.clientY - press.y) + 'px'; return; }
+  if (ui.tool === 'pen' && GP.pen && !GP.viewOnly) { GP.pen.move(e); return; }
   if (draw) { toolMove(e); return; }
   if (drag) { dragMove(e); return; }
   if (ui.tool !== 'select' && !GP.viewOnly) { toolHover(e); return; }
@@ -336,10 +339,11 @@ function onUp(e) {
   if (press && press.marquee) {
     $('#ovMarquee').hidden = true; const r = S.canvas.getBoundingClientRect(); const x0 = Math.min(press.x, e.clientX) - r.left, x1 = Math.max(press.x, e.clientX) - r.left, y0 = Math.min(press.y, e.clientY) - r.top, y1 = Math.max(press.y, e.clientY) - r.top;
     const add = press.add, tiny = x1 - x0 < 4 && y1 - y0 < 4;      // a click (no box): clears the selection unless Shift is held
-    if (press.verts) { const tg = tools.polyTarget(); press = null; if (tg) { if (!add) tools.selVs.clear(); if (!tiny) tg.pts.forEach((p, k) => { const [sx, sy] = S.toScreen(p[0], 0, p[1]); if (sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) tools.selVs.add(k); }); tools.selV = tools.selVs.size ? [...tools.selVs][tools.selVs.size - 1] : -1; GP.emit('overlay'); S.invalidate(); } return; }
+    if (press.verts) { const tg = tools.polyTarget(); press = null; if (tg) { if (!add) tools.selVs.clear(); if (!tiny) { const inner = tg.kind === 'room' && GP.CV ? GP.CV.hidden(GP.L()) : new Set(); tg.pts.forEach((p, k) => { const [sx, sy] = S.toScreen(p[0], 0, p[1]); if (!inner.has(k) && sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1) tools.selVs.add(k); }); } tools.selV = tools.selVs.size ? [...tools.selVs][tools.selVs.size - 1] : -1; GP.emit('overlay'); S.invalidate(); } return; }
     const hits = tiny ? [] : GP.L().items.filter(it => { const [sx, sy] = S.toScreen(it.x, 0, it.z); return sx >= x0 && sx <= x1 && sy >= y0 && sy <= y1; }).map(it => ({ k: 'item', id: it.uid }));
     press = null; if (hits.length) ui.select(hits, add); else if (!add && !ui.multi) ui.clearSel(); return;
   }
+  if (ui.tool === 'pen' && GP.pen) { GP.pen.up(e); return; }
   if (draw) { toolUp(e); return; }
   if (drag) {
     const d = drag; drag = null; canvas().style.cursor = '';
@@ -357,8 +361,9 @@ function viewerTap(e) {
   tools.clearHover();
 }
 function onDbl(e) {
+  if (ui.tool === 'pen' && GP.pen) { GP.pen.dbl(e); return; }
   if (draw && (draw.tool === 'part' || draw.tool === 'matPoly')) { finishDraw(); return; }
-  if (!GP.viewOnly && ui.tool === 'vertex') { const fp = GP.S.floorAt(e.clientX, e.clientY), i = hoverWallSeg(fp); if (i >= 0) tools.addPointOnWall(i, [fp.x, fp.z]); return; }
+  if (!GP.viewOnly && ui.tool === 'vertex') { const fp = GP.S.floorAt(e.clientX, e.clientY), i = hoverWallSeg(fp); if (i >= 0 && !(GP.CV && GP.CV.of(GP.L(), i))) tools.addPointOnWall(i, [fp.x, fp.z]); return; }
   if (GP.viewOnly || ui.placing || ui.tool !== 'select') return;
   const fp = GP.S.floorAt(e.clientX, e.clientY); const uid = GP.S.itemAt(fp.x, fp.z); if (uid) { const it = GP.findItem(uid); GP.M3.open(it); }
 }
@@ -398,6 +403,10 @@ function toolDown(t, e, fp) {
     const P = L.room.pts, n = P.length, tol = S.mpp() * 9; let best = -1, bd = Infinity;
     for (let i = 0; i < n; i++) { const c = G.closest(fp.x, fp.z, P[i], P[(i + 1) % n]); if (c.d < bd) { bd = c.d; best = i; } }
     const target = tools.polyTarget();
+    if (best >= 0 && bd < tol && GP.CV && !e.shiftKey) {
+      const c = GP.CV.of(L, best); if (c) { selOnly(-1); GP.CV.bodyDown(e, c, fp); return true; }
+      if (e.altKey && GP.CV.bendDown(e, best, fp)) { selOnly(-1); return true; }
+    }
     if (best >= 0 && bd < tol) {
       const a = best, b = (best + 1) % n, Sv = tools.selVs;
       if (e.shiftKey) { if (Sv.has(a) && Sv.has(b)) { Sv.delete(a); Sv.delete(b); tools.selV = Sv.size ? [...Sv][Sv.size - 1] : -1; GP.emit('overlay'); S.invalidate(); return true; } Sv.add(a); Sv.add(b); }
@@ -440,8 +449,9 @@ function toolMove(e) {
 /* wall-shape tool: the wall under the pointer shows its + (add a point) */
 tools.hoverSeg = -1;
 function hoverWallSeg(fp) {
-  const t = tools.polyTarget(); if (!t || t.kind !== 'room') return -1; const P = t.pts, n = P.length, tol = GP.S.mpp() * 16; let best = -1, bd = tol;
+  const t = tools.polyTarget(); if (!t || t.kind !== 'room') return -1; const P = t.pts, n = P.length, mpp = GP.S.mpp(), tol = mpp * 16; let best = -1, bd = tol;
   for (let i = 0; i < n; i++) { const c = G.closest(fp.x, fp.z, P[i], P[(i + 1) % n]); if (c.d < bd) { bd = c.d; best = i; } }
+  if (best >= 0) { const inner = GP.CV ? GP.CV.hidden(GP.L()) : new Set(); for (let i = 0; i < n; i++) if (!inner.has(i) && Math.hypot(P[i][0] - fp.x, P[i][1] - fp.z) < mpp * 18) return -1; }      // over a corner: that is the corner, not a wall
   return best;
 }
 function setHoverSeg(i) {
@@ -512,6 +522,7 @@ function openingHover(fp) {
 function wallHover(fp) { let best = null; for (const W of wallLines()) { const c = G.closest(fp.x, fp.z, W.a, W.b); const s = (fp.x - W.a[0]) * W.nx + (fp.z - W.a[1]) * W.nz; if (s < -.1 || c.d > .9) continue; if (!best || c.d < best.d) best = Object.assign({ d: c.d }, W); } return best; }
 tools.key = (e) => {
   const k = e.key;
+  if (GP.pen && GP.pen.key(e)) return true;
   if (draw && draw.tool === 'part') {
     if (/^[0-9.]$/.test(k)) { draw.num = (draw.num || '') + k; ui.setHint(`길이 입력: <b>${draw.num}</b> m · <kbd>Enter</kbd>로 확정`); return true; }
     if (k === 'Backspace') { if (draw.num) draw.num = draw.num.slice(0, -1); else if (draw.pts.length > 1) draw.pts.pop(); else draw = null; GP.emit('overlay'); e.preventDefault(); return true; }
@@ -538,6 +549,7 @@ GP.on('selection', () => { if (ui.tool !== 'vertex') { tools.selVs.clear(); tool
 tools.wallSel = (i) => { if (ui.tool !== 'vertex' || tools.selVs.size < 2) return false; const n = GP.L().room.pts.length; return tools.selVs.has(i) && tools.selVs.has((i + 1) % n); };
 function startMulti(target, i, fp, wall, fromHandle) {
   const idx = [...tools.selVs]; hd = { type: 'vs', target, i, idx, start: idx.map(k => target.pts[k].slice()), fx: fp.x, fz: fp.z, moved: false, wall, fromHandle };
+  hd.rcs = target.kind === 'room' && GP.CV ? GP.CV.list(GP.L()).filter(c => c.ref.rc && (idx.includes(c.s) || idx.includes(c.e))).map(c => ({ c, p0: c.ref.rc.p.slice() })) : [];
 }
 const ptrAng = (it, fp) => -Math.atan2(fp.x - it.x, fp.z - it.z) / DEG;      // the item rotation that would put its front towards the pointer
 const fineKey = e => e.shiftKey || e.ctrlKey || e.metaKey;
@@ -547,6 +559,8 @@ const rotSnap = (a, e) => e.altKey ? Math.round(a * 10) / 10 : U.snap(a, fineKey
 const rotHint = (txt, e) => ui.setHint(`${txt} · ${fineKey(e) ? '<b>미세 1°</b>' : '15° 단위'} · <kbd>Shift</kbd>/<kbd>Ctrl</kbd> 미세 · <kbd>Alt</kbd> 자유`);
 tools.handleDown = (e, el) => {
   e.preventDefault(); e.stopPropagation(); const h = el.dataset.h;
+  if (h === 'cp' && GP.CV) { GP.CV.cpDown(e, el); return; }
+  if ((h === 'rr' || h === 'rcv') && GP.CV) { GP.CV.rcDown(e, el); return; }
   const target = tools.polyTarget();
   if (h === 'v' && target) {
     const i = +el.dataset.i, S = tools.selVs;
@@ -579,9 +593,9 @@ tools.handleMove = (e) => {
       const sp = snapPoint(x, z, { g: q.g, fine: q.fine, skipPts: new Set([P[hd.i], ...nb.map(j => P[j])]), skipWalls: room ? new Set([(hd.i - 1 + n) % n, hd.i]) : null }); x = sp[0]; z = sp[1];
       if (!q.fine) { const tol = S.mpp() * 6; for (const j of nb) { if (Math.abs(fp.x - P[j][0]) < tol) x = P[j][0]; if (Math.abs(fp.z - P[j][1]) < tol) z = P[j][1]; } }      // lines up with a neighbour (a straight wall) only within 6 px of it
     }
-    P[hd.i] = [U.r3(x), U.r3(z)]; hd.moved = true; S.dataChanged(); GP.emit('overlay');
+    P[hd.i] = [U.r3(x), U.r3(z)]; hd.moved = true; if (room && GP.CV) GP.CV.resample(GP.L()); S.dataChanged(); GP.emit('overlay');
     const segs = (open ? [hd.i - 1, hd.i].filter(k => k >= 0 && k < n - 1) : [(hd.i - 1 + n) % n, hd.i]).map(k => `<b>${G.len(P[k], P[(k + 1) % n]).toFixed(2)} m</b>`);
-    ui.setHint(`${room ? `${hd.i + 1}번 꼭짓점` : '꼭짓점'} · ${segs.length > 1 ? '양옆' : ''} 벽 ${segs.join(' · ')}${gridHint(q)}`); return;
+    ui.setHint(`${room ? `${GP.CV ? GP.CV.num(GP.L(), hd.i) : hd.i + 1}번 꼭짓점` : '꼭짓점'} · ${segs.length > 1 ? '양옆' : ''} 벽 ${segs.join(' · ')}${gridHint(q)}`); return;
   }
   if (hd.type === 'e') {
     const q = gridOf(e); let d = (fp.x - hd.fx) * hd.nx + (fp.z - hd.fz) * hd.nz; if (!q.free) d = U.snap(d, q.g);
@@ -599,7 +613,8 @@ tools.handleMove = (e) => {
     if (hd.wall) { const w = hd.wall, d = dx * w.nx + dz * w.nz; dx = w.nx * d; dz = w.nz * d; if (!g.free) { const ds = U.snap(d, g.g); dx = w.nx * ds; dz = w.nz * ds; } }
     else if (!g.free) { dx = U.snap(dx, g.g); dz = U.snap(dz, g.g); }
     hd.idx.forEach((k, q) => { hd.target.pts[k] = [U.r3(hd.start[q][0] + dx), U.r3(hd.start[q][1] + dz)]; });
-    hd.moved = true; S.dataChanged(); GP.emit('overlay');
+    (hd.rcs || []).forEach(r => { r.c.ref.rc.p = [U.r3(r.p0[0] + dx), U.r3(r.p0[1] + dz)]; });
+    hd.moved = true; if (hd.target.kind === 'room' && GP.CV) GP.CV.resample(GP.L()); S.dataChanged(); GP.emit('overlay');
     GP.ui.setHint(`${hd.wall ? '벽' : `꼭짓점 ${hd.idx.length}개`} 이동 <b>${hd.wall ? U.cm(Math.abs(dx * hd.wall.nx + dz * hd.wall.nz)) + 'cm' : `${U.cm(Math.hypot(dx, dz))}cm`}</b>${gridHint(g)}`); return;
   }
   if (hd.type === 'rs') {
@@ -665,6 +680,7 @@ tools.reindex = (t, op, i, old) => {
     remap(k => k < i ? k : k === i ? i - 1 : k - 1);
   }
   if (gone.size) L.openings = L.openings.filter(o => !gone.has(o));
+  if (t.kind === 'room' && GP.CV) GP.CV.reindex(L, op, i, n0);
 };
 /* after the room or a partition was replaced as a whole: doors / windows / finishes of walls that no longer exist go. Returns how many openings went. */
 GP.pruneWalls = () => {
@@ -685,11 +701,12 @@ tools.setAngle = (i, deg, side) => {
   for (const s of [1, -1]) { const a = a0 + s * d; P[j] = [U.r3(p[0] + Math.cos(a) * L), U.r3(p[1] + Math.sin(a) * L)]; const err = Math.abs(G.interior(P, i) - deg); if (!best || err < best.err) best = { err, pt: P[j].slice() }; }
   P[j] = best.pt;
   if (best.err > .3 || G.selfX(P)) { P[j] = keep; GP.toast('이 각도로 바꾸면 벽이 서로 겹쳐요. 다른 쪽 벽을 돌리거나 각도를 조금 바꿔 보세요', { bad: true, ms: 4500 }); GP.emit('overlay'); return false; }
-  GP.changed('room'); GP.toast(`${i + 1}번 꼭짓점을 ${Math.round(G.interior(P, i) * 10) / 10}°로 바꿨어요`); return true;
+  GP.changed('room'); GP.toast(`${GP.CV ? GP.CV.num(GP.L(), i) : i + 1}번 꼭짓점을 ${Math.round(G.interior(P, i) * 10) / 10}°로 바꿨어요`); return true;
 };
 tools.setWallLength = (i, Lnew) => {
   const P = GP.L().room.pts, e = G.edge(P, i), delta = Lnew - e.L, pb = e.b[0] * e.dx + e.b[1] * e.dz;
   P.forEach((p, k) => { if (k !== i && (p[0] * e.dx + p[1] * e.dz) >= pb - 1e-3) { p[0] = U.r3(p[0] + e.dx * delta); p[1] = U.r3(p[1] + e.dz * delta); } });
+  if (GP.CV) for (const c of GP.CV.list(GP.L())) if (c.ref.rc) { const p = c.ref.rc.p; if ((p[0] * e.dx + p[1] * e.dz) >= pb - 1e-3) c.ref.rc.p = [U.r3(p[0] + e.dx * delta), U.r3(p[1] + e.dz * delta)]; }
   GP.changed('room'); GP.toast(`벽 길이를 ${Lnew.toFixed(2)} m로 바꿨어요`);
 };
 window.addEventListener('pointermove', e => { if (hd) tools.handleMove(e); });

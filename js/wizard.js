@@ -83,10 +83,10 @@ R.space = {
     b.innerHTML = head('공간 모양을 만들어요', '가지고 있는 정보에 맞는 방법을 고르세요. 오른쪽 도면에 바로 그려져요.') +
       `<div class="wz-cards">${[['py', '평수만 알아요', '평수와 가로·세로 비율로'], ['shape', '모양이 특이해요', 'L자 · 사선 · 사다리꼴'], ['walk', '벽 길이를 재 왔어요', '잰 길이를 차례로 입력'], ['trace', '도면 사진이 있어요', '사진 위에 따라 그리기']].map(([k, t, d]) => `<button class="wz-card${m === k ? ' on' : ''}" data-sm="${k}"><b>${t}</b><small>${d}</small></button>`).join('')}</div>
       <div class="wz-host wz-sm-${m === 'trace' ? 'trace' : 'make'}" id="wzSpace"></div>
-      ${m === 'trace' ? `<div class="wz-tip"><b>따라 그리는 순서</b><ol><li>아래에서 도면 사진을 올려요.</li><li>「이미지 가로 실제 길이」를 맞춰요. (사진의 가로가 실제로 몇 m인지)</li><li>도면의 동그란 꼭짓점을 끌어 사진의 벽 모서리에 맞춰요. 벽 가운데 ＋를 끌면 꺾여요.</li></ol></div>` : ''}`;
+      ${m === 'trace' ? `<div class="wz-tip"><b>따라 그리는 순서</b><ol><li>아래에서 도면 사진을 올려요.</li><li><b>펜으로 따라 그리기</b>를 누르고 사진의 벽 모서리를 차례로 클릭해요. 휘어진 벽은 <b>누른 채 끌면</b> 곡선이 돼요. 첫 점을 누르면 완성!</li><li>확실히 아는 벽 하나의 길이 숫자를 눌러 실제 길이를 넣고 「전체를 같은 비율로」를 누르면 끝이에요.</li></ol></div>` : ''}`;
     const host = $('#wzSpace'), ps = $('#panel-space'); host.appendChild(ps); ps.hidden = false;
     GP.panels.openFold(m === 'trace' ? 'trace' : 'make');
-    if (m !== 'trace') GP.panels.spaceMode(m); else { GP.panels.renderSpace(); ui.setTool('vertex'); }
+    if (m !== 'trace') GP.panels.spaceMode(m); else { GP.panels.renderSpace(); ui.setTool(GP.S.underlay ? 'pen' : 'vertex'); }
     b.onclick = e => { const c = e.target.closest('[data-sm]'); if (!c) return; s.space = c.dataset.sm; R.space.render(b); };
   },
   leave() { parkSpace(); },

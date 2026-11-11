@@ -18,6 +18,7 @@ const IC = GP.IC = {
   matRect: sv('<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M3 12h18M9 5v14M15 5v14"/>'), matPoly: sv('<path d="M4 19V8l6-4 10 4v11z"/><path d="M4 13h16M10 4v15M15 6v13"/>'),
   zone: sv('<rect x="3" y="4" width="18" height="16" rx="2" stroke-dasharray="3 3"/><path d="M8 12h8"/>'),
   rotL: sv('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'), rotR: sv('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'),
+  pen: sv('<path d="M12 19.5 19.5 12l2 2-7.5 7.5z"/><path d="m18 13.5-1.5-7.5L3 3l3 13.5 7.5 1.5z"/><path d="m3 3 6.8 6.8"/><circle cx="11" cy="11" r="1.8"/>'),
   edit: sv('<path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-4-4L4 16z"/><path d="m14 6 4 4"/>'),
   folder: sv('<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>'), filePlus: sv('<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M12 11v6M9 14h6"/>'),
   save: sv('<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/>'), open: sv('<path d="M3 7a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v2"/><path d="M3 7v11a1 1 0 0 0 1 1h14l3-8H7l-3 8"/>'), clock: sv('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
@@ -142,6 +143,7 @@ ui.selObj = () => { if (ui.sel.length !== 1) return null; const s = ui.sel[0]; i
 let fullT = 0;
 GP.changed = (parts, opt) => {
   opt = opt || {}; const P = new Set(Array.isArray(parts) ? parts : [parts]); const S = GP.S;
+  if (GP.CV && (P.has('room') || P.has('all'))) GP.CV.resample(GP.L());      // curve pieces follow their corners and handles
   S.dataChanged(); GP.checks.quick(); ui.updateDistances();
   clearTimeout(fullT); fullT = setTimeout(() => { GP.checks.full(); S.invalidate(); }, opt.fast ? 600 : 250);
   GP.emit('changed', P);
@@ -152,7 +154,7 @@ GP.on('selection', () => { ui.updateDistances(); GP.S.invalidate(); ui.renderIns
 
 /* ---------------- steps (tabs) & tools ---------------- */
 const STEP_TOOLS = {
-  space: [['select', '선택', 'select'], ['vertex', '벽 모양', 'vertex'], ['part', '가벽', 'wall'], ['opening', '문·창문', 'door'], ['roomlabel', '공간 이름', 'room'], ['measure', '줄자', 'ruler'], ['note', '메모', 'note']],
+  space: [['select', '선택', 'select'], ['pen', '펜', 'pen'], ['vertex', '벽 모양', 'vertex'], ['part', '가벽', 'wall'], ['opening', '문·창문', 'door'], ['roomlabel', '공간 이름', 'room'], ['measure', '줄자', 'ruler'], ['note', '메모', 'note']],
   place: [['select', '선택', 'select'], ['multi', '여러 개', 'multi'], ['fillwall', '벽 채우기', 'fill'], ['measure', '줄자', 'ruler'], ['note', '메모', 'note']],
   floor: [['select', '선택', 'select'], ['matRect', '사각형', 'matRect'], ['matPoly', '모양대로', 'matPoly'], ['zoneRect', '존 표시', 'zone']],
 };
@@ -214,13 +216,14 @@ function viewMenuHtml() {
   const row = (act, on, t, d) => `<button class="mi chk${on ? ' on' : ''}" data-act="${act}"><i class="cb"></i><div><b>${t}</b>${d ? `<small>${d}</small>` : ''}</div></button>`;
   return `<div class="ph">화면</div><div class="seg full vm-style"><button data-act="style:color" class="${S.style !== 'line' ? 'on' : ''}">컬러</button><button data-act="style:line" class="${S.style === 'line' ? 'on' : ''}">선만 (캐드처럼)</button></div>
     <div class="ph">도면에 보이기</div>${lays.map(([k, t, d]) => row('lay:' + k, S.layers[k], t, d)).join('')}
-    ${GP.viewOnly ? '' : `<hr><div class="ph">편집 도움</div>${row('magnet', ui.magnet, '벽 자석', '기구를 벽 가까이 가져가면 붙어요')}`}`;
+    ${GP.viewOnly ? '' : `<hr><div class="ph">편집 도움</div>${row('magnet', ui.magnet, '벽 자석', '기구를 벽 가까이 가져가면 붙어요')}${row('thinwall', !!GP.lib.thinWalls, '벽을 얇은 선으로', '실제 두께(20cm) 대신 가는 선으로 보여요 · 벽 모양 · 펜 도구에서는 늘 가는 선')}`}`;
 }
 $('#viewBtn').addEventListener('click', () => {
   GP.popover($('#viewBtn'), viewMenuHtml(), (act) => {
     const S = GP.S;
     if (act.startsWith('style:')) ui.setStyle(act.slice(6));
     else if (act.startsWith('lay:')) { const k = act.slice(4); S.layers[k] = !S.layers[k]; if ((k === 'aisle' || k === 'egress') && S.layers[k]) GP.checks.full(); S.invalidate(); }
+    else if (act === 'thinwall') { GP.lib.thinWalls = !GP.lib.thinWalls; GP.saveLib(); S.invalidate(); }
     else if (act === 'magnet') { ui.magnet = !ui.magnet; GP.toast(ui.magnet ? '벽 자석을 켰어요' : '벽 자석을 껐어요 (5cm 단위로만 맞춰져요)'); }
     $('#pop').innerHTML = viewMenuHtml(); return true;
   });
@@ -241,7 +244,7 @@ const HINTS = {
   selectFloor: '고무블럭 구역을 <b>눌러서</b> 종류·마감재를 바꿔요',
   emptyPlace: '왼쪽 목록에서 기구를 <b>누른 뒤</b> 도면을 클릭해 놓아 보세요',
   emptyFloor: '왼쪽 <b>공간 전체</b>를 누르거나 <b>사각형</b>으로 구역을 그려 고무블럭을 깔아요',
-  vertex: '꼭짓점·벽 <b>끌기</b> (<kbd>Ctrl</kbd> 1cm) · 벽 위 <b>+</b>나 <b>더블클릭</b>: 점 추가 · 숫자 <b>눌러</b> 입력',
+  vertex: '꼭짓점·벽 <b>끌기</b> (<kbd>Ctrl</kbd> 1cm) · 벽 위 <b>+</b>나 <b>더블클릭</b>: 점 추가 · 벽을 <kbd>Alt</kbd>+끌기: 곡선 · 모서리를 누르면 생기는 <b style="color:#E0622B">○</b> 끌기: 둥근 모서리',
   part: '<b>클릭</b>으로 가벽 시작 · 계속 클릭해 꺾기 · <b>더블클릭</b>이나 <kbd>Enter</kbd>로 끝 · 숫자 입력 후 <kbd>Enter</kbd>로 길이 지정',
   opening: '벽이나 가벽 위를 <b>클릭</b>해서 놓기',
   roomlabel: '방 안을 <b>클릭</b>하면 이름을 붙이고 면적을 계산해요',
@@ -259,6 +262,7 @@ const HINTS = {
 ui.setHint = (custom) => {
   const h = $('#hint'); let s = custom;
   const v3 = GP.V3 && GP.V3.on;
+  if (!v3 && ui.tool === 'pen') { h.innerHTML = ''; h.hidden = true; if (GP.pen) GP.pen.bar(); return; }      // the pen's own bar says it
   if (!v3 && (ui.tool === 'part' || ui.tool === 'matPoly')) { h.innerHTML = ''; h.hidden = true; if (GP.tools && GP.tools.drawBar) GP.tools.drawBar(); return; }   // the drawing bar says it (and keeps saying it)
   if (v3 && GP.V3.walking && !custom) { h.innerHTML = ''; h.hidden = true; return; }     // the walk mode shows its own help
   if (!s && v3 && !GP.viewOnly) s = ui.placing ? HINTS.placing3d : ui.step === 'place' ? HINTS.select3d : HINTS.other3d;

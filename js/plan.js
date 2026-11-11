@@ -196,7 +196,13 @@ S.drawPlan = (x, V, o) => {
   const text = (t, sx, sy, font, col, halo, align) => { x.font = font; x.textAlign = align || 'center'; x.textBaseline = 'middle'; if (halo) { x.lineJoin = 'round'; x.lineWidth = 3.4; x.strokeStyle = halo; x.strokeText(t, sx, sy); } x.fillStyle = col; x.fillText(t, sx, sy); };
   const pill = (t, sx, sy, font, bg, fg, rot, border) => { x.save(); x.translate(sx, sy); if (rot) x.rotate(rot); x.font = font; const tw = x.measureText(t).width + 10, th = 17; x.fillStyle = bg; rrect(x, -tw / 2, -th / 2, tw, th, 4); x.fill(); if (border) { x.strokeStyle = border; x.lineWidth = 1; x.stroke(); } x.fillStyle = fg; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(t, 0, 1); x.restore(); };
   // wall lengths (outside the room)
+  if (lay.dims && P.length >= 3 && !(scr && ui.tool === 'vertex') && GP.CV) for (const c of GP.CV.list(L)) {      // a curved wall: one length
+    const k = GP.CV.ctrl(L, c), m = GP.CV.at(k.p0, k.c1, k.c2, k.p3, .5), e = G.edge(P, (c.s + Math.floor(c.n / 2)) % P.length), off = WALL_T + .38, [ax, ay] = toS(e.a[0], e.a[1]), [bx, by] = toS(e.b[0], e.b[1]);
+    let ang = Math.atan2(by - ay, bx - ax); if (ang > Math.PI / 2) ang -= Math.PI; if (ang <= -Math.PI / 2) ang += Math.PI; const [sx, sy] = toS(m[0] - e.nx * off, m[1] - e.nz * off);
+    pill('곡선 ' + GP.CV.len(L, c).toFixed(2) + ' m', sx, sy, `600 11.5px ${MONO}`, 'rgba(255,255,255,.96)', '#2A3037', ang, 'rgba(40,46,52,.2)');
+  }
   if (lay.dims && P.length >= 3 && !(scr && ui.tool === 'vertex')) for (let i = 0; i < P.length; i++) {
+    if (GP.CV && GP.CV.of(L, i)) continue;
     const e = G.edge(P, i), off = WALL_T + .38; const [ax, ay] = toS(e.a[0], e.a[1]), [bx, by] = toS(e.b[0], e.b[1]); if (Math.hypot(bx - ax, by - ay) < 44) continue;
     let ang = Math.atan2(by - ay, bx - ax); if (ang > Math.PI / 2) ang -= Math.PI; if (ang <= -Math.PI / 2) ang += Math.PI;
     const [sx, sy] = toS((e.a[0] + e.b[0]) / 2 - e.nx * off, (e.a[1] + e.b[1]) / 2 - e.nz * off);
@@ -273,7 +279,7 @@ function hatchPoly(x, q, px) {
 }
 function drawWalls(x, L, px, sel, hov, scr) {
   const P = L.room.pts, n = P.length, st = GP.P.settings; if (n < 3) return;
-  const O = G.offset(P, WALL_T, true);
+  const O = G.offset(P, WALL_T, true), tl = GP.ui && GP.ui.tool, thin = scr && !GP.viewOnly && (tl === 'vertex' || tl === 'pen' || GP.lib.thinWalls);      // thin lines while the walls are drawn or reshaped (a traced plan shows through)
   const marks = L.wallMarks || {};
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n, a = P[i], b = P[j]; const Ls = G.len(a, b); if (Ls < 1e-3) continue;
@@ -282,6 +288,7 @@ function drawWalls(x, L, px, sel, hov, scr) {
     const outer = t => t <= 1e-6 ? O[i] : t >= Ls - 1e-6 ? O[j] : [a[0] + e.dx * t - e.nx * WALL_T, a[1] + e.dz * t - e.nz * WALL_T];
     const hi = scr && ((GP.OV && GP.OV.hiWall && GP.OV.hiWall.has(i)) || sel.has('wall:' + i) || (GP.tools && GP.tools.wallSel && GP.tools.wallSel(i)));
     const pieces = wallPieces(Ls, ops);
+    if (thin) { for (const [s0, s1] of pieces) { const p = inner(s0), q = inner(s1); x.beginPath(); x.moveTo(p[0], p[1]); x.lineTo(q[0], q[1]); x.strokeStyle = hi ? '#2450E0' : '#1F2429'; x.lineWidth = (hi ? 3 : 2) * px; x.lineCap = 'round'; x.stroke(); } continue; }
     for (const [s0, s1] of pieces) { const q = [inner(s0), inner(s1), outer(s1), outer(s0)]; x.beginPath(); q.forEach((p, k) => k ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); if (S._line && !hi) { x.fillStyle = '#FFFFFF'; x.fill(); hatchPoly(x, q, px); x.beginPath(); q.forEach((p, k) => k ? x.lineTo(p[0], p[1]) : x.moveTo(p[0], p[1])); x.closePath(); x.strokeStyle = '#1B1F23'; x.lineWidth = 1.3 * px; x.stroke(); } else { x.fillStyle = hi ? '#2450E0' : '#2B3036'; x.fill(); x.strokeStyle = hi ? '#2450E0' : '#2B3036'; x.lineWidth = .6 * px; x.stroke(); } }
     if (marks[i] === 'mirror') for (const [s0, s1] of pieces) {
       const t0 = s0 + .03, t1 = s1 - .03; if (t1 - t0 < .1) continue; const bw = Math.max(.06, 6 * px);

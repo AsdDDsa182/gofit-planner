@@ -16,10 +16,12 @@ OV.sync = () => {
   if (!L) return;
   // room wall lengths are editable while the wall tool is on
   if (u.tool === 'vertex' && !GP.viewOnly) {
-    const P = L.room.pts;
-    for (let i = 0; i < P.length; i++) { const e = G.edge(P, i), off = GP.WALL_T + .38; spec('w' + i, 'ov wl edit' + ((OV.hiWall && OV.hiWall.has(i)) ? ' hi' : ''), e.L.toFixed(2) + ' m', [(e.a[0] + e.b[0]) / 2 - e.nx * off, (e.a[1] + e.b[1]) / 2 - e.nz * off], { rotSeg: [e.a, e.b], minLen: 34, data: { wall: i }, interactive: true }); }
+    const P = L.room.pts, CV = GP.CV, inner = CV ? CV.inner(L) : new Set(), ends = CV ? CV.ends(L) : new Set();
+    if (CV) for (const c of CV.list(L)) { const k = CV.ctrl(L, c), m = CV.at(k.p0, k.c1, k.c2, k.p3, .5), e = G.edge(P, (c.s + Math.floor(c.n / 2)) % P.length), off = GP.WALL_T + .38; if (c.ref.rc) { const io = Math.max(.6, GP.S.mpp() * 30); spec('c' + c.s, 'ov wl edit curve', `R ${U.cm(c.ref.rc.r)}cm`, [m[0] + e.nx * io, m[1] + e.nz * io], { data: { curve: c.s }, interactive: true }); continue; }      // a rounded corner: its radius, inside (its corner point is outside)
+      spec('c' + c.s, 'ov wl edit curve', '곡선 ' + CV.len(L, c).toFixed(2) + ' m', [m[0] - e.nx * off, m[1] - e.nz * off], { rotSeg: [e.a, e.b], data: { curve: c.s }, interactive: true }); }
+    for (let i = 0; i < P.length; i++) { if (CV && CV.of(L, i)) continue; const e = G.edge(P, i), off = GP.WALL_T + .38; spec('w' + i, 'ov wl edit' + ((OV.hiWall && OV.hiWall.has(i)) ? ' hi' : ''), e.L.toFixed(2) + ' m', [(e.a[0] + e.b[0]) / 2 - e.nx * off, (e.a[1] + e.b[1]) / 2 - e.nz * off], { rotSeg: [e.a, e.b], minLen: 34, data: { wall: i }, interactive: true }); }
     // corner angles: press to type an angle
-    for (let i = 0; i < P.length; i++) { const a = G.interior(P, i), q = angPos(P, i); if (!q) continue; const right = [90, 180, 270].some(v => Math.abs(a - v) < .3); spec('a' + i, 'ov ang edit' + (right ? ' right' : ''), (Math.round(a * 10) / 10) + '°', q, { data: { ang: i }, interactive: true }); }
+    for (let i = 0; i < P.length; i++) { if (inner.has(i) || ends.has(i)) continue; const a = G.interior(P, i), q = angPos(P, i); if (!q) continue; const right = [90, 180, 270].some(v => Math.abs(a - v) < .3); spec('a' + i, 'ov ang edit' + (right ? ' right' : ''), (Math.round(a * 10) / 10) + '°', q, { data: { ang: i }, interactive: true }); }
   }
   const pt = !GP.viewOnly && u.tool === 'select' && GP.tools.polyTarget();
   if (pt && (pt.kind === 'mat' || pt.kind === 'zone')) {
@@ -60,15 +62,17 @@ OV.syncHandles = () => {
   if (GP.viewOnly) { renderHandles(); return; }
   const t = GP.tools.polyTarget();
   if (t) {
-    const P = t.pts, n = P.length, room = t.kind === 'room';
+    const P = t.pts, n = P.length, room = t.kind === 'room', CV = room && GP.CV, inner = CV ? CV.hidden(GP.L()) : new Set();
     const segs = t.open ? n - 1 : n;
     const sizable = t.kind === 'mat' || t.kind === 'zone';      // mats and zones: the middle of a side and the corners resize
     for (let i = 0; i < segs; i++) {
       const a = P[i], b = P[(i + 1) % n], mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
       if (sizable) { const e = G.edge(P, i); let r = Math.atan2(b[1] - a[1], b[0] - a[0]) / U.DEG; if (r > 90) r -= 180; if (r <= -90) r += 180; hspecs.push({ cls: 'ov hd side', html: '', pos: mid, h: 'e', i, rot: r, cur: GP.tools.resizeCursor(-e.nx, -e.nz), title: '끌어서 크기 조절 · Alt+끌기: 변 꺾기' }); }
-      else hspecs.push({ cls: 'ov hd mid' + (GP.tools.hoverSeg === i ? ' show' : ''), html: '+', pos: mid, h: 'm', i, title: '점 추가 · 끌면 그 자리에서 벽이 꺾여요 (벽을 더블클릭해도 점이 생겨요)' });
+      else if (!(CV && CV.of(GP.L(), i))) hspecs.push({ cls: 'ov hd mid' + (GP.tools.hoverSeg === i ? ' show' : ''), html: '+', pos: mid, h: 'm', i, title: '점 추가 · 끌면 그 자리에서 벽이 꺾여요 (벽을 더블클릭해도 점이 생겨요)' });
     }
-    for (let i = 0; i < n; i++) hspecs.push({ cls: 'ov hd vx' + (GP.tools.selV === i || GP.tools.selVs.has(i) ? ' sel' : ''), html: room ? i + 1 : '', pos: P[i], h: 'v', i, title: sizable ? '끌어서 크기 조절 (두 변 함께) · Alt+끌기: 이 점만 옮기기 · Shift+클릭 여러 개 선택 · 더블클릭 삭제' : '끌어서 이동 (Ctrl: 1cm 미세 · Alt: 자유) · 방향키 1cm, Shift+방향키 10cm · Shift+클릭 여러 개 선택 · 더블클릭 삭제' });
+    if (CV) for (const w of CV.widgets(GP.L())) hspecs.push({ cls: w.h === 'rcv' ? 'ov hd vx rcv' : 'ov hd rr', html: w.num || '', pos: w.pos, h: w.h, i: w.i, side: w.side, title: w.title });
+    if (CV) for (const h of CV.handles(GP.L())) for (const [c, , side] of h.h) hspecs.push({ cls: 'ov hd cp', html: '', pos: c, h: 'cp', i: h.c.s, side, title: '끌어서 곡선 모양 바꾸기 · Shift: 15° 단위 · Alt: 이 손잡이만 (부드럽게 이어진 점에서)' });
+    for (let i = 0; i < n; i++) if (!inner.has(i)) hspecs.push({ cls: 'ov hd vx' + (GP.tools.selV === i || GP.tools.selVs.has(i) ? ' sel' : ''), html: room ? (CV ? CV.num(GP.L(), i) : i + 1) : '', pos: P[i], h: 'v', i, title: sizable ? '끌어서 크기 조절 (두 변 함께) · Alt+끌기: 이 점만 옮기기 · Shift+클릭 여러 개 선택 · 더블클릭 삭제' : '끌어서 이동 (Ctrl: 1cm 미세 · Alt: 자유) · 방향키 1cm, Shift+방향키 10cm · Shift+클릭 여러 개 선택 · 더블클릭 삭제' });
   }
   const its = u.selItems();
   if (its.length === 1 && u.sel.length === 1 && u.tool === 'select') {
@@ -105,9 +109,11 @@ handles.addEventListener('dblclick', e => { const el = e.target.closest('[data-h
 
 /* ---------------- wall length edit ---------------- */
 base.addEventListener('click', e => {
-  const t = e.target.closest('.wl.edit:not(.side)'); if (!t || t.classList.contains('editing')) return; const i = +t.dataset.wall, L0 = G.edge(GP.L().room.pts, i).L;
+  const t = e.target.closest('.wl.edit:not(.side)'); if (!t || t.classList.contains('editing')) return;
+  if (t.dataset.curve != null && GP.CV) { GP.CV.curvePop(t, +t.dataset.curve); return; }
+  const i = +t.dataset.wall, L0 = G.edge(GP.L().room.pts, i).L;
   t.classList.add('editing'); t.innerHTML = `<input type="number" step="0.01" min="0.3" value="${L0.toFixed(2)}" aria-label="벽 길이 (m)">`; const inp = t.firstChild; inp.focus(); inp.select(); let done = false;
-  const fin = ok => { if (done) return; done = true; t.classList.remove('editing'); const v = parseFloat(inp.value); const rec = [...els.values()].find(r => r.el === t); if (rec) rec.html = ''; if (ok && v >= .3 && v < 500 && Math.abs(v - L0) > .0005) GP.tools.setWallLength(i, v); OV.sync(); };
+  const fin = ok => { if (done) return; done = true; t.classList.remove('editing'); const v = parseFloat(inp.value); const rec = [...els.values()].find(r => r.el === t); if (rec) rec.html = ''; OV.sync(); if (ok && v >= .3 && v < 500 && Math.abs(v - L0) > .0005) { if (GP.CV) GP.CV.askLength(t, i, v); else GP.tools.setWallLength(i, v); } };
   inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') fin(true); else if (ev.key === 'Escape') fin(false); }); inp.addEventListener('blur', () => fin(true));
 });
 
@@ -126,7 +132,7 @@ base.addEventListener('click', e => {
 /* ---------------- corner angle edit: the angle, and which wall turns to make it (that wall keeps its length; its far end moves) ---------------- */
 base.addEventListener('click', e => {
   const t = e.target.closest('.ang.edit'); if (!t) return; const i = +t.dataset.ang, P = GP.L().room.pts, n = P.length, a0 = G.interior(P, i);
-  const v = k => `<b class="vtx">${(k + n) % n + 1}</b>`, nx = (i + 1) % n, pv = (i - 1 + n) % n;
+  const num = k => GP.CV ? GP.CV.num(GP.L(), (k + n) % n) : (k + n) % n + 1, v = k => `<b class="vtx">${num(k)}</b>`, nx = (i + 1) % n, pv = (i - 1 + n) % n;
   document.querySelectorAll('#angEdit').forEach(el => el.removeAttribute('id')); t.id = 'angEdit';
   GP.popover(t, `<div class="ph">${v(i)} 꼭짓점 각도</div><div class="ang-pop"><div class="unit"><input type="number" id="angIn" step="0.5" min="1" max="359" value="${Math.round(a0 * 10) / 10}"><em>°</em></div>
     <button class="mi" data-act="next"><div><b>${v(i)}–${v(nx)} 벽을 돌려서 맞추기</b><small>${v(nx)} 꼭짓점이 움직여요 · <kbd>Enter</kbd></small></div></button>
@@ -157,6 +163,7 @@ function drawSvg() {
   if (hv && hv.snap && !d) { const [sx, sy] = S.toScreen(hv.snap[0], 0, hv.snap[1]); html += `<circle cx="${sx}" cy="${sy}" r="5" fill="none" stroke="#2450E0" stroke-width="2"/>`; }
   if (t.preview && GP.ui.tool === 'opening') { const pv = t.preview; const hs = GP.hostSeg({ host: pv.host, seg: pv.seg }); if (hs) { const w = GP.tools.openingWidth(GP.ui.openingKind); const c = U.clamp(pv.t, w / 2, hs.L - w / 2); const a = [hs.a[0] + hs.dx * (c - w / 2) + hs.nx * hs.mid, hs.a[1] + hs.dz * (c - w / 2) + hs.nz * hs.mid], b = [hs.a[0] + hs.dx * (c + w / 2) + hs.nx * hs.mid, hs.a[1] + hs.dz * (c + w / 2) + hs.nz * hs.mid]; html += `<polyline points="${P(a[0], a[1])} ${P(b[0], b[1])}" stroke="#E0622B" stroke-width="9" opacity=".75" fill="none"/>`; } }
   if (hv && hv.a && GP.ui.tool === 'fillwall') { html += `<polyline points="${P(hv.a[0], hv.a[1])} ${P(hv.b[0], hv.b[1])}" stroke="#13906F" stroke-width="8" opacity=".7" fill="none"/>` + lbl((hv.a[0] + hv.b[0]) / 2 + hv.nx * .5, (hv.a[1] + hv.b[1]) / 2 + hv.nz * .5, hv.L.toFixed(2) + ' m'); }
+  if (GP.pen) html += GP.pen.svg(P);
   svg.innerHTML = html;
 }
 

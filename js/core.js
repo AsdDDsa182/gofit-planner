@@ -2,7 +2,7 @@
 (function () {
 'use strict';
 const GP = window.GP = window.GP || {};
-GP.VERSION = '2.12.2';
+GP.VERSION = '2.13.0';
 GP.APP_SUB = '짐 스튜디오'; GP.APP_NAME = 'GOFIT ' + GP.APP_SUB;      // the app's name: the top bar, window title, menus (manifest.webmanifest and index.html <title> say it too);
 GP.errors = [];
 window.addEventListener('error', e => { GP.errors.push(String(e.message || e)); });
@@ -99,7 +99,7 @@ G.offset = (P, t, closed = true) => {
     const q1 = [p1[0] + n1[0] * t, p1[1] + n1[1] * t], q2 = [p1[0] + n2[0] * t, p1[1] + n2[1] * t];
     const den = d1[0] * d2[1] - d1[1] * d2[0]; let r = q2;
     if (Math.abs(den) > 1e-9) { const u = ((q2[0] - q1[0]) * d2[1] - (q2[1] - q1[1]) * d2[0]) / den; r = [q1[0] + d1[0] * u, q1[1] + d1[1] * u]; }
-    const dl = Math.hypot(r[0] - p1[0], r[1] - p1[1]), lim = Math.abs(t) * 4;
+    const dl = Math.hypot(r[0] - p1[0], r[1] - p1[1]), lim = Math.abs(t) * 2.5;      // (a very sharp corner would otherwise grow a long spike)
     if (dl > lim) { const f = lim / dl; r = [p1[0] + (r[0] - p1[0]) * f, p1[1] + (r[1] - p1[1]) * f]; }
     out.push(r);
   }
@@ -256,8 +256,16 @@ function sDeep(o, depth) {      // custom equipment definitions: text stays text
 }
 /* types taken out of the catalog: a plan (file, link, old version) that still has one gets the nearest machine in its place */
 const GONE = { latlong: 'latpull', multipress: 'shoulder', backext: 'abback' };
+/* curved walls: { start corner: { n pieces, a, b control offsets } } (pen.js) */
+function sCurves(c, N) {
+  const out = {}; if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
+  for (const k of Object.keys(c)) { const s = +k, q = c[k], n = q ? +q.n : NaN, a = q && sPts([q.a], 1), b = q && sPts([q.b], 1); if (Number.isInteger(s) && s >= 0 && s < N && Number.isInteger(n) && n >= 2 && n < N && a && b) { out[s] = { n, a: a[0], b: b[0] }; const rp = q.rc && sPts([q.rc.p], 1), rr = q.rc && sNum(q.rc.r); if (rp && rr > 0) out[s].rc = { p: rp[0], r: rr }; } }
+  return Object.keys(out).length ? out : null;
+}
 function sanitizeLayout(L) {
+  const cv = L.room && L.room.curves;
   L.room = { pts: sPts(L.room && L.room.pts, 3) || GP.DEFAULT_ROOM.map(q => q.slice()) };
+  { const c = sCurves(cv, L.room.pts.length); if (c) L.room.curves = c; }
   L.partitions = L.partitions.filter(q => q && sPts(q.pts, 2)).map(q => { q.pts = sPts(q.pts, 2); q.id = sWord(q.id) || U.uid('pt'); q.thick = U.clamp(sNum(q.thick, .1), .03, .6); q.kind = GP.PARTS[q.kind] ? q.kind : 'wall'; sKeys(q, ['color', 'frameC', 'glass']); sNums(q, ['height']); return q; });
   L.openings = L.openings.filter(o => o && sNum(o.t) !== undefined && sNum(o.w) !== undefined && Number.isInteger(+o.seg)).map(o => { o.id = sWord(o.id) || U.uid('o'); o.host = sWord(o.host) || 'room'; o.seg = +o.seg; o.t = +o.t; o.w = U.clamp(+o.w, .3, 8); o.kind = GP.OPENINGS[o.kind] ? o.kind : 'door'; sNums(o, ['h', 'sill']); sKeys(o, ['leafC', 'frameC', 'glass', 'hw', 'hinge', 'wtype']); return o; });
   L.items = L.items.filter(it => sWord(String(it.type))).map(it => { it.type = GONE[it.type] || String(it.type); it.uid = sWord(String(it.uid)) || U.uid(); it.x = +it.x; it.z = +it.z; sNums(it, ['w', 'd', 'h', 'elev']); sKeys(it, ['grp', 'mount', 'img', 'fcol', 'scol']); if (it.load != null) it.load = it.load === true || undefined; if (it.name != null) it.name = sTxt(it.name, 80) || undefined;
