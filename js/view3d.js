@@ -14,7 +14,7 @@ V3.init = () => {
   const cv = $('#c3'); R = new THREE.WebGLRenderer({ canvas: cv, antialias: true, preserveDrawingBuffer: true });
   R.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2)); R.outputEncoding = THREE.sRGBEncoding; R.toneMapping = THREE.ACESFilmicToneMapping; R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap;
   sc = new THREE.Scene(); sc.background = new THREE.Color('#E6E9E6');
-  cam = new THREE.PerspectiveCamera(40, 1, .05, 600);
+  cam = new THREE.PerspectiveCamera(40, 1, .1, 400);      // (a nearer far / farther near: more depth precision, no flicker on far walls)
   sc.add(new THREE.HemisphereLight(0xffffff, 0x8d9399, .42));      // with the environment map on top, more than this washes white walls and floors out
   const dl = V3.dir = new THREE.DirectionalLight(0xffffff, .9); dl.castShadow = true; dl.shadow.mapSize.set(2048, 2048); dl.shadow.bias = -.0004; dl.shadow.normalBias = .025; sc.add(dl, dl.target);
   const pm = new THREE.PMREMGenerator(R); const env = new THREE.Scene(); const eg = new THREE.BoxGeometry(1, 1, 1);
@@ -98,6 +98,26 @@ let LINE = false;
 const CADM = () => mat('cadm', () => new THREE.MeshLambertMaterial({ color: '#ffffff', polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
 const CADL = () => mat('cadl', () => new THREE.LineBasicMaterial({ color: '#1b1f23' }));
 function edgesOf(geo) { return geo.userData.edges30 || (geo.userData.edges30 = new THREE.EdgesGeometry(geo, 30)); }
+/* (wall finishes sit 4 mm in front of the wall: far away the depth buffer cannot tell them apart and the white wall flickered
+   through in specks; polygonOffset draws the finish in front) */
+/* a curved wall in one piece. Its pieces as separate boxes and finish planes shaded in bands and met in ragged seams; one strip
+   with normals averaged at each point shades smoothly and has no seams. pts: [[x, z]], nrm: [[nx, nz]] the way the face looks,
+   us: metres along (texture u). up: a horizontal strip (pts = one edge, nrm = the other edge's points) facing up */
+function stripGeo(pts, nrm, y0, y1, us) {
+  const pos = [], nor = [], uv = [], idx = [];
+  pts.forEach((p, k) => { pos.push(p[0], y0, p[1], p[0], y1, p[1]); nor.push(nrm[k][0], 0, nrm[k][1], nrm[k][0], 0, nrm[k][1]); uv.push(us[k], y0, us[k], y1); });
+  for (let k = 0; k < pts.length - 1; k++) {
+    const a = 2 * k, b = a + 1, c = a + 2, d = a + 3, ex = pts[k + 1][0] - pts[k][0], ez = pts[k + 1][1] - pts[k][1], nx = nrm[k][0] + nrm[k + 1][0], nz = nrm[k][1] + nrm[k + 1][1];
+    if (-ez * nx + ex * nz > 0) idx.push(a, c, b, b, c, d); else idx.push(a, b, c, b, d, c);      // (a, c, b) faces (−ez, 0, ex)
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); return g;
+}
+function capGeo(A, B, y) {      // the top of a strip between edge A and edge B at height y
+  const pos = [], nor = [], idx = [];
+  A.forEach((p, k) => { pos.push(p[0], y, p[1], B[k][0], y, B[k][1]); nor.push(0, 1, 0, 0, 1, 0); });
+  for (let k = 0; k < A.length - 1; k++) { const a = 2 * k, b = a + 1, c = a + 2, d = a + 3, ux = A[k + 1][0] - A[k][0], uz = A[k + 1][1] - A[k][1], vx = B[k][0] - A[k][0], vz = B[k][1] - A[k][1]; if (uz * vx - ux * vz > 0) idx.push(a, c, b, b, c, d); else idx.push(a, b, c, b, d, c); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setIndex(idx); return g;
+}
 function addEdges(mesh) { const l = new THREE.LineSegments(edgesOf(mesh.geometry), CADL()); l.raycast = () => { }; mesh.add(l); return mesh; }
 function toLine(obj, keepMat) { const ms = []; obj.traverse(n => { if (n.isMesh) ms.push(n); }); ms.forEach(n => { if (!keepMat) n.material = CADM(); n.castShadow = false; addEdges(n); }); return obj; }
 
@@ -123,7 +143,26 @@ function buildRoom() {
     const bb0 = G.bounds(P), nx = Math.max(1, Math.round(bb0.sx / 2.6)), nz = Math.max(1, Math.round(bb0.sz / 2.6)), lg = mat('lampGeo', () => new THREE.PlaneGeometry(1.2, .3)), lm = mat('lamp', () => new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false })); let made = 0;
     for (let i = 0; i < nx && made < 80; i++) for (let j = 0; j < nz && made < 80; j++) { const x = bb0.minX + bb0.sx * (i + .5) / nx, z = bb0.minZ + bb0.sz * (j + .5) / nz; if (!G.pip(x, z, P)) continue; const lp = new THREE.Mesh(lg, lm); lp.rotation.x = Math.PI / 2; lp.position.set(x, H - .012, z); g.add(lp); made++; }
   }
+  // curved walls (without doors on them): one smooth piece each
+  const oneCurve = new Set();
+  if (GP.CV) for (const c of GP.CV.list(L)) {
+    const ws = []; for (let k = 0; k < c.n; k++) ws.push((c.s + k) % n); if (L.openings.some(o => o.host === 'room' && ws.includes(o.seg))) continue;
+    ws.forEach(w => oneCurve.add(w));
+    const idx = [...ws, c.e], Q = idx.map(k => P[k]), Oq = idx.map(k => O[k]), E = ws.map(w => G.edge(P, w));
+    const N_ = idx.map((k, q) => { const e0 = E[Math.max(0, q - 1)], e1 = E[Math.min(E.length - 1, q)], x = e0.nx + e1.nx, z = e0.nz + e1.nz, l = Math.hypot(x, z) || 1; return [x / l, z / l]; });
+    const us = [0]; for (let q = 1; q < Q.length; q++) us.push(us[q - 1] + G.len(Q[q - 1], Q[q]));
+    const out = N_.map(v => [-v[0], -v[1]]), mid = N_[Math.floor(N_.length / 2)];
+    const wm = LINE ? new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }) : std(st.wallColor || '#eeede8', { roughness: .92, transparent: true, opacity: 1 });
+    const add = (geo, m, shadow) => { const me = new THREE.Mesh(geo, m); me.castShadow = !!shadow; me.receiveShadow = true; me.userData.own = true; if (LINE) addEdges(me); g.add(me); return me; };
+    add(stripGeo(Q, N_, 0, H, us), wm, true); add(stripGeo(Oq, out, 0, H, us), wm, true); add(capGeo(Q, Oq, H), wm, false);
+    wallMeshes.push({ mat: wm, nx: -mid[0], nz: -mid[1] });
+    const wd = !LINE && finishOf((L.wallTex || {})[c.s] || st.wallTex);
+    if (wd) { const tm = std('#ffffff', { map: finishTex(wd.id), roughness: wd.rough, transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }); add(stripGeo(Q.map((p, q) => [p[0] + N_[q][0] * .004, p[1] + N_[q][1] * .004]), N_, 0, H, us), tm, false); wallMeshes.push({ mat: tm, nx: -mid[0], nz: -mid[1] }); }
+    const bbC = { dark: '#2f3236', white: '#efefec' }[st.baseboard || 'dark'];
+    if (bbC && !LINE) { const bm = std(bbC, { roughness: .6, transparent: true, opacity: 1 }), Bq = Q.map((p, q) => [p[0] + N_[q][0] * .012, p[1] + N_[q][1] * .012]); add(stripGeo(Bq, N_, 0, .08, us), bm, false); add(capGeo(Q, Bq, .08), bm, false); wallMeshes.push({ mat: bm, nx: -mid[0], nz: -mid[1] }); }
+  }
   for (let i = 0; i < n; i++) {
+    if (oneCurve.has(i)) continue;
     const j = (i + 1) % n, a = P[i], b = P[j], Ls = G.len(a, b); if (Ls < 1e-3) continue;
     const e = G.edge(P, i), ops = L.openings.filter(o => o.host === 'room' && o.seg === i);
     const wm = LINE ? new THREE.MeshLambertMaterial({ color: '#ffffff', transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }) : std(st.wallColor || '#eeede8', { roughness: .92, transparent: true, opacity: 1 });
@@ -132,7 +171,7 @@ function buildRoom() {
     // the wall's finish: a thin plane on its room side, UVs in metres along the wall and up from the floor
     const wd = !LINE && finishOf((L.wallTex || {})[i] || st.wallTex);
     if (wd) {
-      const tm = std('#ffffff', { map: finishTex(wd.id), roughness: wd.rough, transparent: true, opacity: 1 });
+      const tm = std('#ffffff', { map: finishTex(wd.id), roughness: wd.rough, transparent: true, opacity: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
       for (const [s0, s1, y0, y1] of pieces(Ls, H, ops)) {
         const w = s1 - s0, h = y1 - y0; if (w < .02 || h < .02) continue; const geo = new THREE.PlaneGeometry(w, h), uv = geo.attributes.uv;
         for (let k = 0; k < uv.count; k++) uv.setXY(k, uv.getX(k) ? s1 : s0, uv.getY(k) ? y1 : y0);
@@ -581,7 +620,7 @@ window.addEventListener('blur', () => keys.clear());
 V3.snapshot = async (w, h, preset) => {
   if (!V3.init()) return null; const wasOn = V3.on; if (!wasOn) { V3.rebuild(); }
   await V3.whenLoaded(); const c0 = cam.clone(); const selKeep = V3.selBox; if (selKeep) sc.remove(selKeep);
-  const view = typeof preset === 'object' && preset ? preset : null, shot = new THREE.PerspectiveCamera(view && view.fov || 40, w / h, .05, 600);
+  const view = typeof preset === 'object' && preset ? preset : null, shot = new THREE.PerspectiveCamera(view && view.fov || 40, w / h, .1, 400);
   if (view) { shot.position.set(...view.pos); shot.lookAt(new THREE.Vector3(...view.target)); }
   else if (preset) { const p = V3.presets()[preset]; shot.position.set(...p.pos); shot.lookAt(new THREE.Vector3(...p.target)); } else { shot.position.copy(cam.position); shot.quaternion.copy(cam.quaternion); }
   const pr = R.getPixelRatio(); R.setPixelRatio(1); R.setSize(w, h, false); const keep = cam.position.clone(); cam.position.copy(shot.position); solid = !!view; wallFade(); solid = false; cam.position.copy(keep); R.render(sc, shot);

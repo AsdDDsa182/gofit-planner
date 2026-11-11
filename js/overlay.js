@@ -71,7 +71,7 @@ OV.syncHandles = () => {
       else if (!(CV && CV.of(GP.L(), i))) hspecs.push({ cls: 'ov hd mid' + (GP.tools.hoverSeg === i ? ' show' : ''), html: '+', pos: mid, h: 'm', i, title: '점 추가 · 끌면 그 자리에서 벽이 꺾여요 (벽을 더블클릭해도 점이 생겨요)' });
     }
     if (CV) for (const w of CV.widgets(GP.L())) hspecs.push({ cls: w.h === 'rcv' ? 'ov hd vx rcv' : 'ov hd rr', html: w.num || '', pos: w.pos, h: w.h, i: w.i, side: w.side, title: w.title });
-    if (CV) for (const h of CV.handles(GP.L())) for (const [c, , side] of h.h) hspecs.push({ cls: 'ov hd cp', html: '', pos: c, h: 'cp', i: h.c.s, side, title: '끌어서 곡선 모양 바꾸기 · Shift: 15° 단위 · Alt: 이 손잡이만 (부드럽게 이어진 점에서)' });
+    if (CV) for (const h of CV.handles(GP.L())) for (const [c, , side, gh] of h.h) hspecs.push({ cls: 'ov hd cp' + (gh ? ' ghost' : ''), html: '', pos: c, h: 'cp', i: h.c.s, side, title: '끌어서 곡선 모양 바꾸기 · Shift: 15° 단위 · Alt: 이 손잡이만 (부드럽게 이어진 점에서)' });
     for (let i = 0; i < n; i++) if (!inner.has(i)) hspecs.push({ cls: 'ov hd vx' + (GP.tools.selV === i || GP.tools.selVs.has(i) ? ' sel' : ''), html: room ? (CV ? CV.num(GP.L(), i) : i + 1) : '', pos: P[i], h: 'v', i, title: sizable ? '끌어서 크기 조절 (두 변 함께) · Alt+끌기: 이 점만 옮기기 · Shift+클릭 여러 개 선택 · 더블클릭 삭제' : '끌어서 이동 (Ctrl: 1cm 미세 · Alt: 자유) · 방향키 1cm, Shift+방향키 10cm · Shift+클릭 여러 개 선택 · 더블클릭 삭제' });
   }
   if (GP.XF) hspecs.push(...GP.XF.handles());

@@ -68,6 +68,7 @@ CV.rcGeom = rcGeom;
 /* corners people see: the inner points of curves are not; a rounded corner is one corner (its virtual sharp point) */
 CV.hidden = (L) => { const S = CV.inner(L); for (const c of CV.list(L)) if (c.ref.rc) { S.add(c.s); S.add(c.e); } return S; };
 CV.ctrl = (L, c) => { const P = L.room.pts, p0 = P[c.s], p3 = P[c.e]; return { p0, c1: add(p0, c.ref.a), c2: add(p3, c.ref.b), p3 }; };
+CV.nearT = (k, q) => { let bt = 0, bd = Infinity; for (let j = 0; j <= 200; j++) { const p = CV.at(k.p0, k.c1, k.c2, k.p3, j / 200), d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d < bd) { bd = d; bt = j / 200; } } return bt; };
 CV.len = (L, c) => { const k = CV.ctrl(L, c); return CV.length(k.p0, k.c1, k.c2, k.p3); };
 CV.has = (L) => !!(L.room.curves && Object.keys(L.room.curves).length);
 /* the number shown for corner i (1, 2, 3 … skipping the inner points of curves) */
@@ -121,6 +122,16 @@ CV.unround = (L, s) => {
   const c = CV.list(L).find(q => q.s === s); if (!c || !c.ref.rc) return; const p = c.ref.rc.p.slice();
   CV.flatten(L, s); const P = L.room.pts, N = P.length, t = { kind: 'room', pts: P }, k = (s + 1) % N, old = P.map(q => q.slice());
   P[s] = p; P.splice(k, 1); GP.tools.reindex(t, 'del', k, old);
+};
+/* the curve c split into two at the inner point nearest q: the shape stays exactly, the new corner is a smooth point whose two
+   handles can then be pulled to different lengths (one side bent more than the other) */
+CV.splitAt = (L, c, q) => {
+  const P = L.room.pts, N = P.length; if (c.ref.rc || c.n < 4) return false;
+  let j = 2, bd = Infinity; for (let k = 2; k <= c.n - 2; k++) { const p = P[(c.s + k) % N], d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d < bd) { bd = d; j = k; } }
+  const k = CV.ctrl(L, c), t = CV.nearT(k, P[(c.s + j) % N]), lp = (u, v) => [u[0] + (v[0] - u[0]) * t, u[1] + (v[1] - u[1]) * t];
+  const Q0 = lp(k.p0, k.c1), Q1 = lp(k.c1, k.c2), Q2 = lp(k.c2, k.p3), R0 = lp(Q0, Q1), R1 = lp(Q1, Q2), M = lp(R0, R1), m = (c.s + j) % N;
+  P[m] = r3v(M); const C = L.room.curves; C[c.s] = { n: j, a: r3v(sub(Q0, k.p0)), b: r3v(sub(R0, M)) }; C[m] = { n: c.n - j, a: r3v(sub(R1, M)), b: r3v(sub(Q2, k.p3)) };
+  CV.resample(L); return true;
 };
 /* the curve s back to one straight wall (its inner points go; doors on its pieces move onto the wall) */
 CV.flatten = (L, s) => {
@@ -187,7 +198,7 @@ CV.curvePop = (el, s) => {
   GP.popover(el, `<div class="ph">곡선 벽 · 길이 ${L0.toFixed(2)} m</div><div class="ang-pop"><div class="unit"><input type="number" id="cvLen" step="0.01" min="0.3" value="${L0.toFixed(2)}"><em>m</em></div>
     <button class="mi def" data-act="len"><div><b>이 길이에 맞춰 전체를 같은 비율로</b><small>도면을 대고 그렸을 때 · <kbd>Enter</kbd></small></div></button>
     <button class="mi" data-act="flat"><div><b>직선으로 펴기</b><small>곡선을 한 장의 곧은 벽으로 바꿔요</small></div></button>
-    <p class="note">모양은 곡선 양 끝의 <b style="color:#E0622B">주황 손잡이</b>를 끌거나, 곡선을 직접 끌어서 바꿔요.</p></div>`, (act) => {
+    <p class="note">모양은 곡선 양 끝의 <b style="color:#E0622B">주황 손잡이</b>를 끌거나(한쪽만 길게 당기면 그쪽이 더 휘어요), 곡선을 직접 끌어서 바꿔요(잡은 곳이 가장 많이 휘어요). 곡선을 더블클릭하면 그 자리에 점이 생겨 둘로 나뉘어요.</p></div>`, (act) => {
     if (act === 'flat') { CV.flatten(GP.L(), s); GP.changed(['room', 'openings']); GP.toast('곡선을 곧은 벽으로 폈어요'); return false; }
     if (act === 'len') { const v = parseFloat($('#cvLen').value); if (!(v >= .3 && v < 500)) { GP.toast('0.3m 이상으로 넣어 주세요', { bad: true }); return true; } if (Math.abs(v - L0) < .0005) return false; const k = v / L0, b = G.bounds(GP.L().room.pts); CV.scaleAll(k, [b.minX, b.minZ]); GP.S.fit(); GP.toast(`전체를 ${(k * 100).toFixed(1)}%로 맞췄어요 (Ctrl+Z로 되돌리기)`, { ms: 4000 }); return false; }
   });
@@ -218,8 +229,8 @@ function onDragMove(ev) {
     ui().setHint(`둥근 모서리 옮기기${GP.tools.gridHint(q)}`);
   } else {
     const q = GP.tools.gridOf(ev); let dv = [fp.x - d.fx, fp.z - d.fz]; if (!q.free) dv = dv.map(x => U.snap(x, q.g));
-    const m = mul(dv, 4 / 3); c.a = r3v(add(d.a0, m)); c.b = r3v(add(d.b0, m));
-    ui().setHint(`곡선 휘기 · 가운데가 <b>${U.cm(vlen(dv))}cm</b> 움직였어요${GP.tools.gridHint(q)}`);
+    const w = d.w || [4 / 3, 4 / 3]; c.a = r3v(add(d.a0, mul(dv, w[0]))); c.b = r3v(add(d.b0, mul(dv, w[1])));
+    ui().setHint(`곡선 휘기 <b>${U.cm(vlen(dv))}cm</b> · 잡은 곳이 가장 많이 휘어요 · 더블클릭: 그 자리에 점을 넣어 둘로 나누기${GP.tools.gridHint(q)}`);
   }
   d.moved = true; CV.resample(L); GP.S.dataChanged(); GP.emit('overlay');
 }
@@ -233,14 +244,18 @@ CV.cpDown = (e, el) => {
   startDrag(e, { kind: 'cp', c, side, anchor, nb: smooth ? nb : null, nbLen });
 };
 /* the body of a curve: dragging it bends it (both handles move together) */
-CV.bodyDown = (e, c, fp) => { startDrag(e, { kind: 'body', c, fx: fp.x, fz: fp.z, a0: c.ref.a.slice(), b0: c.ref.b.slice() }); };
+const grabW = (L, c, fp) => { const t = U.clamp(CV.nearT(CV.ctrl(L, c), [fp.x, fp.z]), .12, .88), b1 = 3 * (1 - t) * (1 - t) * t, b2 = 3 * (1 - t) * t * t, q = b1 * b1 + b2 * b2; return [b1 / q, b2 / q]; };
+CV.bodyDown = (e, c, fp) => { startDrag(e, { kind: 'body', c, fx: fp.x, fz: fp.z, a0: c.ref.a.slice(), b0: c.ref.b.slice(), w: grabW(GP.L(), c, fp) }); };
 /* Alt + drag on a straight wall: it becomes a curve and bends with the pointer */
 CV.bendDown = (e, i, fp) => {
   const L = GP.L(), P = L.room.pts, N = P.length, v = sub(P[(i + 1) % N], P[i]); const c = CV.bend(L, i, mul(v, 1 / 3), mul(v, -1 / 3)); if (!c) return false;
-  startDrag(e, { kind: 'body', c, fx: fp.x, fz: fp.z, a0: c.ref.a.slice(), b0: c.ref.b.slice(), bent: true }); GP.S.dataChanged(); GP.emit('overlay'); return true;
+  startDrag(e, { kind: 'body', c, fx: fp.x, fz: fp.z, a0: c.ref.a.slice(), b0: c.ref.b.slice(), w: grabW(L, c, fp), bent: true }); GP.S.dataChanged(); GP.emit('overlay'); return true;
 };
 /* handle positions for the overlay */
-CV.handles = (L) => CV.list(L).filter(c => !c.ref.rc).map(c => { const k = CV.ctrl(L, c); return { c, h: [[k.c1, k.p0, 0], [k.c2, k.p3, 1]].filter(([q, p]) => G.len(q, p) > .01) }; });      // (a corner with no handle shows none, like Photoshop)
+CV.handles = (L) => CV.list(L).filter(c => !c.ref.rc).map(c => {
+  const k = CV.ctrl(L, c), ch = G.len(k.p0, k.p3), ghost = (p, o) => add(p, mul(unit(sub(o, p)), Math.min(ch * .25, GP.S.mpp() * 28)));      // no handle yet: show one a little way along, to pull out
+  return { c, h: [[k.c1, k.p0, 0], [k.c2, k.p3, 1]].map(([q, p, sd]) => G.len(q, p) > .01 ? [q, p, sd] : [ghost(p, sd ? k.p0 : k.p3), p, sd, true]) };
+});
 
 /* rounded-corner widgets: the radius dot (on the arc, or just inside a selected sharp corner) and the virtual corner */
 CV.widgets = (L) => {
@@ -368,7 +383,7 @@ pen.svg = (P) => {
   let html = '';
   const S = GP.S, path = [], scr = p => S.toScreen(p[0], 0, p[1]).slice(0, 2).map(v => v.toFixed(1)).join(',');
   // curve handles of the room (wall-shape tool)
-  if (ui().tool === 'vertex' && !GP.viewOnly) for (const h of CV.handles(GP.L())) for (const [c, a] of h.h) html += `<line x1="${S.toScreen(a[0], 0, a[1])[0]}" y1="${S.toScreen(a[0], 0, a[1])[1]}" x2="${S.toScreen(c[0], 0, c[1])[0]}" y2="${S.toScreen(c[0], 0, c[1])[1]}" stroke="#E0622B" stroke-width="1.3" opacity=".85"/>`;
+  if (ui().tool === 'vertex' && !GP.viewOnly) for (const h of CV.handles(GP.L())) for (const [c, a, , gh] of h.h) html += `<line x1="${S.toScreen(a[0], 0, a[1])[0]}" y1="${S.toScreen(a[0], 0, a[1])[1]}" x2="${S.toScreen(c[0], 0, c[1])[0]}" y2="${S.toScreen(c[0], 0, c[1])[1]}" stroke="#E0622B" stroke-width="1.3" opacity="${gh ? .45 : .85}"${gh ? ' stroke-dasharray="3 3"' : ''}/>`;
   if (GP.XF) html += GP.XF.svg();
   if (ui().tool !== 'pen' || !st) return html;
   const A = st.A, m = A.length; if (!m) return html;
@@ -525,5 +540,52 @@ ec.addEventListener('click', e => {
   emptyCard();
 });
 ['changed', 'tool', 'project', 'step', 'overlay'].forEach(ev => GP.on(ev, emptyCard));
+
+/* ================= several machines on a curve =================
+   follow the nearest curved wall: in their order along it, evenly (the gap typed above), the side that now faces the wall facing
+   it, 2 cm off it (more where the wall bulges in); bend: the row (in the first one's frame: x along, +z its front) onto an arc,
+   front convex (+) or concave (−), each turned with the arc */
+const ARC = GP.ARC = {};
+const DEGR = Math.PI / 180;
+ARC.hasCurve = () => !!(GP.P && CV.list(GP.L()).length);
+ARC.followWall = () => {
+  const its = ui().selItems(); if (its.length < 1) return; const L = GP.L(), P = L.room.pts;
+  const cx = its.reduce((s, it) => s + it.x, 0) / its.length, cz = its.reduce((s, it) => s + it.z, 0) / its.length;
+  let best = null; for (const c of CV.list(L)) { const k = CV.ctrl(L, c), D = dense(k.p0, k.c1, k.c2, k.p3, 200); let d = Infinity; for (const q of D.pts) d = Math.min(d, Math.hypot(q[0] - cx, q[1] - cz)); if (!best || d < best.d) best = { c, k, D, d }; }
+  if (best) {      // curves meeting end to end (a split curve, a wavy wall) are one path to follow
+    const all = CV.list(L), chain = [best.c]; let q;
+    while ((q = all.find(o => o.s === chain[chain.length - 1].e && !chain.includes(o)))) chain.push(q);
+    while ((q = all.find(o => o.e === chain[0].s && !chain.includes(o)))) chain.unshift(q);
+    if (chain.length > 1) { const pts = [], acc = []; let base = 0; chain.forEach((o, ci) => { const k = CV.ctrl(L, o), D = dense(k.p0, k.c1, k.c2, k.p3, 200); D.pts.forEach((p, j) => { if (ci && !j) return; pts.push(p); acc.push(base + D.acc[j]); }); base += D.L; }); best.D = { pts, acc, L: base }; }
+  }
+  if (!best) { GP.toast('곡선 벽이 없어요. 벽 모양 도구에서 벽을 Alt+끌기 하거나 펜으로 곡선 벽을 만들어 주세요', { bad: true, ms: 4500 }); return; }
+  const { k, D } = best, at = s => { s = U.clamp(s, 0, D.L); let j = 1; while (j < D.acc.length - 1 && D.acc[j] < s) j++; const f = (s - D.acc[j - 1]) / ((D.acc[j] - D.acc[j - 1]) || 1), a = D.pts[j - 1], b = D.pts[j]; const p = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f], t = unit(sub(b, a)); let n = [-t[1], t[0]]; if (!G.pip(p[0] + n[0] * .05, p[1] + n[1] * .05, P)) n = [t[1], -t[0]]; return { p, n }; };
+  const sOf = it => { let bs = 0, bd = Infinity; D.pts.forEach((q, j) => { const d = Math.hypot(q[0] - it.x, q[1] - it.z); if (d < bd) { bd = d; bs = D.acc[j]; } }); return bs; };
+  const rows = its.map(it => { const s = sOf(it), { n } = at(s), kk = ((Math.round(U.angNorm(-it.rot * DEGR - Math.atan2(n[0], n[1])) / (Math.PI / 2)) % 4) + 4) % 4, dm = GP.dims(it); return { it, s, k: kk, along: kk % 2 ? dm.d : dm.w, half: kk % 2 ? dm.w / 2 : dm.d / 2 }; }).sort((a, b) => a.s - b.s);
+  const gap = Math.max(0, (+(($('#mGap') || {}).value) || (ui().lastGap ?? 50)) / 100), T = rows.reduce((s, r) => s + r.along, 0) + gap * (rows.length - 1);
+  const mean = rows.reduce((s, r) => s + r.s, 0) / rows.length; let cur = U.clamp(mean - T / 2, 0, Math.max(0, D.L - T));
+  for (const r of rows) {
+    const { p, n } = at(cur + r.along / 2), rot = U.normRot(-(Math.atan2(n[0], n[1]) + r.k * Math.PI / 2) / DEGR); let off = r.half + .02;
+    const place = () => { r.it.x = U.r3(p[0] + n[0] * off); r.it.z = U.r3(p[1] + n[1] * off); r.it.rot = rot; };
+    place(); for (let q = 0; q < 50 && !G.rectInside(GP.footprint(r.it), P); q++) { off += .01; place(); }      // where the wall bulges in, a little further off
+    cur += r.along + gap;
+  }
+  GP.changed('items'); GP.toast(`${rows.length}대를 곡선 벽을 따라 놓았어요${T > D.L ? ' · 곡선보다 줄이 길어서 끝쪽 기구는 곡선 밖에 걸쳐요' : ''}`, { ms: 3500 });
+};
+let bendSnap = null;
+ARC.bend = (deg, done) => {
+  if (!bendSnap) { const its = ui().selItems(); if (its.length < 2) return; bendSnap = its.map(it => ({ it, x: it.x, z: it.z, rot: it.rot })); }
+  const ref = bendSnap[0], loc = bendSnap.map(q => { const [lx, lz] = G.w2l(ref.x, ref.z, ref.rot, q.x, q.z); return { q, lx, lz }; });
+  const x0 = Math.min(...loc.map(o => o.lx)), x1 = Math.max(...loc.map(o => o.lx)), span = x1 - x0, mid = (x0 + x1) / 2, z0 = loc.reduce((s, o) => s + o.lz, 0) / loc.length;
+  const th = deg * DEGR, kap = span > .1 ? th / span : 0;
+  for (const o of loc) {
+    if (Math.abs(kap) < 1e-4) { o.q.it.x = o.q.x; o.q.it.z = o.q.z; o.q.it.rot = o.q.rot; continue; }
+    const s = o.lx - mid, e = o.lz - z0, R = 1 / kap + e, lx = mid + R * Math.sin(kap * s), lz = z0 - 1 / kap + R * Math.cos(kap * s), [x, z] = G.l2w(ref.x, ref.z, ref.rot, lx, lz);
+    o.q.it.x = U.r3(x); o.q.it.z = U.r3(z); o.q.it.rot = U.normRot(o.q.rot - kap * s / DEGR);
+  }
+  if (done) { bendSnap = null; GP.changed('items'); } else { GP.checks.quick(); GP.S.invalidate(); GP.emit('overlay'); }
+};
+document.addEventListener('input', e => { if (e.target.id !== 'arcBend') return; const v = +e.target.value; const l = $('#arcV'); if (l) l.textContent = (v > 0 ? '+' : '') + v + '°'; ARC.bend(v, false); });
+document.addEventListener('change', e => { if (e.target.id !== 'arcBend') return; ARC.bend(+e.target.value, true); });
 GP.toolExt = { pen: { down: (e, fp) => pen.down(e, fp), move: e => pen.move(e), up: e => pen.up(e), dbl: e => pen.dbl(e) }, xform: { down: X.down, move: X.move, up: X.up, dbl: X.dbl } };
 })();

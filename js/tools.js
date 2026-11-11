@@ -362,7 +362,7 @@ function viewerTap(e) {
 function onDbl(e) {
   { const ext = GP.toolExt && GP.toolExt[ui.tool]; if (ext) { ext.dbl(e); return; } }
   if (draw && (draw.tool === 'part' || draw.tool === 'matPoly')) { finishDraw(); return; }
-  if (!GP.viewOnly && ui.tool === 'vertex') { const fp = GP.S.floorAt(e.clientX, e.clientY), i = hoverWallSeg(fp); if (i >= 0 && !(GP.CV && GP.CV.of(GP.L(), i))) tools.addPointOnWall(i, [fp.x, fp.z]); return; }
+  if (!GP.viewOnly && ui.tool === 'vertex') { const fp = GP.S.floorAt(e.clientX, e.clientY), i = hoverWallSeg(fp), c = i >= 0 && GP.CV && GP.CV.of(GP.L(), i); if (c) { if (GP.CV.splitAt(GP.L(), c, [fp.x, fp.z])) { GP.changed('room'); GP.toast('곡선을 둘로 나눴어요. 새 점의 주황 손잡이를 한쪽만 길게 당기면 그쪽이 더 많이 휘어요 (Alt: 방향도 따로)', { ms: 5000 }); } } else if (i >= 0) tools.addPointOnWall(i, [fp.x, fp.z]); return; }
   if (GP.viewOnly || ui.placing || ui.tool !== 'select') return;
   const fp = GP.S.floorAt(e.clientX, e.clientY); const uid = GP.S.itemAt(fp.x, fp.z); if (uid) { const it = GP.findItem(uid); GP.M3.open(it); }
 }
@@ -845,6 +845,7 @@ act.inspAction = async (a, b) => {
   if (a === 'mount' && it) return act.setMount(it, b.dataset.m);
   if (a === 'fav' && it) { const f = GP.lib.favorites, i = f.indexOf(it.type); if (i >= 0) f.splice(i, 1); else f.unshift(it.type); GP.saveLib(); ui.renderInspector(); GP.emit('library'); return; }
   if (a === 'row') return act.makeRow(U.clamp(+$('#iRowN').value || 2, 2, 40), +$('#iRowG').value || 0);
+  if (a === 'arcWall' && GP.ARC) return GP.ARC.followWall();
   if (a === 'alignF') return act.align('F'); if (a === 'alignC') return act.align('C'); if (a === 'alignB') return act.align('B');
   if (a === 'gap') return act.gap(+$('#mGap').value || 0); if (a === 'even') return act.gap(0, true);
   if (a === 'grot') return act.groupRotate(90);
