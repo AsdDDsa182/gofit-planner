@@ -45,7 +45,7 @@ V3.resize = () => {
 };
 V3.invalidate = () => { dirty = true; };
 V3.camera = () => cam; V3.scene = () => sc;      // (tests)
-function loop() { raf = requestAnimationFrame(loop); if (V3.walking) walkStep(); else if (ctl.update()) dirty = true; if (!dirty) return; dirty = false; wallFade(); lightsFor(cam.position); skyAt(cam.position); lightMode(cam.position); R.render(sc, cam); }
+function loop() { raf = requestAnimationFrame(loop); if (V3.walking) walkStep(); else { if (keys.size) flyStep(); if (ctl.update()) dirty = true; } if (!dirty) return; dirty = false; wallFade(); lightsFor(cam.position); skyAt(cam.position); lightMode(cam.position); R.render(sc, cam); }
 
 /* ---------------- show / hide ---------------- */
 V3.show = (on) => {
@@ -133,7 +133,7 @@ function applyEnv() {
   sc.background.set(LINE ? '#F7F8F7' : '#E6E9E6');
   const l = (!LINE && d.light) || {}; V3.hemi.color.set(l.sky || '#ffffff'); V3.hemi.groundColor.set(l.gnd || '#8d9399'); V3.hemi.intensity = l.hi ?? .42; V3.dir.color.set(l.sun || '#ffffff'); V3.dir.intensity = l.si ?? .9;
   for (const gd of GP.ENV_GROUND) { const m = matCache['ground:' + gd.id]; if (m) m.color.setScalar(l.gm ?? 1); }
-  { const Lt = GP.lightOf(GP.P.settings); if (matCache['lt:e']) matCache['lt:e'].color.set(Lt.glow).multiplyScalar(.3 + .7 * Math.min(1, Lt.lum)); }      // turned down: the fixtures look dimmer too
+  { const Lt = GP.lightOf(GP.P.settings); if (matCache['lt:e']) matCache['lt:e'].color.set(glowHex(Lt)).multiplyScalar(.3 + .7 * Math.min(1, Lt.lum)); const hm = matCache['lt:halo']; if (hm) { hm.color.set(Lt.glow); hm.opacity = .5 * Math.min(1, Lt.lum); } }      // turned down: the fixtures look dimmer too
   lmKey = '';      // a dark sky, a dark ground
   dirty = true;
 }
@@ -165,6 +165,10 @@ const pickSpots = (sp, n) => {      // n of them spread over the room: the one n
    glass (the ceiling then casts the sun's shadow). From above or outside it stays bright so the layout reads. */
 let ceilRef = null, roomH = 0, lmKey = '', lmT = 0;
 const mixHex = (a, b, t) => '#' + new THREE.Color(a).lerp(new THREE.Color(b), t).getHexString();
+const lumOf = hex => { const c = new THREE.Color(hex); return .2126 * c.r + .7152 * c.g + .0722 * c.b; };      // how bright a colour looks (linear)
+/* the glow of a fixture as shown: its colour lifted a little towards white (a lit LED's core), dimmer when turned down */
+const glowHex = (Lt) => mixHex(Lt.glow, '#ffffff', .18);
+function haloTex() { return mat('haloTex', () => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(.25, 'rgba(255,255,255,.45)'); g.addColorStop(.6, 'rgba(255,255,255,.12)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t; }); }
 function lightMode(pos) {
   if (!GP.P || !V3.hemi) return; const st = GP.P.settings, Lt = GP.lightOf(st), E = GP.envOf(st), sky = (!LINE && E.sky.light) || {};
   const inside = !LINE && !V3.cut && !!ceilRef && (V3.walking || (pos.y < roomH - .05 && G.pip(pos.x, pos.z, GP.L().room.pts)));
@@ -173,9 +177,10 @@ function lightMode(pos) {
   if (key === lmKey && !(A !== 1 && now - lmT > 400)) return;      // (while dimmed, now and then again: machines loaded since get it too)
   const fresh = key !== lmKey; lmKey = key; lmT = now; V3.lightLevel = A;
   if (fresh) {
-    V3.hemi.color.set(inside && F > 0 ? mixHex(sky.sky || '#ffffff', Lt.glow, .5) : (sky.sky || '#ffffff')); V3.hemi.intensity = (sky.hi ?? .42) * A;
+    const tint = inside && F > 0 ? mixHex(sky.sky || '#ffffff', Lt.glow, .5) : (sky.sky || '#ffffff'), comp = inside && F > 0 ? Math.min(1.8, lumOf(sky.sky || '#ffffff') / Math.max(.3, lumOf(tint))) : 1;
+    V3.hemi.color.set(tint); V3.hemi.intensity = (sky.hi ?? .42) * A * comp;
     ptl.forEach(p => { p.intensity = 0; });
-    if (pts) { const P = GP.L().room.pts, ch = pickSpots(lightRef.spots, ptl.length), cell = Math.sqrt(Math.abs(G.area(P)) / ch.length); ch.forEach((s, k) => { const p = ptl[k]; p.position.set(s.p[0], lightRef.H - .35, s.p[1]); p.color.set(Lt.glow); p.intensity = 1.5 * F; p.distance = Math.max(4.2, cell * 1.35); }); }      // the light pools
+    if (pts) { const P = GP.L().room.pts, ch = pickSpots(lightRef.spots, ptl.length), cell = Math.sqrt(Math.abs(G.area(P)) / ch.length); ch.forEach((s, k) => { const p = ptl[k]; p.position.set(s.p[0], lightRef.H - .35, s.p[1]); p.color.set(Lt.glow); p.intensity = 1.5 * F * Math.min(3, Math.pow(1 / Math.max(.2, lumOf(Lt.glow)), .7)); p.distance = Math.max(4.2, cell * 1.35); }); }      // the light pools
     if (ceilRef) { ceilRef.castShadow = inside; const m = ceilRef.material; if (m.userData.base) m.color.copy(m.userData.base).multiplyScalar(inside ? Math.min(1, .06 + A * .94) : 1); }
   }
   sc.traverse(o => { const m = o.material; if (!m) return; for (const q of Array.isArray(m) ? m : [m]) if (q.isMeshStandardMaterial && q.envMapIntensity !== A) q.envMapIntensity = A; });
@@ -209,13 +214,19 @@ function lightSpots(P, d, gap) {
 function buildLights(g, P, H, st) {
   const L = GP.lightOf(st); if (L.d.id === 'none') return; const spots = lightSpots(P, L.d, L.gap); if (!spots.length) return;
   const body = GP.LIGHT_BODY[L.body];
-  const em = mat('lt:e', () => new THREE.MeshBasicMaterial({ color: L.glow, toneMapped: false })); em.color.set(L.glow).multiplyScalar(.3 + .7 * Math.min(1, L.lum));      // one glow, recoloured in place (a colour being dragged does not make new materials)
+  const em = mat('lt:e', () => new THREE.MeshBasicMaterial({ color: L.glow, toneMapped: false })); em.color.set(glowHex(L)).multiplyScalar(.3 + .7 * Math.min(1, L.lum));      // one glow, recoloured in place (a colour being dragged does not make new materials)
   const hm = mat('lt:h:' + L.body, () => std(body.c, { metalness: body.m, roughness: body.r }));
   const holder = new THREE.Group(); holder.userData.own = true; g.add(holder); lightRef = { holder, H, top: L.top, spots };
   lightScene(L.d.id).then(scene => {
     if (!holder.parent) return;      // built again since
     const proto = scene.clone(true); proto.traverse(n => { if (!n.isMesh) return; const nm = (n.material && n.material.name) || ''; if (/lemit/.test(nm)) n.material = em; else if (/lhouse/.test(nm)) n.material = hm; n.castShadow = false; n.receiveShadow = false; });
-    for (const s of spots) { const o = proto.clone(true); o.position.set(s.p[0], H, s.p[1]); o.rotation.y = s.rot; holder.add(o); }
+    const eb = new THREE.Box3(); proto.updateMatrixWorld(true); proto.traverse(n => { if (n.isMesh && n.material === em) eb.expandByObject(n); });
+    const hc = eb.isEmpty() ? null : eb.getCenter(new THREE.Vector3()), hsz = hc ? Math.max(eb.max.x - eb.min.x, eb.max.z - eb.min.z) * 1.5 + .45 : 0, Y = new THREE.Vector3(0, 1, 0);
+    const halo = hc && mat('lt:halo', () => new THREE.SpriteMaterial({ map: haloTex(), color: L.glow, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, opacity: .5 })); if (halo) { halo.color.set(L.glow); halo.opacity = .5 * Math.min(1, L.lum); }
+    for (const s of spots) {
+      const o = proto.clone(true); o.position.set(s.p[0], H, s.p[1]); o.rotation.y = s.rot; holder.add(o);
+      if (halo) { const sp = new THREE.Sprite(halo), c = hc.clone().applyAxisAngle(Y, s.rot); sp.position.set(s.p[0] + c.x, H + c.y - .03, s.p[1] + c.z); sp.scale.setScalar(hsz); sp.renderOrder = 2; holder.add(sp); }
+    }
     dirty = true;
   }).catch(() => { });
 }
@@ -756,7 +767,27 @@ window.addEventListener('keydown', e => {
   const k = e.key.toLowerCase(); if (k === 'escape') { V3.walk(false); e.preventDefault(); e.stopImmediatePropagation(); return; }
   if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'shift'].includes(k)) { keys.add(k); e.preventDefault(); e.stopImmediatePropagation(); }
 }, true);
-window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
+/* the ordinary 3D view: W A S D / arrows move along the floor the way the camera looks (the turning point comes along),
+   Q / E down / up, Shift faster; the mouse still turns, pans and zooms. With machines picked, the arrows nudge them and Q / E
+   turn them, as before. */
+const FLY = ['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', 'q', 'e'];
+let lastF = 0;
+window.addEventListener('keydown', e => {
+  if (!V3.on || V3.walking || !R || e.ctrlKey || e.metaKey || e.altKey) return; const tag = (e.target.tagName || '').toLowerCase(); if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
+  const k = e.key.toLowerCase(); if (k === 'shift') { keys.add(k); return; } if (!FLY.includes(k)) return;
+  if ((k.startsWith('arrow') || k === 'q' || k === 'e') && GP.ui.sel && GP.ui.sel.length) return;      // picked machines: nudge / turn them
+  keys.add(k); e.preventDefault(); e.stopImmediatePropagation();
+}, true);
+function flyStep() {
+  let f = 0, s = 0, u = 0; if (keys.has('w') || keys.has('arrowup')) f++; if (keys.has('s') || keys.has('arrowdown')) f--; if (keys.has('a') || keys.has('arrowleft')) s--; if (keys.has('d') || keys.has('arrowright')) s++; if (keys.has('e')) u++; if (keys.has('q')) u--;
+  const t = performance.now(); if (!f && !s && !u) { lastF = 0; return; } const dt = Math.min(.05, (t - (lastF || t - 16)) / 1000); lastF = t;
+  const dir = new THREE.Vector3().subVectors(ctl.target, cam.position); dir.y = 0; if (dir.lengthSq() < 1e-8) dir.set(0, 0, -1); dir.normalize();
+  const right = new THREE.Vector3(-dir.z, 0, dir.x), dist = cam.position.distanceTo(ctl.target), sp = U.clamp(dist * .6, 2.5, 30) * (keys.has('shift') ? 2.5 : 1) * dt;
+  const mv = dir.multiplyScalar(f * sp).add(right.multiplyScalar(s * sp)); mv.y = u * sp;
+  cam.position.add(mv); ctl.target.add(mv); if (cam.position.y < .25) { const d = .25 - cam.position.y; cam.position.y += d; ctl.target.y += d; }
+  dirty = true; GP.tip.hide();
+}
+window.addEventListener('keyup', e => { keys.delete(e.key.toLowerCase()); if (!keys.size) lastF = 0; });
 window.addEventListener('blur', () => keys.clear());
 
 /* ---------------- snapshots for images / PDF ---------------- */

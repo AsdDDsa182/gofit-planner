@@ -26,6 +26,10 @@ GP.cpk.on.ltColor = (hex, live, k) => {      // the light's colour: live = only 
   const st = GP.P.settings, l = st.light = Object.assign({}, st.light || {}); l.color = hex; if (k) l.k = k; else delete l.k; delete l.tone;
   GP.changed(live ? 'env3d' : 'settings', live ? { commit: false } : undefined);
 };
+panels.putColumn = () => {      // the space step's column tool: place columns of the chosen size, staying in the space step
+  if (GP.viewOnly) return; if (GP.roomEmpty && GP.roomEmpty()) { GP.toast('아직 공간이 없어요. 공간을 먼저 만들어 주세요', { bad: true }); return; }
+  const s = panels.colSize || .6; GP.tools.startPlacing([{ it: { type: 'column', w: s, d: s } }], { stay: true }); GP.toast(`도면을 눌러 기둥(${Math.round(s * 100)}각)을 놓아요 · Shift+클릭 여러 개 · Esc 끝`, { ms: 3500 });
+};
 panels.renderSpace = () => {
   if (GP.liveWait('space', $('#panel-space'), panels.renderSpace)) return;
   const P = GP.P, st = P.settings, L = GP.L(), A = Math.abs(G.area(L.room.pts));
@@ -36,6 +40,10 @@ panels.renderSpace = () => {
   el.innerHTML = `<p class="lead">고객 매장의 벽 모양과 크기를 만들어요. 문·창문·가벽은 도면 위 도구로 넣어요.</p>
   ${fold('make', '공간 만들기', L.room.empty ? '아직 없음' : `${(A / U.PY).toFixed(1)}평 · ${U.r2(bb.sx)}×${U.r2(bb.sz)}m`, `<div class="row2" style="margin-bottom:8px"><button class="btn soft" data-pen="1" title="클릭: 모서리 · 누른 채 끌기: 곡선">${IC.pen}펜으로 그리기</button><button class="btn soft" data-xform="1" title="공간 전체를 상자 손잡이로 키우기 · 줄이기 · 돌리기 (T)">${IC.xform}크기 변형 <kbd>T</kbd></button></div><button class="btn ghost sm" data-clearroom="1" style="margin:-2px 0 8px;align-self:flex-start">벽 비우고 처음부터 그리기</button><div class="seg full" id="spMode"><button data-m="py" class="${sp.mode === 'py' ? 'on' : ''}">평수로</button><button data-m="shape" class="${sp.mode === 'shape' ? 'on' : ''}">모양 템플릿</button><button data-m="walk" class="${sp.mode === 'walk' ? 'on' : ''}">실측 입력</button></div>
     <div id="spBody" class="blk" style="border:0;padding:0"></div>`)}
+  ${(() => { const cols = L.items.filter(it => it.type === 'column'), cs = panels.colSize || .6; return fold('column', '기둥', cols.length ? cols.length + '개' : '없음', `<p class="note" style="margin:0">매장 안의 구조 기둥이에요(견적에는 안 들어가요). 크기를 고르고 「기둥 넣기」를 누른 뒤 도면을 눌러 놓아요(<kbd>Shift</kbd>+클릭 여러 개). 놓은 기둥을 누르면 크기 · 색 · 모서리 보호대를 고쳐요.</p>
+    <div class="rng"><span>크기</span><div class="seg sm">${[.4, .5, .6, .8].map(s => `<button data-colsz="${s}" class="${Math.abs(cs - s) < .001 ? 'on' : ''}">${Math.round(s * 100)}각</button>`).join('')}</div></div>
+    <div class="acts" style="margin:0"><button class="btn sm primary" data-colput="1">${GP.IC.pillar} 기둥 넣기</button></div>
+    ${cols.length ? `<div class="col-list">${cols.map((it, k) => { const d = GP.dims(it); return `<div class="col-r"><b>기둥 ${k + 1}</b><span>${U.cm(d.w)} × ${U.cm(d.d)} cm</span><button class="btn xs" data-colsel="${it.uid}">선택</button><button class="icon-btn sm" data-coldel="${it.uid}" title="이 기둥 지우기">✕</button></div>`; }).join('')}</div>` : ''}`); })()}
   ${fold('finish', '벽 · 바닥 · 천장 마감', `${ui.texName(st.floorBase)} · ${ui.texName(st.wallTex || 'paint')} · ${((GP.TEX.ceil.find(t => t.id === (st.ceilTex || 'paint')) || {}).name || '흰 도장')}`, `<p class="note" style="margin:0">3D 보기와 제안서 3D 그림에 보여요. 바닥 무늬는 도면에도 연하게 보여요. 벽마다 다르게 하려면 도면에서 벽을 누르세요. 「색감 조절」로 밝기 · 대비 · 채도 · 색감을 바꿀 수 있어요.</p>
     <span class="lbl">바닥</span>${ui.texGrid('floor', st.floorBase)}${ui.adjBlock('floor')}
     <span class="lbl">벽 (모든 벽)</span>${ui.texGrid('wall', st.wallTex || 'paint')}${ui.adjBlock('wall')}
@@ -115,6 +123,10 @@ panels.renderUL = renderUL;
 const spEl = $('#panel-space');
 spEl.addEventListener('click', e => {
   const t = e.target; if (t.closest('[data-xform]')) { ui.setTool('xform'); return; }
+  { const cz = t.closest('[data-colsz]'); if (cz) { panels.colSize = +cz.dataset.colsz; panels.renderSpace(); return; } }
+  if (t.closest('[data-colput]')) { panels.putColumn(); return; }
+  { const cl = t.closest('[data-colsel]'); if (cl) { ui.select([{ k: 'item', id: cl.dataset.colsel }]); return; } }
+  { const cd = t.closest('[data-coldel]'); if (cd) { const L = GP.L(); L.items = L.items.filter(it => it.uid !== cd.dataset.coldel); ui.clearSel(); GP.changed('items'); panels.renderSpace(); GP.toast('기둥을 지웠어요 (Ctrl+Z로 되돌리기)'); return; } }
   { const eb = t.closest('[data-envsky],[data-envground]'); if (eb) { const st = GP.P.settings, en = st.env = Object.assign({}, st.env || {}); if (eb.dataset.envsky) en.sky = eb.dataset.envsky; if (eb.dataset.envground) en.ground = eb.dataset.envground; GP.changed(eb.dataset.envsky ? ['env3d', 'settings'] : ['room3d', 'settings']); panels.renderSpace(); if (!(GP.V3 && GP.V3.on)) GP.toast('배경은 3D 보기에서 보여요', { ms: 2500 }); return; } }
   { const lb = t.closest('[data-light],[data-ltone],[data-lbody]'); if (lb) { const st = GP.P.settings, l = st.light = Object.assign({}, st.light || {}); if (lb.dataset.light) { l.type = lb.dataset.light; delete l.gap; } if (lb.dataset.ltone) l.tone = lb.dataset.ltone; if (lb.dataset.lbody) l.body = lb.dataset.lbody; GP.changed('settings'); panels.renderSpace(); if (!(GP.V3 && GP.V3.on)) GP.toast('조명은 3D 보기에서 보여요', { ms: 2500 }); return; } }
   if (t.closest('[data-clearroom]')) { GP.tools.clearRoom(true); return; }
@@ -215,7 +227,9 @@ function renderGrid() {
   if (q) list = list.filter(k => { const d = GP.getDef(k); return (GP.typeName(k) + d.name + (d.kw || '')).toLowerCase().replace(/\s+/g, '').includes(q); });
   else if (pl.cat === 'fav') { const fav = GP.lib.favorites.filter(k => GP.getDef(k)); const rec = panels.recent.filter(k => GP.getDef(k) && !fav.includes(k)); list = fav.concat(rec); }
   else list = list.filter(k => GP.getDef(k).cat === pl.cat);
+  list = list.filter(k => k !== 'column');      // (columns are part of the space: the space step has them)
   let html = list.map(k => card(k)).join('');
+  if (q && /기둥|column|pillar/.test(q)) html = `<p class="empty" style="grid-column:1/-1">기둥은 「공간」 단계에서 넣어요. <button class="btn xs" data-gocol="1">공간 단계 · 기둥</button></p>` + html;
   if (pl.cat === 'custom' || pl.cat === 'special') html = `<button class="card" data-build="1"><span class="thumb" style="display:grid;place-items:center;color:var(--ink-2)">${IC.build}</span><span class="c-name"><span>직접 조립해서 만들기</span></span><span class="c-size">상자·원기둥 조합</span></button>` + html;
   if (pl.cat === 'fav' && !q && !list.length) html = '<p class="empty">기구 카드의 ★를 누르면 여기에 모여요.</p>';
   g.innerHTML = html || '<p class="empty">찾는 기구가 없어요. 다른 이름으로 검색해 보세요.</p>';
@@ -229,6 +243,7 @@ plEl.addEventListener('input', e => { if (e.target.id === 'plQ') { pl.q = e.targ
 plEl.addEventListener('click', e => {
   const t = e.target;
   const fv = t.closest('[data-fav]'); if (fv) { e.stopPropagation(); const k = fv.dataset.fav, f = GP.lib.favorites, i = f.indexOf(k); if (i >= 0) f.splice(i, 1); else f.unshift(k); GP.saveLib(); renderGrid(); return; }
+  if (t.closest('[data-gocol]')) { ui.setStep('space'); panels.openFold('column'); panels.renderSpace(); return; }
   const gb = t.closest('#plGroups [data-grp]'); if (gb) { const g = PL_GROUPS.find(x => x.id === gb.dataset.grp); if (g && !g.cats.includes(pl.cat)) { pl.cat = g.cats[0]; pl.q = ''; panels.renderPlace(); } return; }
   const c = t.closest('#plCats [data-cat]'); if (c) { pl.cat = c.dataset.cat; pl.q = ''; panels.renderPlace(); return; }
   const sd = t.closest('[data-setdel]'); if (sd) { e.stopPropagation(); GP.lib.sets = GP.lib.sets.filter(s => s.id !== sd.dataset.setdel); GP.saveLib(); renderGrid(); return; }

@@ -91,13 +91,15 @@ GP.ENV_SKY = [
   { id: 'dusk', name: '저녁 도시', day: 0.55, pano: 'sunset_jhbcentral', light: { sky: '#ffe4cc', gnd: '#6f6670', sun: '#ffc48a', si: .8, hi: .4, gm: .75 } },
   { id: 'citynight', name: '밤 거리', day: 0.12, pano: 'hansaplatz', light: { sky: '#a6b2d4', gnd: '#3b3a3c', sun: '#ffd9a8', si: .35, hi: .34, gm: .4 } },
 ];
-GP.ENV_GROUND = [{ id: 'none', name: '없음' }, { id: 'pavers', name: '보도블록', size: 1.92 }, { id: 'brick', name: '벽돌 보도', size: 2 }, { id: 'asphalt', name: '아스팔트', size: 30 }, { id: 'grass', name: '잔디', size: 2 }];
+GP.ENV_GROUND = [{ id: 'none', name: '없음' }, { id: 'pavers', name: '보도블록', size: 1.92 }, { id: 'brick', name: '벽돌 보도', size: 2 }, { id: 'asphalt', name: '아스팔트', size: 30 }, { id: 'grass', name: '잔디', size: 2 },
+  { id: 'paving2', name: '패턴 보도', size: 2 }, { id: 'cobble', name: '돌길', size: 1.5 }, { id: 'granite', name: '화강석', size: 2.3 }, { id: 'concrete', name: '콘크리트', size: 2 }, { id: 'gravel', name: '자갈', size: 2.16 },
+  { id: 'sand', name: '모래', size: 15 }, { id: 'forest', name: '흙 · 숲길', size: 3.15 }, { id: 'drygrass', name: '마른 잔디', size: 2 }, { id: 'snow', name: '눈', size: 2 }, { id: 'deck', name: '나무 데크', size: 1.8 }];
 GP.envOf = st => { const e = (st && st.env) || {}; return { sky: GP.ENV_SKY.find(q => q.id === e.sky) || GP.ENV_SKY[0], ground: GP.ENV_GROUND.find(q => q.id === e.ground) || GP.ENV_GROUND[0], rot: +e.rot || 0 }; };
 GP.envGrad = d => d.g ? 'linear-gradient(to bottom,' + d.g.filter(s => s[0] <= .56).map(([o, c]) => `${c} ${Math.round(o / .56 * 100)}%`).join(',') + ')' : 'linear-gradient(#eef0ee,#dfe3df)';
 /* glass walls: the width of one pane (m) unless one is chosen; 0 = one pane, no posts between */
 GP.GLASS_GW = 2;
 GP.gwVal = v => !(v >= .45) ? 0 : Math.min(12, Math.max(.5, Math.round(v * 10) / 10));
-GP.gwTxt = v => v > 0 ? v.toFixed(1) + ' m마다' : '나누지 않음';
+GP.gwTxt = v => v > 0 ? v.toFixed(1) + ' m' : '안 나눔';
 /* ceiling lights (dev/blender/hq_lights.py → models/light/<id>.glb, picture assets/light/<id>.png): a design, the light's colour and
    the body's colour (the files name the parts g_lhouse / g_lemit), set out on the ceiling every `gap` m; line = its length when it
    runs in rows */
@@ -254,7 +256,7 @@ T('sled', '슬레드', 'func', 0.66, 0.94, 0.78, [2, 0.5, 0.2, 0.2], {heavy:true
 T('plyobox', '플라이오 박스', 'func', 0.76, 0.6, 0.5, [0.8, 0.8, 0.3, 0.3], {kw:'플라이오 점프 박스 plyo box'});
 T('battlerope', '배틀로프', 'func', 0.6, 5, 0.2, [1.2, 0, 0.5, 0.5], {flat:true,kw:'배틀로프 로프 battle rope'});
 T('stretchzone', '스트레칭 존', 'func', 3, 2, 0.02, [0, 0, 0, 0], {flat:true,fit:'actual',kw:'스트레칭 매트 요가 stretch'});
-T('ballrack', '짐볼·폼롤러 거치대', 'func', 1.82, 0.64, 1.82, [0.6, 0, 0.2, 0.2], {kw:'짐볼 폼롤러 거치대'});
+T('ballrack', '짐볼·폼롤러 거치대', 'func', 1.97, 0.61, 1.75, [0.6, 0, 0.2, 0.2], {kw:'짐볼 폼롤러 거치대'});
 T('sandbag', '샌드백', 'func', 0.36, 0.36, 1.8, [0.8, 0.8, 0.8, 0.8], {mount:'ceil',kw:'샌드백 복싱 sandbag'});
 T('stretchmachine', '스트레칭 머신', 'stretch', 0.87, 1.66, 1.86, [0.6, 0.3, 0.4, 0.4], {pw:100,kw:'스트레칭 머신 고플렉스'});
 T('mirror_t', '스트레칭 미러 (T형)', 'stretch', 1.46, 1.46, 2.09, [0.8, 0.1, 0.1, 0.1], {pw:200,kw:'미러 스트레칭 부스 T'});

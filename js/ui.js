@@ -13,7 +13,7 @@ const IC = GP.IC = {
   select: sv('<path d="m4 3 7 17 2.5-7.5L21 10z"/>'), multi: sv('<rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/><path d="M13 7h4v4M7 13v4h4" stroke-dasharray="2 2"/>'),
   vertex: sv('<path d="M4 18 9 5l10 3-3 11z"/><circle cx="4" cy="18" r="1.8" fill="currentColor"/><circle cx="9" cy="5" r="1.8" fill="currentColor"/><circle cx="19" cy="8" r="1.8" fill="currentColor"/><circle cx="16" cy="19" r="1.8" fill="currentColor"/>'),
   wall: sv('<path d="M3 20V9h8v11M11 20V4h10v16"/><path d="M3 20h18"/>'), door: sv('<path d="M5 21V4h9v17"/><path d="M14 6a9 9 0 0 1 5 8"/><path d="M3 21h18"/><circle cx="11.5" cy="13" r=".8" fill="currentColor"/>'),
-  room: sv('<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M7 9h6M7 13h4"/>'), ruler: sv('<path d="m3 17 14-14 4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/>'), note: sv('<path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4M8 12h8M8 16h5"/>'),
+  room: sv('<rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M7 9h6M7 13h4"/>'), pillar: sv('<rect x="8" y="4" width="8" height="16" rx=".8"/><path d="M5 20h14M5 4h14"/>'), ruler: sv('<path d="m3 17 14-14 4 4L7 21z"/><path d="m7 13 2 2M10 10l2 2M13 7l2 2"/>'), note: sv('<path d="M5 3h10l4 4v14H5z"/><path d="M15 3v4h4M8 12h8M8 16h5"/>'),
   fill: sv('<path d="M3 20h18"/><rect x="4" y="9" width="4" height="8"/><rect x="10" y="9" width="4" height="8"/><rect x="16" y="9" width="4" height="8"/><path d="M4 5h16" stroke-dasharray="2 2"/>'),
   matRect: sv('<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M3 12h18M9 5v14M15 5v14"/>'), matPoly: sv('<path d="M4 19V8l6-4 10 4v11z"/><path d="M4 13h16M10 4v15M15 6v13"/>'),
   zone: sv('<rect x="3" y="4" width="18" height="16" rx="2" stroke-dasharray="3 3"/><path d="M8 12h8"/>'),
@@ -83,12 +83,19 @@ GP.tryOut = () => {
     undo() { if (!used) return; used = false; back(); LV.on = true; try { GP.changed('all', { commit: false }); } finally { LV.on = false; } },
   };
 };
+/* sliders: how far along the blue goes (CSS --f, 0..1) — kept up as they move, are drawn, or are set from code */
+const rFill = el => { const mn = +el.min || 0, mx = el.max === '' ? 100 : +el.max, v = +el.value; el.style.setProperty('--f', mx > mn ? Math.min(1, Math.max(0, (v - mn) / (mx - mn))) : 0); };
+GP.rangeFill = rFill;
+document.addEventListener('input', e => { if (e.target.type === 'range') rFill(e.target); }, true);
+document.addEventListener('change', e => { if (e.target.type === 'range') rFill(e.target); }, true);
+new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) { if (n.matches('input[type=range]')) rFill(n); else if (n.firstElementChild) n.querySelectorAll('input[type=range]').forEach(rFill); } }).observe(document.documentElement, { childList: true, subtree: true });
+document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('input[type=range]').forEach(rFill));
 /* the number beside a slider: click it to type one (live too; beyond the slider's ends is fine) */
 document.addEventListener('click', e => {
   const b = e.target.closest('.rng > b'); if (!b || GP.viewOnly || b.parentElement.querySelector('.rng-in')) return; const r = b.parentElement.querySelector('input[type=range]'); if (!r || r.disabled) return;
   const v0 = r.value, inp = document.createElement('input'); inp.type = 'number'; inp.className = 'rng-in'; inp.step = r.step || 'any'; inp.value = r.value; inp.dataset.nolive = '';
   b.parentElement.appendChild(inp); b.style.visibility = 'hidden'; inp.focus(); inp.select(); let done = false;
-  const push = fin => { const v = parseFloat(inp.value); if (!isFinite(v)) return; if (v > +r.max) r.max = v; if (v < +r.min) r.min = v; r.value = v; r.dispatchEvent(new Event('input', { bubbles: true })); if (fin) r.dispatchEvent(new Event('change', { bubbles: true })); };
+  const push = fin => { const v = parseFloat(inp.value); if (!isFinite(v)) return; if (v > +r.max) r.max = v; if (v < +r.min) r.min = v; r.value = v; rFill(r); r.dispatchEvent(new Event('input', { bubbles: true })); if (fin) r.dispatchEvent(new Event('change', { bubbles: true })); };
   const end = ok => { if (done) return; done = true; if (!ok) { inp.value = v0; } push(true); inp.remove(); b.style.visibility = ''; };
   inp.addEventListener('input', () => { if (inp.value !== '' && !inp.validity.badInput) push(false); });
   inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') end(true); else if (ev.key === 'Escape') end(false); });
@@ -116,7 +123,7 @@ function cpkPaint(box, h, s, v, hex, k) {
   box.dataset.h = h; box.dataset.s = s; box.dataset.v = v; const sv = box.querySelector('.cpk-sv'), dot = sv.firstElementChild, hh = box.querySelector('.cpk-hue i'), hx = box.querySelector('.cpk-hex');
   sv.style.backgroundColor = `hsl(${h},100%,50%)`; dot.style.left = s * 100 + '%'; dot.style.top = (1 - v) * 100 + '%'; hh.style.left = h / 360 * 100 + '%';
   box.querySelector('.cpk-now').style.background = hex; if (document.activeElement !== hx) hx.value = hex.toUpperCase(); box.querySelector('.cpk-tag').textContent = k ? k + 'K' : '직접 고른 색';
-  const kr = box.querySelector('.cpk-kr'); if (kr) { if (k && document.activeElement !== kr) kr.value = k; const b = kr.parentElement.querySelector('b'); if (b) b.textContent = k ? k + 'K' : '—'; }
+  const kr = box.querySelector('.cpk-kr'); if (kr) { if (k && document.activeElement !== kr) { kr.value = k; rFill(kr); } const b = kr.parentElement.querySelector('b'); if (b) b.textContent = k ? k + 'K' : '—'; }
 }
 const cpkFire = (box, hex, live, k) => { const f = CPK.on[box.dataset.cpk]; if (!f || GP.viewOnly) return; LV.on = !!live; try { f(hex, !!live, k || 0); } finally { LV.on = false; } };
 const cpkHex = (box, hex, live, k) => { const [h, s, v] = rgb2hsv(...hex2rgb(hex)); cpkPaint(box, v && s ? h : +box.dataset.h, v ? s : +box.dataset.s, v, hex, k); cpkFire(box, hex, live, k); };
@@ -255,7 +262,7 @@ GP.on('selection', () => { ui.updateDistances(); GP.S.invalidate(); ui.renderIns
 
 /* ---------------- steps (tabs) & tools ---------------- */
 const STEP_TOOLS = {
-  space: [['select', '선택', 'select'], ['pen', '펜', 'pen'], ['vertex', '벽 모양', 'vertex'], ['xform', '크기 변형', 'xform'], ['part', '가벽', 'wall'], ['opening', '문·창문', 'door'], ['roomlabel', '공간 이름', 'room'], ['measure', '줄자', 'ruler'], ['note', '메모', 'note']],
+  space: [['select', '선택', 'select'], ['pen', '펜', 'pen'], ['vertex', '벽 모양', 'vertex'], ['xform', '크기 변형', 'xform'], ['part', '가벽', 'wall'], ['opening', '문·창문', 'door'], ['column', '기둥', 'pillar'], ['roomlabel', '공간 이름', 'room'], ['measure', '줄자', 'ruler'], ['note', '메모', 'note']],
   place: [['select', '선택', 'select'], ['multi', '여러 개', 'multi'], ['fillwall', '벽 채우기', 'fill'], ['measure', '줄자', 'ruler'], ['note', '메모', 'note']],
   floor: [['select', '선택', 'select'], ['matRect', '사각형', 'matRect'], ['matPoly', '모양대로', 'matPoly'], ['zoneRect', '존 표시', 'zone']],
 };
@@ -289,13 +296,13 @@ ui.renderGuideBits = () => {
   }
 };
 $('#stepNext') && $('#stepNext').addEventListener('click', e => { const b = e.target.closest('[data-next]'); if (!b) return; const n = b.dataset.next; if (n === 'quote') ui.openQuote(); else { if (n !== 'space' && GP.roomEmpty()) GP.toast('먼저 공간을 만들어 주세요. 가운데 「공간 만들기」에서 펜으로 그리거나 평수로 시작할 수 있어요', { bad: true, ms: 4500 }); ui.setStep(n); } $('#side .panel:not([hidden])') && ($('#side .panel:not([hidden])').scrollTop = 0); });
-GP.on('changed', () => ui.renderGuideBits()); GP.on('placing', () => ui.renderGuideBits()); GP.on('project', () => ui.renderGuideBits());
+GP.on('changed', () => ui.renderGuideBits()); GP.on('placing', () => { ui.renderGuideBits(); if (ui.renderTools) ui.renderTools(); }); GP.on('project', () => ui.renderGuideBits());
 ui.renderTools = () => {
   const t = $('#tools'); const list = STEP_TOOLS[ui.step] || [];
   t.hidden = !list.length || GP.viewOnly;
-  t.innerHTML = list.map(q => `<button class="tool${(ui.tool === q[0] || (q[0] === 'multi' && ui.multi)) ? ' on' : ''}" data-tool="${q[0]}" title="${q[1]}">${IC[q[2]]}<span>${q[1]}</span></button>`).join('');
+  t.innerHTML = list.map(q => `<button class="tool${(ui.tool === q[0] || (q[0] === 'multi' && ui.multi) || (q[0] === 'column' && ui.placing && ui.placing.list.some(p => p.it.type === 'column'))) ? ' on' : ''}" data-tool="${q[0]}" title="${q[1]}">${IC[q[2]]}<span>${q[1]}</span></button>`).join('');
 };
-$('#tools').addEventListener('click', e => { const b = e.target.closest('[data-tool]'); if (!b) return; const id = b.dataset.tool; if (id === 'multi') { ui.multi = !ui.multi; ui.setTool('select'); GP.toast(ui.multi ? '누르는 기구가 차례로 선택에 추가돼요' : '여러 개 선택을 껐어요'); return; } ui.setTool(ui.tool === id && id !== 'select' ? 'select' : id); });
+$('#tools').addEventListener('click', e => { const b = e.target.closest('[data-tool]'); if (!b) return; const id = b.dataset.tool; if (id === 'column') { GP.panels.putColumn(); return; } if (id === 'multi') { ui.multi = !ui.multi; ui.setTool('select'); GP.toast(ui.multi ? '누르는 기구가 차례로 선택에 추가돼요' : '여러 개 선택을 껐어요'); return; } ui.setTool(ui.tool === id && id !== 'select' ? 'select' : id); });
 ui.setTool = (id) => {
   if (['vertex', 'xform', 'opening', 'fillwall'].includes(id) && GP.roomEmpty && GP.roomEmpty()) { GP.toast('아직 공간이 없어요. 가운데 「공간 만들기」에서 먼저 만들어 주세요', { bad: true }); id = 'select'; }
   if (GP.tools) GP.tools.cancel();
@@ -358,8 +365,8 @@ const HINTS = {
   zoneRect: '<b>드래그</b>해서 존(유산소 존 등) 영역을 그려요',
   fillwall: '기구를 줄 세울 <b>벽을 클릭</b>하세요',
   placing: '<b>클릭</b>해서 놓기 · <kbd>R</kbd> 회전 · <kbd>Shift</kbd>+클릭 연속 배치 · <kbd>Alt</kbd> 자석 끄기',
-  select3d: '기구를 <b>눌러 선택</b>한 뒤 <b>끌면</b> 이동 · <kbd>R</kbd> 회전 · <kbd>Del</kbd> 삭제 · 빈 곳을 끌면 화면 회전',
-  other3d: '3D에서는 기구를 배치·이동할 수 있어요 · 벽·문·바닥은 <b>2D 도면</b>에서 고쳐요',
+  select3d: '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>·방향키 이동 · <kbd>Q</kbd>/<kbd>E</kbd> 아래/위 · <kbd>Shift</kbd> 빨리 · 빈 곳을 끌면 회전 · 기구를 눌러 선택 → 끌어서 이동 · <kbd>R</kbd> 회전 · <kbd>Del</kbd> 삭제',
+  other3d: '<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>·방향키 이동 · <kbd>Q</kbd>/<kbd>E</kbd> 아래/위 · 끌면 회전 · 벽·문·바닥은 <b>2D 도면</b>에서 고쳐요',
   placing3d: '원하는 곳을 <b>눌러서</b> 놓기 · <kbd>R</kbd> 회전 · <kbd>Shift</kbd>+클릭 연속 배치',
 };
 ui.setHint = (custom) => {

@@ -222,8 +222,9 @@ const canvas = () => GP.S.canvas;
 
 /* ---------------- placing (catalog / sets / paste) ---------------- */
 tools.startPlacing = (list, o) => {
-  tools.cancel(); if (ui.step !== 'place' && !(GP.wiz && GP.wiz.on)) ui.setStep('place'); if (ui.tool !== 'select') ui.setTool('select'); ui.clearSel();
+  tools.cancel(); if (ui.step !== 'place' && !(GP.wiz && GP.wiz.on) && !(o && o.stay)) ui.setStep('place'); if (ui.tool !== 'select') ui.setTool('select'); ui.clearSel();
   ui.placing = { list: list.map(q => Object.assign({ rel: [0, 0, 0] }, q)), rot: 0, relK: 0, x: null, z: null, keep: !!(o && o.keep), label: o && o.label };
+  if (ui.renderTools) ui.renderTools();
   GP.S.setGhost(ui.placing.list.map(q => q.it)); canvas().style.cursor = 'crosshair'; ui.setHint(); GP.emit('placing');
 };
 function ghostUpdate(cx, cy, alt) { if (ui.placing && GP.S.ghost) ghostAt(GP.S.floorAt(cx, cy), alt); }
