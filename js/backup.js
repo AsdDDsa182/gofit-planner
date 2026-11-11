@@ -14,7 +14,7 @@ B.sendProject = async () => {
   if (matchMedia('(pointer:coarse)').matches && navigator.canShare && navigator.canShare({ files: [f] })) {
     try { await navigator.share({ files: [f], title: GP.P.name }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
   }
-  U.download(f, f.name); GP.toast('프로젝트 파일을 저장했어요. 받는 사람은 고핏 플래너 메뉴 → 프로젝트 파일 열기로 열어요', { ms: 5000 });
+  U.download(f, f.name); GP.toast(`프로젝트 파일을 저장했어요. 받는 사람은 ${GP.APP_NAME} 메뉴 → 프로젝트 파일 열기로 열어요`, { ms: 5000 });
 };
 
 /* ---------------- all projects in one file (restore on a new PC, or where folder backup is not available) ---------------- */

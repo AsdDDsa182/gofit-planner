@@ -18,6 +18,7 @@ const IC = GP.IC = {
   matRect: sv('<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M3 12h18M9 5v14M15 5v14"/>'), matPoly: sv('<path d="M4 19V8l6-4 10 4v11z"/><path d="M4 13h16M10 4v15M15 6v13"/>'),
   zone: sv('<rect x="3" y="4" width="18" height="16" rx="2" stroke-dasharray="3 3"/><path d="M8 12h8"/>'),
   rotL: sv('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>'), rotR: sv('<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>'),
+  edit: sv('<path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-4-4L4 16z"/><path d="m14 6 4 4"/>'),
   folder: sv('<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>'), filePlus: sv('<path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8z"/><path d="M14 3v5h5M12 11v6M9 14h6"/>'),
   save: sv('<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/>'), open: sv('<path d="M3 7a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v2"/><path d="M3 7v11a1 1 0 0 0 1 1h14l3-8H7l-3 8"/>'), clock: sv('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   gear: sv('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
@@ -510,6 +511,6 @@ GP.fillIcons(document);
 $('#undoBtn').innerHTML = IC.undo; $('#redoBtn').innerHTML = IC.redo; $('#helpBtn').innerHTML = IC.help; $('#menuBtn').innerHTML = IC.menu; modal.querySelector('[data-close]').innerHTML = IC.x;
 $('#undoBtn').addEventListener('click', () => GP.H.undo()); $('#redoBtn').addEventListener('click', () => GP.H.redo());
 GP.on('history', () => { $('#undoBtn').disabled = !GP.H.canUndo(); $('#redoBtn').disabled = !GP.H.canRedo(); });
-ui.renderTop = () => { $('#projName').textContent = GP.P.name; $('#projClient').textContent = [GP.P.client, GP.P.consultant ? '담당 ' + GP.P.consultant : ''].filter(Boolean).join(' · ') || (GP.viewOnly ? '' : '고객사 정보 입력'); document.title = `${GP.P.name} — 고핏 플래너`; };
+ui.renderTop = () => { const cl = $('#projClient'), info = [GP.P.client, GP.P.consultant ? '담당 ' + GP.P.consultant : ''].filter(Boolean).join(' · '); $('#projName').textContent = GP.P.name; cl.textContent = info || (GP.viewOnly ? '' : '＋ 고객사 · 담당자 입력'); cl.classList.toggle('empty', !info); const ms = $('#markSub'); if (ms) ms.textContent = GP.APP_SUB; document.title = `${GP.P.name} — ${GP.APP_NAME}`; };
 $('#projBtn').addEventListener('click', () => { if (!GP.viewOnly) GP.panels.editProjectInfo(); });
 })();

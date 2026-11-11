@@ -1,6 +1,6 @@
 {
-  "name": "고핏 공간 플래너",
-  "short_name": "고핏 플래너",
+  "name": "GOFIT 짐 스튜디오",
+  "short_name": "GOFIT 스튜디오",
   "description": "GOFIT KOREA 헬스장 공간 컨설팅 · 기구 배치 3D 플래너",
   "lang": "ko",
   "start_url": "./index.html",

@@ -248,7 +248,7 @@ exp.menu = (anchor) => {
   <button class="mi" data-act="png">${IC.image}<div><b>도면 이미지 (PNG)</b><small>카톡으로 바로 보내기 좋아요</small></div></button>
   <button class="mi" data-act="png3d">${IC.cube}<div><b>3D 이미지 (PNG)</b><small>3D 보기의 지금 각도 그대로</small></div></button>
   <hr><div class="ph">다른 담당자에게 (편집 가능)</div>
-  <button class="mi" data-act="gofit">${IC.save}<div><b>프로젝트 파일 (.gofit)</b><small>받은 사람이 고핏 플래너에서 열면 그대로 고칠 수 있어요</small></div></button>
+  <button class="mi" data-act="gofit">${IC.save}<div><b>프로젝트 파일 (.gofit)</b><small>받은 사람이 ${GP.APP_NAME}에서 열면 그대로 고칠 수 있어요</small></div></button>
   <hr><div class="ph">기타</div>
   <button class="mi" data-act="print">${IC.pdf}<div><b>인쇄용 도면 PDF</b><small>A3 · A4 · 흑백</small></div></button>
   <button class="mi" data-act="html">${IC.html}<div><b>HTML 파일</b><small>링크 대신 파일로 보낼 때 (예비용)</small></div></button>

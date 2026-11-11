@@ -125,7 +125,7 @@ $('#menuBtn').addEventListener('click', () => {
   <hr><button class="mi" data-act="settings">${IC.gear}<div><b>설정</b><small>단가 · 기구 이름 · 회사 정보 · 3D 모델 받아두기</small></div></button>
   <button class="mi" data-act="guide">${IC.help}<div><b>사용 가이드</b><small>3단계로 둘러보기</small></div></button>
   ${app.installEvt ? `<button class="mi" data-act="install">${IC.install}<div><b>앱으로 설치</b><small>바탕화면 아이콘 · 인터넷 없이도 사용</small></div></button>` : (location.protocol.startsWith('http') && !matchMedia('(display-mode: standalone)').matches ? `<button class="mi" data-act="installHelp">${IC.install}<div><b>앱으로 설치하는 방법</b><small>크롬·엣지·아이패드</small></div></button>` : '')}
-  <div class="ph" style="font-weight:500">고핏 플래너 v${GP.VERSION}</div>`;
+  <div class="ph" style="font-weight:500">${GP.APP_NAME} v${GP.VERSION}</div>`;
   GP.popover($('#menuBtn'), html, (a) => {
     if (a === 'projects') GP.panels.projects(); else if (a === 'new') GP.panels.wizard(); else if (a === 'sample') app.openSample(); else if (a === 'info') GP.panels.editProjectInfo(); else if (a === 'versions') GP.panels.versions(); else if (a === 'compare') GP.panels.compare();
     else if (a === 'save') GP.backup.sendProject(); else if (a === 'open') $('#fileOpen').click(); else if (a === 'settings') GP.panels.settings(); else if (a === 'guide') GP.panels.guide();
@@ -158,7 +158,7 @@ app.welcome = () => {
     GP.toast('기본 공간(10 × 8 m)이 깔려 있어요. 벽을 끌거나 크기를 입력해 바꿔 보세요', { ms: 5000 });
     if (!GP.lib.guideSeen) setTimeout(() => GP.panels.guide(), 600);
   };
-  GP.modal('고핏 플래너 시작하기', `<div class="wiz"><p class="note">프로젝트 이름을 정하면 기본 공간(가로 10m × 세로 8m)이 깔린 상태로 시작해요. 공간의 크기와 모양은 바로 다음 화면에서 바꿀 수 있어요.</p>
+  GP.modal(`${GP.APP_NAME} 시작하기`, `<div class="wiz"><p class="note">프로젝트 이름을 정하면 기본 공간(가로 10m × 세로 8m)이 깔린 상태로 시작해요. 공간의 크기와 모양은 바로 다음 화면에서 바꿀 수 있어요.</p>
     <label class="fld"><span>프로젝트 이름</span><input id="wcName" placeholder="예: 강남 ○○피트니스" maxlength="60" autofocus></label>
     <label class="fld"><span>고객사 <small class="note">(선택)</small></span><input id="wcClient" maxlength="60"></label>
     <label class="fld"><span>담당자 (내 이름) <small class="note">(선택 · 견적서에 들어가요)</small></span><input id="wcMe" maxlength="40" value="${U.esc((GP.lib.me || {}).name || '')}"></label>
