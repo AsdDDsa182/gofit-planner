@@ -21,7 +21,7 @@ V3.init = () => {
   env.add(new THREE.Mesh(new THREE.BoxGeometry(12, 6, 12), new THREE.MeshBasicMaterial({ color: '#7d8388', side: THREE.BackSide })));
   [[0, 2.9, 0, 7, .1, 7, 3.2], [5.9, 1.6, 0, .1, 2, 5, 1.8], [-5.9, 1.6, 0, .1, 2, 5, 1.4], [0, 1.6, 5.9, 5, 2, .1, 1.2]].forEach(([x, y, z, w, h, d, i]) => { const m = new THREE.Mesh(eg, new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffffff').multiplyScalar(i) })); m.position.set(x, y, z); m.scale.set(w, h, d); env.add(m); });
   sc.environment = pm.fromScene(env, .04).texture; pm.dispose();
-  groups = {}; ['room', 'mats', 'items'].forEach(k => { groups[k] = new THREE.Group(); sc.add(groups[k]); });
+  groups = {}; ['room', 'mats', 'items', 'ao'].forEach(k => { groups[k] = new THREE.Group(); sc.add(groups[k]); });
   applyQuality();
   ctl = new THREE.OrbitControls(cam, cv); ctl.enableDamping = true; ctl.dampingFactor = .12; ctl.maxPolarAngle = 1.5; ctl.minDistance = 1; ctl.maxDistance = 250; ctl.screenSpacePanning = false;
   ctl.addEventListener('change', () => { dirty = true; GP.tip.hide(); });
@@ -57,7 +57,7 @@ V3.resize = () => {
 };
 V3.invalidate = () => { dirty = true; };
 V3.camera = () => cam; V3.scene = () => sc;      // (tests)
-function loop() { raf = requestAnimationFrame(loop); if (V3.walking) walkStep(); else if (ctl.update()) dirty = true; if (!dirty) return; dirty = false; wallFade(); lightsFor(cam.position); skyAt(cam.position); lightMode(cam.position); R.render(sc, cam); }
+function loop() { raf = requestAnimationFrame(loop); if (V3.walking) walkStep(); else if (ctl.update()) dirty = true; if (!dirty) return; dirty = false; wallFade(); lightsFor(cam.position); skyAt(cam.position); lightMode(cam.position); if (Q3() === 'fast' && performance.now() - solT.t > 600) { solT.t = performance.now(); solidify(); } R.render(sc, cam); }      // (빠름: machines that loaded since go plain too)
 
 /* ---------------- show / hide ---------------- */
 V3.show = (on) => {
@@ -140,7 +140,7 @@ function skyTexOf(d) {
   t.encoding = THREE.sRGBEncoding; return (skyTex[d.id] = t);
 }
 function applyEnv() {
-  const E = GP.envOf(GP.P.settings), d = E.sky, on = !LINE && d.id !== 'studio';
+  const E = GP.envOf(GP.P.settings), d = E.sky, on = !LINE && d.id !== 'studio' && Q3() !== 'fast';
   if (on && !skyMesh) { const geo = new THREE.SphereGeometry(300, 64, 32); geo.scale(-1, 1, 1); skyMesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ toneMapped: false, depthWrite: false, fog: false })); skyMesh.renderOrder = -10; skyMesh.frustumCulled = false; skyMesh.raycast = () => { }; sc.add(skyMesh); }
   if (skyMesh) { skyMesh.visible = on; if (on) { const t = skyTexOf(d); if (skyMesh.material.map !== t) { skyMesh.material.map = t; skyMesh.material.needsUpdate = true; } skyMesh.rotation.y = -E.rot * DEG; } }
   sc.background.set(LINE ? '#F7F8F7' : '#E6E9E6');
@@ -155,19 +155,36 @@ const skyAt = pos => { if (skyMesh) skyMesh.position.copy(pos); };
    it was; high = 1.5× pixels, a 4096 shadow map and twelve point lights standing in for the ceiling lights (light pools on the
    floor, in their colour) when seen from inside. The number of lights only changes with the quality (no recompiling otherwise). */
 const Q3 = () => (GP.lib && GP.lib.q3d) || 'normal';
-const Q3N = { fast: ['빠름', '그림자 없이 가볍게 · 느린 PC · 노트북'], normal: ['기본', '그림자 · 반사 · 대부분의 PC'], high: ['고품질', '더 선명한 화면 · 고운 그림자 · 안에서 보면 조명이 바닥을 비춰요 · 그래픽 성능이 좋은 PC'] };
-let ptl = [];
+const Q3N = { fast: ['빠름', '단색으로 형태만 · 텍스처 · 그림자 · 빛 효과 없음 · 가장 가벼움'], normal: ['기본', '텍스처는 보이고 빛 효과 · 그림자는 없어요 · 늘 고른 밝기'], high: ['고품질', '조명 빛 · 반사 · 그림자(천장 조명 · 기구 발밑 · 구석) · 그래픽 성능이 좋은 PC'] };
+let ptl = [], spl = [];
 function applyQuality() {
   if (!R) return; const q = Q3(), dpr = window.devicePixelRatio || 1;
   R.setPixelRatio(q === 'fast' ? 1 : q === 'high' ? Math.min(3, dpr * 1.5) : Math.min(dpr, 2));
   const ms = q === 'high' ? 4096 : 2048, sh = V3.dir.shadow; if (sh.mapSize.x !== ms) { sh.mapSize.set(ms, ms); if (sh.map) { sh.map.dispose(); sh.map = null; } }
-  V3.dir.castShadow = !LINE && q !== 'fast';
-  if (q === 'high' && !ptl.length) for (let k = 0; k < 12; k++) { const p = new THREE.PointLight(0xffffff, 0, 6, 2); sc.add(p); ptl.push(p); }
-  else if (q !== 'high' && ptl.length) { ptl.forEach(p => sc.remove(p)); ptl = []; }
-  lmKey = ''; if (V3.on) V3.resize(); dirty = true;
+  V3.dir.castShadow = !LINE && q === 'high';      // shadows: 고품질 only
+  if (q === 'high' && !ptl.length) {
+    for (let k = 0; k < 8; k++) { const p = new THREE.PointLight(0xffffff, 0, 6, 2); sc.add(p); ptl.push(p); }      // light pools
+    for (let k = 0; k < 4; k++) { const s = new THREE.SpotLight(0xffffff, 0, 8, 1.15, .95, 1.2); s.castShadow = true; s.shadow.mapSize.set(1024, 1024); s.shadow.bias = -.0006; s.shadow.normalBias = .02; s.shadow.camera.near = .1; sc.add(s, s.target); spl.push(s); }      // the ceiling lights nearest the view cast shadows
+  } else if (q !== 'high' && ptl.length) { ptl.forEach(p => sc.remove(p)); spl.forEach(s => { sc.remove(s, s.target); s.shadow.map && s.shadow.map.dispose(); }); ptl = []; spl = []; }
+  lmKey = ''; if (V3.on) V3.resize(); if (built) V3.rebuild(); dirty = true;
 }
 V3.quality = Q3;
-V3.setQuality = q => { if (!GP.lib) return; GP.lib.q3d = q; GP.saveLib(); applyQuality(); renderBar(); GP.toast({ fast: '화질: 빠름 — 그림자 없이 가볍게', normal: '화질: 기본', high: '화질: 고품질 — 선명하게, 안에서는 조명이 바닥을 비춰요 (그래픽 성능이 좋은 PC용)' }[q], { ms: 3500 }); };
+V3.setQuality = q => { if (!GP.lib) return; GP.lib.q3d = q; GP.saveLib(); applyQuality(); renderBar(); GP.toast({ fast: '화질: 빠름 — 단색으로 형태만', normal: '화질: 기본 — 텍스처만, 빛 효과 · 그림자 없음', high: '화질: 고품질 — 조명 빛 · 반사 · 그림자 (그래픽 성능이 좋은 PC용)' }[q], { ms: 3500 }); };
+/* 빠름: every surface a plain colour (a texture's average colour stands in for it), glass kept see-through, the glow kept */
+const texAvg = {}, solT = { t: 0 };
+function avgOf(t) {
+  if (!t || !t.image) return null; if (texAvg[t.uuid]) return texAvg[t.uuid];
+  try { const c = document.createElement('canvas'); c.width = c.height = 4; const x = c.getContext('2d'); x.drawImage(t.image, 0, 0, 4, 4); const d = x.getImageData(0, 0, 4, 4).data; let r = 0, g = 0, b = 0; for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; } const n = d.length / 4; return (texAvg[t.uuid] = new THREE.Color(r / n / 255, g / n / 255, b / n / 255).convertSRGBToLinear()); } catch (_) { return null; }
+}
+function solidOf(m) {
+  if (!m || m.userData.solid) return m; if (m.userData.solidTwin) return m.userData.solidTwin; const n = m.name || '';
+  if (/PT_EMIT/.test(n) || m.blending === THREE.AdditiveBlending || m.isSpriteMaterial) return m;
+  let s;
+  if (/PT_GLASS/.test(n) || (m.transparent && m.opacity < .6 && !m.map)) s = new THREE.MeshBasicMaterial({ color: '#cfe3ee', transparent: true, opacity: .28, depthWrite: false, side: THREE.DoubleSide });
+  else { const c = (m.color ? m.color.clone() : new THREE.Color('#bbbbbb')); if (m.map) { const a = avgOf(m.map); if (a) c.multiply(a); } s = new THREE.MeshLambertMaterial({ color: c, side: m.side, transparent: !!m.transparent, opacity: m.opacity, polygonOffset: m.polygonOffset, polygonOffsetFactor: m.polygonOffsetFactor, polygonOffsetUnits: m.polygonOffsetUnits }); }
+  s.userData.solid = true; m.userData.solidTwin = s; return s;
+}
+function solidify() { for (const k of ['room', 'mats', 'items']) groups[k].traverse(o => { if (!o.isMesh || o.userData.mat0) return; o.userData.mat0 = o.material; o.material = Array.isArray(o.material) ? o.material.map(solidOf) : solidOf(o.material); }); dirty = true; }
 const pickSpots = (sp, n) => {      // n of them spread over the room: the one nearest the middle, then each time the one farthest from those picked
   if (sp.length <= n) return sp; let cx = 0, cz = 0; sp.forEach(s => { cx += s.p[0]; cz += s.p[1]; }); cx /= sp.length; cz /= sp.length;
   const dd = (a, b) => Math.hypot(a.p[0] - b.p[0], a.p[1] - b.p[1]), first = sp.reduce((a, s) => Math.hypot(s.p[0] - cx, s.p[1] - cz) < Math.hypot(a.p[0] - cx, a.p[1] - cz) ? s : a), out = [first], d = sp.map(s => dd(s, first));
@@ -184,22 +201,27 @@ const glowHex = (Lt) => mixHex(Lt.glow, '#ffffff', .18);
 function haloTex() { return mat('haloTex', () => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'), g = x.createRadialGradient(64, 64, 0, 64, 64, 64); g.addColorStop(0, 'rgba(255,255,255,.9)'); g.addColorStop(.25, 'rgba(255,255,255,.45)'); g.addColorStop(.6, 'rgba(255,255,255,.12)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, 128, 128); const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t; }); }
 function lightMode(pos) {
   if (!GP.P || !V3.hemi) return; const st = GP.P.settings, Lt = GP.lightOf(st), E = GP.envOf(st), sky = (!LINE && E.sky.light) || {};
-  const inside = !LINE && !V3.cut && !!ceilRef && (V3.walking || (pos.y < roomH - .05 && G.pip(pos.x, pos.z, GP.L().room.pts)));
-  const F = Lt.d.id === 'none' ? 0 : Lt.lum, D = E.sky.day ?? 1, pts = inside && F > 0 && ptl.length && lightRef && lightRef.spots, A = inside ? Math.min(2.2, F * (pts ? .34 : .85) + D * .15) : Math.max(.35, Math.min(1, F * .85 + D * .15));      // from above too (not below 35 %: the layout still reads)
-  const key = [inside, A.toFixed(3), Lt.glow, E.sky.id, LINE, ptl.length, lightRef && lightRef.spots.length].join('|'), now = performance.now();
+  const hq = Q3() === 'high', inside = hq && !LINE && !V3.cut && !!ceilRef && (V3.walking || (pos.y < roomH - .05 && G.pip(pos.x, pos.z, GP.L().room.pts)));      // (기본 · 빠름: the lights do not change the room)
+  const F = Lt.d.id === 'none' ? 0 : Lt.lum, D = E.sky.day ?? 1, pts = hq && F > 0 && ptl.length && lightRef && lightRef.spots, A = !hq ? 1 : Math.max(inside ? 0 : .35, Math.min(2.2, F * (pts ? .34 : .85) + D * .15));      // 고품질: the same light inside and from above / outside (from there not below 35 %: the layout still reads)      // from above too (not below 35 %: the layout still reads)
+  const key = [hq, inside, A.toFixed(3), Lt.glow, E.sky.id, LINE, ptl.length, lightRef && lightRef.spots.length, Math.round(ctl.target.x / 1.5), Math.round(ctl.target.z / 1.5)].join('|'), now = performance.now();
   if (key === lmKey && !(A !== 1 && now - lmT > 400)) return;      // (while dimmed, now and then again: machines loaded since get it too)
   const fresh = key !== lmKey; lmKey = key; lmT = now; V3.lightLevel = A;
   if (fresh) {
-    const tint = inside && F > 0 ? mixHex(sky.sky || '#ffffff', Lt.glow, .5) : (sky.sky || '#ffffff'), comp = inside && F > 0 ? Math.min(1.8, lumOf(sky.sky || '#ffffff') / Math.max(.3, lumOf(tint))) : 1;
+    const tint = hq && F > 0 ? mixHex(sky.sky || '#ffffff', Lt.glow, .5) : (sky.sky || '#ffffff'), comp = hq && F > 0 ? Math.min(1.8, lumOf(sky.sky || '#ffffff') / Math.max(.3, lumOf(tint))) : 1;
     V3.hemi.color.set(tint); V3.hemi.intensity = (sky.hi ?? .42) * A * comp;
     ptl.forEach(p => { p.intensity = 0; });
     if (pts) { const P = GP.L().room.pts, ch = pickSpots(lightRef.spots, ptl.length), cell = Math.sqrt(Math.abs(G.area(P)) / ch.length); ch.forEach((s, k) => { const p = ptl[k]; p.position.set(s.p[0], lightRef.H - .35, s.p[1]); p.color.set(Lt.glow); p.intensity = 1.5 * F * Math.min(3, Math.pow(1 / Math.max(.2, lumOf(Lt.glow)), .7)); p.distance = Math.max(4.2, cell * 1.35); }); }      // the light pools
-    if (ceilRef) { ceilRef.castShadow = inside; const m = ceilRef.material; if (m.userData.base) m.color.copy(m.userData.base).multiplyScalar(inside ? Math.min(1, .06 + A * .94) : 1); }
+    spl.forEach(s => { s.intensity = 0; });
+    if (hq && F > 0 && spl.length && lightRef && lightRef.spots && lightRef.spots.length) {      // the four lights nearest what is looked at
+      const tx = ctl.target.x, tz = ctl.target.z, near = lightRef.spots.slice().sort((a, b) => Math.hypot(a.p[0] - tx, a.p[1] - tz) - Math.hypot(b.p[0] - tx, b.p[1] - tz)).slice(0, spl.length), cc = Math.min(3, Math.pow(1 / Math.max(.2, lumOf(Lt.glow)), .7));
+      near.forEach((p, k) => { const s = spl[k]; s.position.set(p.p[0], lightRef.H - .12, p.p[1]); s.target.position.set(p.p[0], 0, p.p[1]); s.target.updateMatrixWorld(); s.color.set(Lt.glow); s.intensity = 1.1 * F * cc; s.distance = lightRef.H * 2.6; s.shadow.camera.far = lightRef.H * 2.7; });
+    }
+    if (ceilRef) { ceilRef.castShadow = hq; const m = ceilRef.material; if (m.userData.base) m.color.copy(m.userData.base).multiplyScalar(inside ? Math.min(1, .06 + A * .94) : 1); }
   }
   sc.traverse(o => { const m = o.material; if (!m) return; for (const q of Array.isArray(m) ? m : [m]) if (q.isMeshStandardMaterial && q.envMapIntensity !== A) q.envMapIntensity = A; });
 }
 function buildGround(g, P) {
-  const d = GP.envOf(GP.P.settings).ground; if (LINE || d.id === 'none') return;
+  const d = GP.envOf(GP.P.settings).ground; if (LINE || d.id === 'none' || Q3() === 'fast') return;
   const bb = G.bounds(P), Rg = Math.max(70, Math.hypot(bb.sx, bb.sz) * 3), geo = new THREE.RingGeometry(.01, Rg, 96, 10), pos = geo.attributes.position, col = [];
   for (let k = 0; k < pos.count; k++) { const r = Math.hypot(pos.getX(k), pos.getY(k)) / Rg, a = r < .4 ? 1 : Math.max(0, 1 - (r - .4) / .6); col.push(1, 1, 1, a * a * (3 - 2 * a)); }      // fades out towards the rim
   geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 4)); geo.rotateX(-Math.PI / 2);
@@ -238,7 +260,7 @@ function buildLights(g, P, H, st) {
     const eb = new THREE.Box3(); proto.updateMatrixWorld(true); proto.traverse(n => { if (n.isMesh && n.material === em) eb.expandByObject(n); });
     const hc = eb.isEmpty() ? null : eb.getCenter(new THREE.Vector3()), hsz = hc ? Math.max(eb.max.x - eb.min.x, eb.max.z - eb.min.z) * 1.5 + .45 : 0, Y = new THREE.Vector3(0, 1, 0);
     if (lightRef && lightRef.holder === holder && hc) lightRef.em = { c: hc.clone(), w: eb.max.x - eb.min.x, d: eb.max.z - eb.min.z };
-    const halo = hc && mat('lt:halo', () => new THREE.SpriteMaterial({ map: haloTex(), color: L.glow, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, opacity: .5 })); if (halo) { halo.color.set(L.glow); halo.opacity = .5 * Math.min(1, L.lum); }
+    const halo = hc && Q3() === 'high' && mat('lt:halo', () => new THREE.SpriteMaterial({ map: haloTex(), color: L.glow, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, opacity: .5 })); if (halo) { halo.color.set(L.glow); halo.opacity = .5 * Math.min(1, L.lum); }
     for (const s of spots) {
       const o = proto.clone(true); o.position.set(s.p[0], H, s.p[1]); o.rotation.y = s.rot; holder.add(o);
       if (halo) { const sp = new THREE.Sprite(halo), c = hc.clone().applyAxisAngle(Y, s.rot); sp.position.set(s.p[0] + c.x, H + c.y - .03, s.p[1] + c.z); sp.scale.setScalar(hsz); sp.renderOrder = 2; holder.add(sp); }
@@ -278,7 +300,7 @@ V3.rebuild = (P) => {
     if (parts.some(k => MATS.has(k))) { buildMats(); buildItems(); }      // machines stand on the blocks
     else if (parts.includes('items')) buildItems();
   }
-  applyEnv(); markSel(); dirty = true;
+  applyEnv(); if (Q3() === 'fast') solidify(); markSel(); dirty = true;
 };
 let built = false;
 let wallMeshes = [];
@@ -292,6 +314,7 @@ function buildRoom() {
     buildLights(g, P, H, st);
   }
   buildGround(g, P);
+  if (!LINE && Q3() === 'high') cornerAO(g, P, H, L);
   // curved walls (without doors on them): one smooth piece each
   const oneCurve = new Set();
   if (GP.CV) for (const c of GP.CV.list(L)) {
@@ -553,6 +576,38 @@ let holdGeo = null;      // one unit box for every stand-in (scaled per item; sh
 function holdBox(dm) { const h = Math.max(.05, dm.h), m = new THREE.Mesh(holdGeo || (holdGeo = new THREE.BoxGeometry(1, 1, 1)), mat('hold', () => new THREE.MeshBasicMaterial({ color: '#9aa3ab', transparent: true, opacity: .16, depthWrite: false }))); m.scale.set(dm.w, h, dm.d); m.position.y = h / 2; return m; }
 const roots = new Map(); let loading = 0, loadTotal = 0, loadDone = 0;
 function onMatAt(x, z) { for (const m of GP.L().mats) if (m.pts.length > 2 && G.pip(x, z, m.pts)) return .025; return 0; }
+/* shade where little light gets: a soft dark patch under each floor machine (overhead lights put their shadows there) and a soft
+   band where the walls meet the floor (one texture: a gradient for the bands, a blurred square for the patches) */
+function aoTex(kind) {
+  return mat('aoTex:' + kind, () => {
+    const c = document.createElement('canvas'), x = c.getContext('2d');
+    if (kind === 'blob') { c.width = c.height = 128; x.shadowColor = '#000'; x.shadowBlur = 22; x.shadowOffsetX = 1000; x.fillStyle = '#000'; x.fillRect(30 - 1000, 30, 68, 68); }
+    else { c.width = 4; c.height = 64; const g = x.createLinearGradient(0, 64, 0, 0); g.addColorStop(0, 'rgba(0,0,0,1)'); g.addColorStop(.35, 'rgba(0,0,0,.45)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 4, 64); }
+    const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding; return t;
+  });
+}
+function buildAO() {
+  const g = groups.ao; clear(g); if (LINE || Q3() !== 'high') return; const L = GP.L();
+  const geo = mat('aoPlane', () => { const p = new THREE.PlaneGeometry(1, 1); p.rotateX(-Math.PI / 2); return p; }), m = mat('aoBlob', () => new THREE.MeshBasicMaterial({ color: '#000', map: aoTex('blob'), transparent: true, opacity: .55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  for (const it of L.items) {
+    const def = GP.getDef(it.type), r = roots.get(it.uid); if (!def || !r || def.flat || def.wall || GP.mountOf(it) !== 'floor') continue; const dm = r.userData.dm;
+    const s = new THREE.Mesh(geo, m); s.scale.set(dm.w * 1.5 + .3, 1, dm.d * 1.5 + .3); s.position.set(r.position.x, r.position.y + .004, r.position.z); s.rotation.y = r.rotation.y; s.renderOrder = 1; s.raycast = () => { }; g.add(s);
+  }
+}
+function cornerAO(g, P, H, L) {
+  const fp = [], fu = [], w = .42, hw = .38, fm = mat('aoFloor', () => new THREE.MeshBasicMaterial({ color: '#000', map: aoTex('band'), transparent: true, opacity: .5, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+  for (let i = 0; i < P.length; i++) {
+    const a = P[i], b = P[(i + 1) % P.length], e = G.edge(P, i); if (e.L < .05) continue; const A2 = [a[0] + e.nx * w, a[1] + e.nz * w], B2 = [b[0] + e.nx * w, b[1] + e.nz * w];
+    fp.push(a[0], .003, a[1], b[0], .003, b[1], B2[0], .003, B2[1], a[0], .003, a[1], B2[0], .003, B2[1], A2[0], .003, A2[1]); fu.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+    const glassy = GP.CV && (GP.CV.segGlass(L, i) || []).length, door = L.openings.some(o => o.host === 'room' && o.seg === i); if (glassy || door) continue;
+    const d = .007, a3 = [a[0] + e.nx * d, a[1] + e.nz * d], b3 = [b[0] + e.nx * d, b[1] + e.nz * d], geo = new THREE.BufferGeometry();      // the band up the wall: its own material, so it fades with its wall
+    geo.setAttribute('position', new THREE.Float32BufferAttribute([a3[0], 0, a3[1], b3[0], 0, b3[1], b3[0], hw, b3[1], a3[0], 0, a3[1], b3[0], hw, b3[1], a3[0], hw, a3[1]], 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1], 2));
+    const wm = new THREE.MeshBasicMaterial({ color: '#000', map: aoTex('band'), transparent: true, opacity: .4, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    const me = new THREE.Mesh(geo, wm); me.userData.own = true; me.raycast = () => { }; g.add(me); wallMeshes.push({ mat: wm, nx: -e.nx, nz: -e.nz, base: .4 });
+  }
+  const fg = new THREE.BufferGeometry(); fg.setAttribute('position', new THREE.Float32BufferAttribute(fp, 3)); fg.setAttribute('uv', new THREE.Float32BufferAttribute(fu, 2));
+  const me = new THREE.Mesh(fg, fm); me.userData.own = true; me.raycast = () => { }; me.renderOrder = 1; g.add(me);
+}
 function buildItems() {
   const g = groups.items; clear(g); roots.clear(); const L = GP.L(); const want = {};
   for (const it of L.items) {
@@ -562,6 +617,7 @@ function buildItems() {
     const src = modelSrc(it.type, def), proc = src ? holdBox(dm) : GP.R3.procModel(it); if (LINE && !src) toLine(proc); root.add(proc); g.add(root); roots.set(it.uid, root);
     if (src) (want[it.type + '|' + src] = want[it.type + '|' + src] || []).push({ it, root, proc, dm });
   }
+  buildAO();
   const keys = Object.keys(want); loadTotal = keys.length; loadDone = 0; loading = keys.length; setLoad();
   keys.forEach(k => { const [t, src] = k.split('|'), b = src === 'basic'; GP.R3.glb(t, null, b).then(scene => { for (const q of want[k]) { if (roots.get(q.it.uid) !== q.root) continue; q.root.remove(q.proc); const gm = GP.R3.fitGlb(t, scene, q.dm, b, q.it, LINE ? toLine : null); if (LINE) toLine(gm); else if (b) GP.R3.tint(gm, GP.eqColor(q.it)); q.root.add(gm); } dirty = true; }).catch(() => { for (const q of want[k]) { if (roots.get(q.it.uid) !== q.root) continue; q.root.remove(q.proc); const pm = GP.R3.procModel(q.it); if (LINE) toLine(pm); q.root.add(pm); } dirty = true; }).finally(() => { loading--; loadDone++; setLoad(); }); });
 }
@@ -631,9 +687,9 @@ function markSel() {
 }
 function wallFade() {
   if (!GP.P || !wallMeshes.length) return;
-  if (V3.walking || solid) { for (const w of wallMeshes) { const o = w.base ?? 1; if (w.mat.opacity !== o) { w.mat.opacity = o; w.mat.depthWrite = o === 1; } } return; } const b = G.bounds(GP.L().room.pts); let vx = cam.position.x - b.cx, vz = cam.position.z - b.cz; const l = Math.hypot(vx, vz) || 1; vx /= l; vz /= l;
+  if (V3.walking || solid) { for (const w of wallMeshes) { const o = w.base ?? 1; for (const m of [w.mat, w.mat.userData.solidTwin]) if (m && m.opacity !== o) { m.opacity = o; m.depthWrite = o === 1; } } return; } const b = G.bounds(GP.L().room.pts); let vx = cam.position.x - b.cx, vz = cam.position.z - b.cz; const l = Math.hypot(vx, vz) || 1; vx /= l; vz /= l;
   const high = cam.position.y > Math.max(b.sx, b.sz) * 1.6;
-  for (const w of wallMeshes) { const b0 = w.base ?? 1, o = (!high && (w.nx * vx + w.nz * vz) > .2) ? .12 * b0 : b0; if (w.mat.opacity !== o) { w.mat.opacity = o; w.mat.depthWrite = o === 1; } }      // (glass: from its own see-through to nearly nothing)
+  for (const w of wallMeshes) { const b0 = w.base ?? 1, o = (!high && (w.nx * vx + w.nz * vz) > .2) ? .12 * b0 : b0; for (const m of [w.mat, w.mat.userData.solidTwin]) if (m && m.opacity !== o) { m.opacity = o; m.depthWrite = o === 1; if (m.userData.solid) m.transparent = true; } }      // (glass: from its own see-through to nearly nothing)
 }
 
 /* ---------------- picking (footprint boxes, cheap even with big models) ---------------- */
