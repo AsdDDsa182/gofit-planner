@@ -114,7 +114,7 @@ CPK.html = (id, hex, o) => {
   return `<div class="cpk" data-cpk="${id}" data-h="${h}" data-s="${s}" data-v="${v}">
     <div class="cpk-sv" style="background-color:hsl(${h},100%,50%)" title="끌어서 색 고르기 (가로: 선명함 · 세로: 밝기)"><i style="left:${s * 100}%;top:${(1 - v) * 100}%"></i></div>
     <div class="cpk-hue" title="끌어서 색상 바꾸기"><i style="left:${h / 360 * 100}%"></i></div>
-    <div class="cpk-row"><span class="cpk-now" style="background:${hex}"></span><input class="cpk-hex" value="${hex.toUpperCase()}" maxlength="7" spellcheck="false" aria-label="색 코드" data-nolive><span class="cpk-tag">${o.k ? o.k + 'K' : '직접 고른 색'}</span></div>
+    <div class="cpk-row"><span class="cpk-now" style="background:${hex}"></span><input class="cpk-hex" value="${hex.toUpperCase()}" maxlength="7" spellcheck="false" aria-label="색 코드" data-nolive><span class="cpk-tag">${o.name || '직접 고른 색'}</span></div>
     ${o.kelvin ? `<div class="rng cpk-k"><span>색온도</span><input type="range" class="cpk-kr" min="1800" max="10000" step="100" value="${o.k || 4000}" data-nolive><b>${o.k ? o.k + 'K' : '—'}</b></div>` : ''}
     ${o.swatches ? `<div class="cpk-pre">${o.swatches.map(([c, n, k]) => `<button style="background:${c}" data-cpkc="${c}"${k ? ` data-cpkk="${k}"` : ''} title="${U.esc(n)}"></button>`).join('')}</div>` : ''}
   </div>`;
@@ -122,7 +122,7 @@ CPK.html = (id, hex, o) => {
 function cpkPaint(box, h, s, v, hex, k) {
   box.dataset.h = h; box.dataset.s = s; box.dataset.v = v; const sv = box.querySelector('.cpk-sv'), dot = sv.firstElementChild, hh = box.querySelector('.cpk-hue i'), hx = box.querySelector('.cpk-hex');
   sv.style.backgroundColor = `hsl(${h},100%,50%)`; dot.style.left = s * 100 + '%'; dot.style.top = (1 - v) * 100 + '%'; hh.style.left = h / 360 * 100 + '%';
-  box.querySelector('.cpk-now').style.background = hex; if (document.activeElement !== hx) hx.value = hex.toUpperCase(); box.querySelector('.cpk-tag').textContent = k ? k + 'K' : '직접 고른 색';
+  box.querySelector('.cpk-now').style.background = hex; if (document.activeElement !== hx) hx.value = hex.toUpperCase(); box.querySelector('.cpk-tag').textContent = k ? (({ 6500: '주광색', 5000: '자연광', 4000: '주백색', 3000: '전구색', 2700: '따뜻한 전구색' })[k] || k + 'K') : '직접 고른 색';
   const kr = box.querySelector('.cpk-kr'); if (kr) { if (k && document.activeElement !== kr) { kr.value = k; rFill(kr); } const b = kr.parentElement.querySelector('b'); if (b) b.textContent = k ? k + 'K' : '—'; }
 }
 const cpkFire = (box, hex, live, k) => { const f = CPK.on[box.dataset.cpk]; if (!f || GP.viewOnly) return; LV.on = !!live; try { f(hex, !!live, k || 0); } finally { LV.on = false; } };

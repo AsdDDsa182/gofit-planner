@@ -60,10 +60,11 @@ V3.show = (on) => {
 };
 function renderBar() {
   const b = $('#v3bar'); if (!b) return;
-  b.innerHTML = `<button class="tg${V3.cut ? ' on' : ''}" data-v3="cut"><i></i>벽 낮추기</button><span class="v3sep"></span><button class="btn xs" data-v3="persp">비스듬히</button><button class="btn xs" data-v3="top">위에서</button><button class="btn xs" data-v3="front">정면</button><button class="btn xs${V3.walking ? ' primary' : ''}" data-v3="walk">${V3.walking ? '걷기 끝' : '걸어보기'}</button>${GP.viewOnly ? '' : `<button class="btn xs" data-v3="shot">${GP.IC.image} 이미지 저장</button>`}<button class="btn xs" data-v3="q" id="v3qBtn" title="3D 화질 (블렌더의 렌더 엔진 고르기처럼)">화질 · ${Q3N[Q3()][0]} ▾</button><span class="v3load" id="v3load"></span>`;
+  b.innerHTML = `<button class="tg${V3.cut ? ' on' : ''}" data-v3="cut"><i></i>벽 낮추기</button><span class="v3sep"></span><button class="btn xs" data-v3="persp">비스듬히</button><button class="btn xs" data-v3="top">위에서</button><button class="btn xs" data-v3="front">정면</button><button class="btn xs${V3.walking ? ' primary' : ''}" data-v3="walk">${V3.walking ? '걷기 끝' : '걸어보기'}</button>${GP.viewOnly ? '' : `<button class="btn xs" data-v3="shot">${GP.IC.image} 이미지 저장</button>`}<button class="btn xs" data-v3="pt" title="블렌더 Cycles처럼 빛을 실제로 계산한 사진 같은 그림 (시간이 걸려요 · 처음엔 인터넷 필요)">✨ 실사 렌더</button><button class="btn xs" data-v3="q" id="v3qBtn" title="3D 화질 (블렌더의 렌더 엔진 고르기처럼)">화질 · ${Q3N[Q3()][0]} ▾</button><span class="v3load" id="v3load"></span>`;
 }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-v3]'); if (!b) return; const a = b.dataset.v3;
+  if (a === 'pt') { V3.ptOpen(); return; }
   if (a === 'q') { GP.popover(b, `<div class="ph">3D 화질</div>${Object.entries(Q3N).map(([k, [n, d]]) => `<button class="mi${Q3() === k ? ' def' : ''}" data-act="${k}"><div><b>${n}${Q3() === k ? ' ✓' : ''}</b><small>${d}</small></div></button>`).join('')}<p class="note" style="margin:4px 10px 6px">이 기기에만 저장돼요. 화면이 끊기면 한 단계 낮춰 주세요.</p>`, act => { V3.setQuality(act); return false; }); return; }
   if (a === 'cut') { V3.cut = !V3.cut; V3.rebuild(); renderBar(); }
   else if (a === 'walk') V3.walk(!V3.walking);
@@ -214,7 +215,7 @@ function lightSpots(P, d, gap) {
 function buildLights(g, P, H, st) {
   const L = GP.lightOf(st); if (L.d.id === 'none') return; const spots = lightSpots(P, L.d, L.gap); if (!spots.length) return;
   const body = GP.LIGHT_BODY[L.body];
-  const em = mat('lt:e', () => new THREE.MeshBasicMaterial({ color: L.glow, toneMapped: false })); em.color.set(glowHex(L)).multiplyScalar(.3 + .7 * Math.min(1, L.lum));      // one glow, recoloured in place (a colour being dragged does not make new materials)
+  const em = mat('lt:e', () => Object.assign(new THREE.MeshBasicMaterial({ color: L.glow, toneMapped: false }), { name: 'PT_EMIT' })); em.color.set(glowHex(L)).multiplyScalar(.3 + .7 * Math.min(1, L.lum));      // one glow, recoloured in place (a colour being dragged does not make new materials)
   const hm = mat('lt:h:' + L.body, () => std(body.c, { metalness: body.m, roughness: body.r }));
   const holder = new THREE.Group(); holder.userData.own = true; g.add(holder); lightRef = { holder, H, top: L.top, spots };
   lightScene(L.d.id).then(scene => {
@@ -222,6 +223,7 @@ function buildLights(g, P, H, st) {
     const proto = scene.clone(true); proto.traverse(n => { if (!n.isMesh) return; const nm = (n.material && n.material.name) || ''; if (/lemit/.test(nm)) n.material = em; else if (/lhouse/.test(nm)) n.material = hm; n.castShadow = false; n.receiveShadow = false; });
     const eb = new THREE.Box3(); proto.updateMatrixWorld(true); proto.traverse(n => { if (n.isMesh && n.material === em) eb.expandByObject(n); });
     const hc = eb.isEmpty() ? null : eb.getCenter(new THREE.Vector3()), hsz = hc ? Math.max(eb.max.x - eb.min.x, eb.max.z - eb.min.z) * 1.5 + .45 : 0, Y = new THREE.Vector3(0, 1, 0);
+    if (lightRef && lightRef.holder === holder && hc) lightRef.em = { c: hc.clone(), w: eb.max.x - eb.min.x, d: eb.max.z - eb.min.z };
     const halo = hc && mat('lt:halo', () => new THREE.SpriteMaterial({ map: haloTex(), color: L.glow, blending: THREE.AdditiveBlending, transparent: true, depthWrite: false, toneMapped: false, opacity: .5 })); if (halo) { halo.color.set(L.glow); halo.opacity = .5 * Math.min(1, L.lum); }
     for (const s of spots) {
       const o = proto.clone(true); o.position.set(s.p[0], H, s.p[1]); o.rotation.y = s.rot; holder.add(o);
@@ -272,7 +274,7 @@ function buildRoom() {
   const fg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); fg.rotateX(-Math.PI / 2); const fd = finishOf(st.floorBase), TA = st.texAdj || {}, fk = GP.texAdjKey(TA.floor), floor = new THREE.Mesh(fg, LINE ? CADM() : fd ? mat('floor:' + fd.id + fk, () => new THREE.MeshLambertMaterial({ color: '#d0d0d0', map: finishTex(fd.id, TA.floor) })) : mat('floor' + fk, () => std(adjHex('#dcdcdc', TA.floor), { map: V3.tex.concrete, roughness: .85 }))); floor.receiveShadow = true; floor.position.y = -.001; floor.userData.own = true; g.add(floor);
   const H = V3.cut ? Math.min(1.1, st.wallH) : st.wallH, O = G.offset(P, WALL_T, true), n = P.length, marks = L.wallMarks || {};
   if (!LINE && !V3.cut) {
-    const cg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); cg.rotateX(-Math.PI / 2); const cd = (GP.TEX.ceil || []).find(t => t.id === st.ceilTex && t.size), ck = GP.texAdjKey(TA.ceil), ceil = new THREE.Mesh(cg, cd ? mat('ceil:' + cd.id + ck, () => new THREE.MeshBasicMaterial({ color: cd.id === 'ceil_glow' ? '#ffffff' : '#d2d4d3', map: finishTex(cd.id, TA.ceil), side: THREE.BackSide })) : mat('ceil' + ck, () => new THREE.MeshBasicMaterial({ color: adjHex('#c4c8c6', TA.ceil), side: THREE.BackSide }))); ceil.position.y = H; ceil.userData.own = true; g.add(ceil); { const cm = ceil.material; if (!cm.userData.base) cm.userData.base = cm.color.clone(); cm.shadowSide = THREE.DoubleSide; ceilRef = ceil; roomH = H; }
+    const cg = new THREE.ShapeGeometry(new THREE.Shape(P.map(V2))); cg.rotateX(-Math.PI / 2); const cd = (GP.TEX.ceil || []).find(t => t.id === st.ceilTex && t.size), ck = GP.texAdjKey(TA.ceil), ceil = new THREE.Mesh(cg, cd ? mat('ceil:' + cd.id + ck, () => new THREE.MeshBasicMaterial({ color: cd.id === 'ceil_glow' ? '#ffffff' : '#d2d4d3', map: finishTex(cd.id, TA.ceil), side: THREE.BackSide })) : mat('ceil' + ck, () => new THREE.MeshBasicMaterial({ color: adjHex('#c4c8c6', TA.ceil), side: THREE.BackSide }))); ceil.position.y = H; ceil.userData.own = true; g.add(ceil); { const cm = ceil.material; if (!cm.userData.base) cm.userData.base = cm.color.clone(); cm.shadowSide = THREE.DoubleSide; cm.name = 'PT_CEIL'; ceilRef = ceil; roomH = H; }
     buildLights(g, P, H, st);
   }
   buildGround(g, P);
@@ -410,7 +412,7 @@ function veneerTex(id) {
   const t = new THREE.TextureLoader().load(GP.texUrl(id), () => { texLoading--; dirty = true; }, undefined, () => { texLoading--; });
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.anisotropy = 8; t.repeat.set(1 / 1.1, 1 / 2.2); t.offset.set(.5, .5); return (texCache[id] = t);
 }
-const glassMat = (v) => { const g = GP.GLASS[v] || GP.GLASS.clear; return mat('gl:' + (v || 'clear'), () => new THREE.MeshPhysicalMaterial({ color: g.c, transparent: true, opacity: g.o, roughness: g.r || .04, metalness: 0, reflectivity: .5, depthWrite: false, side: THREE.DoubleSide })); };
+const glassMat = (v) => { const g = GP.GLASS[v] || GP.GLASS.clear; return mat('gl:' + (v || 'clear'), () => Object.assign(new THREE.MeshPhysicalMaterial({ color: g.c, transparent: true, opacity: g.o, roughness: g.r || .04, metalness: 0, reflectivity: .5, depthWrite: false, side: THREE.DoubleSide }), { name: 'PT_GLASS:' + (v || 'clear') })); };      // (PT_… names: what the photoreal render recognises)
 const hwMat = (v) => { const h = GP.HW[v] || GP.HW.steel; return mat('hw:' + (v || 'steel'), () => std(h.c, { metalness: h.m, roughness: h.r })); };
 function buildOpenings(g, H) {
   loadArch(); const L = GP.L();
@@ -579,6 +581,33 @@ async function pump(total) {
 GP.on('booted', () => GP.SYM.ready.then(() => setTimeout(V3.prefetch, 1500))); // start after the plan pictures, so the first screen stays quick
 GP.on('changed', U.debounce(() => V3.prefetch(), 1500));
 GP.on('project', () => setTimeout(V3.prefetch, 800));
+/* ---------------- photoreal render: the scene goes to pt.html (path tracing, like Blender's Cycles) ---------------- */
+const loadJS = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('불러오지 못함: ' + src)); document.head.appendChild(s); });
+V3.ptScene = async () => {
+  if (!R) throw new Error('3D가 켜져 있지 않아요'); if (!THREE.GLTFExporter) await loadJS(GP.R3.base() + 'vendor/GLTFExporter.js');
+  await V3.whenLoaded(8000); const st = GP.P.settings, E = GP.envOf(st), Lt = GP.lightOf(st);
+  const keep = solid; solid = true; wallFade(); solid = keep;      // walls solid (not faded) in the render
+  const lv = lightRef ? lightRef.holder.visible : null; if (lightRef) lightRef.holder.visible = Lt.d.id !== 'none';
+  try {
+    const glb = await new Promise((res, rej) => new THREE.GLTFExporter().parse([groups.room, groups.mats, groups.items], res, rej, { binary: true, onlyVisible: true, maxTextureSize: 1024 }));
+    let pos = cam.position.toArray(), target = ctl.target.toArray();
+    if (V3.walking) { const f = new THREE.Vector3(); cam.getWorldDirection(f); target = cam.position.clone().addScaledVector(f, 5).toArray(); }
+    const d = E.sky, sky = d.pano ? { kind: 'pano', url: 'assets/env/sky_' + d.pano + '.jpg', rot: E.rot } : d.g ? { kind: 'grad', g: d.g } : { kind: 'studio' };
+    const sd = V3.dir.position.clone().sub(V3.dir.target.position).normalize(), sl = d.light || {};
+    const lights = (lightRef && lightRef.em && Lt.d.id !== 'none' && Lt.lum > 0) ? lightRef.spots.map(s => { const c = lightRef.em.c.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), s.rot); return { x: s.p[0] + c.x, y: lightRef.H + c.y - .012, z: s.p[1] + c.z, w: lightRef.em.w, d: lightRef.em.d, rot: s.rot }; }) : [];
+    return { glb, cam: { pos, target, fov: cam.fov }, sky, sun: { dir: sd.toArray(), color: '#' + new THREE.Color(sl.sun || '#ffffff').getHexString(), intensity: sl.si ?? .9 }, lights, glow: Lt.glow, lum: Lt.d.id === 'none' ? 0 : Lt.lum };
+  } finally { if (lightRef && lv !== null) lightRef.holder.visible = lv; dirty = true; }
+};
+V3.ptOpen = () => {
+  if (document.querySelector('.pt-ov')) return; const ov = document.createElement('div'); ov.className = 'pt-ov'; ov.innerHTML = '<iframe src="pt.html" title="실사 렌더"></iframe>'; document.body.appendChild(ov);
+  const close = () => { window.removeEventListener('message', on); ov.remove(); };
+  const on = async e => {
+    if (e.origin !== location.origin || !e.data) return; const t = e.data.type;
+    if (t === 'pt-close') { close(); return; }
+    if (t === 'pt-ready') { try { const s = await V3.ptScene(); ov.firstChild.contentWindow.postMessage(Object.assign({ type: 'scene' }, s), location.origin, [s.glb]); } catch (err) { console.error(err); GP.toast('실사 렌더로 장면을 보내지 못했어요 · ' + (err && err.message || err), { bad: true, ms: 5000 }); close(); } }
+  };
+  window.addEventListener('message', on);
+};
 V3.whenLoaded = (ms) => new Promise(res => { const t0 = performance.now(); const chk = () => { if ((loading <= 0 && texLoading <= 0 && !archLoading && !GP.R3.pending) || performance.now() - t0 > (ms || 25000)) res(); else setTimeout(chk, 200); }; chk(); });
 function markSel() {
   const sel = GP.ui.selSet(); if (V3.selBox) { sc.remove(V3.selBox); V3.selBox.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); V3.selBox = null; }
