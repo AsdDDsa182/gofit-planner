@@ -72,11 +72,10 @@ V3.show = (on) => {
 };
 function renderBar() {
   const b = $('#v3bar'); if (!b) return;
-  b.innerHTML = `<button class="tg${V3.cut ? ' on' : ''}" data-v3="cut"><i></i>벽 낮추기</button><span class="v3sep"></span><button class="btn xs" data-v3="persp">비스듬히</button><button class="btn xs" data-v3="top">위에서</button><button class="btn xs" data-v3="front">정면</button><button class="btn xs${V3.walking ? ' primary' : ''}" data-v3="walk">${V3.walking ? '걷기 끝' : '걸어보기'}</button>${GP.viewOnly ? '' : `<button class="btn xs" data-v3="shot">${GP.IC.image} 이미지 저장</button>`}<button class="btn xs" data-v3="pt" title="블렌더 Cycles처럼 빛을 실제로 계산한 사진 같은 그림 (시간이 걸려요 · 처음엔 인터넷 필요)">✨ 실사 렌더</button><button class="btn xs" data-v3="q" id="v3qBtn" title="3D 화질">화질 · ${Q3N[Q3()][0]} ▾</button><span class="v3load" id="v3load"></span>`;
+  b.innerHTML = `<button class="tg${V3.cut ? ' on' : ''}" data-v3="cut"><i></i>벽 낮추기</button><span class="v3sep"></span><button class="btn xs" data-v3="persp">비스듬히</button><button class="btn xs" data-v3="top">위에서</button><button class="btn xs" data-v3="front">정면</button><button class="btn xs${V3.walking ? ' primary' : ''}" data-v3="walk">${V3.walking ? '걷기 끝' : '걸어보기'}</button>${GP.viewOnly ? '' : `<button class="btn xs" data-v3="shot">${GP.IC.image} 이미지 저장</button>`}<button class="btn xs" data-v3="q" id="v3qBtn" title="3D 화질">화질 · ${Q3N[Q3()][0]} ▾</button><span class="v3load" id="v3load"></span>`;
 }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-v3]'); if (!b) return; const a = b.dataset.v3;
-  if (a === 'pt') { V3.ptOpen(); return; }
   if (a === 'q') { GP.popover(b, `<div class="ph">3D 화질</div>${Object.entries(Q3N).map(([k, [n, d]]) => `<button class="mi${Q3() === k ? ' def' : ''}" data-act="${k}"><div><b>${n}${Q3() === k ? ' ✓' : ''}</b><small>${d}</small></div></button>`).join('')}<p class="note" style="margin:4px 10px 6px">이 기기에만 저장돼요. 화면이 끊기면 한 단계 낮춰 주세요.</p>`, act => { V3.setQuality(act); return false; }); return; }
   if (a === 'cut') { V3.cut = !V3.cut; V3.rebuild(); renderBar(); }
   else if (a === 'walk') V3.walk(!V3.walking);
@@ -293,7 +292,7 @@ function toLine(obj, keepMat) { const ms = []; obj.traverse(n => { if (n.isMesh)
 const NO3D = new Set(['annot', 'zones', 'zone', 'note', 'dim']), MATS = new Set(['mats', 'mat']);
 V3.rebuild = (P) => {
   if (!R || !GP.P) return; const line = GP.S.style === 'line', parts = P instanceof Set ? [...P] : null, full = !parts || line !== LINE || !built || parts.some(k => !NO3D.has(k) && !MATS.has(k) && k !== 'items' && k !== 'room3d' && k !== 'env3d');
-  LINE = line; sc.background.set(LINE ? '#F7F8F7' : '#E6E9E6'); V3.dir.castShadow = !LINE && Q3() !== 'fast';
+  LINE = line; sc.background.set(LINE ? '#F7F8F7' : '#E6E9E6'); V3.dir.castShadow = !LINE && Q3() === 'high';      // (shadows: 고품질 only — this line used to switch them back on in 기본 at every rebuild)
   if (full) { buildRoom(); buildMats(); buildItems(); built = true; }
   else {
     if (parts.includes('room3d')) buildRoom();      // finishes, lights, glass panes: the room alone
@@ -651,33 +650,6 @@ async function pump(total) {
 GP.on('booted', () => GP.SYM.ready.then(() => setTimeout(V3.prefetch, 1500))); // start after the plan pictures, so the first screen stays quick
 GP.on('changed', U.debounce(() => V3.prefetch(), 1500));
 GP.on('project', () => setTimeout(V3.prefetch, 800));
-/* ---------------- photoreal render: the scene goes to pt.html (path tracing, like Blender's Cycles) ---------------- */
-const loadJS = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('불러오지 못함: ' + src)); document.head.appendChild(s); });
-V3.ptScene = async () => {
-  if (!R) throw new Error('3D가 켜져 있지 않아요'); if (!THREE.GLTFExporter) await loadJS(GP.R3.base() + 'vendor/GLTFExporter.js');
-  await V3.whenLoaded(8000); const st = GP.P.settings, E = GP.envOf(st), Lt = GP.lightOf(st);
-  const keep = solid; solid = true; wallFade(); solid = keep;      // walls solid (not faded) in the render
-  const lv = lightRef ? lightRef.holder.visible : null; if (lightRef) lightRef.holder.visible = Lt.d.id !== 'none';
-  try {
-    const glb = await new Promise((res, rej) => new THREE.GLTFExporter().parse([groups.room, groups.mats, groups.items], res, rej, { binary: true, onlyVisible: true, maxTextureSize: 1024 }));
-    let pos = cam.position.toArray(), target = ctl.target.toArray();
-    if (V3.walking) { const f = new THREE.Vector3(); cam.getWorldDirection(f); target = cam.position.clone().addScaledVector(f, 5).toArray(); }
-    const d = E.sky, sky = d.pano ? { kind: 'pano', url: 'assets/env/sky_' + d.pano + '.jpg', rot: E.rot } : d.g ? { kind: 'grad', g: d.g } : { kind: 'studio' };
-    const sd = V3.dir.position.clone().sub(V3.dir.target.position).normalize(), sl = d.light || {};
-    const lights = (lightRef && lightRef.em && Lt.d.id !== 'none' && Lt.lum > 0) ? lightRef.spots.map(s => { const c = lightRef.em.c.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), s.rot); return { x: s.p[0] + c.x, y: lightRef.H + c.y - .012, z: s.p[1] + c.z, w: lightRef.em.w, d: lightRef.em.d, rot: s.rot }; }) : [];
-    return { glb, cam: { pos, target, fov: cam.fov }, sky, sun: { dir: sd.toArray(), color: '#' + new THREE.Color(sl.sun || '#ffffff').getHexString(), intensity: sl.si ?? .9 }, lights, glow: Lt.glow, lum: Lt.d.id === 'none' ? 0 : Lt.lum };
-  } finally { if (lightRef && lv !== null) lightRef.holder.visible = lv; dirty = true; }
-};
-V3.ptOpen = () => {
-  if (document.querySelector('.pt-ov')) return; const ov = document.createElement('div'); ov.className = 'pt-ov'; ov.innerHTML = '<iframe src="pt.html" title="실사 렌더"></iframe>'; document.body.appendChild(ov);
-  const close = () => { window.removeEventListener('message', on); const f = ov.firstChild; try { f.contentWindow.ptShutdown && f.contentWindow.ptShutdown(); } catch (_) { } f.src = 'about:blank'; setTimeout(() => ov.remove(), 50); dirty = true; };      // the render stopped and its graphics memory freed before the frame goes
-  const on = async e => {
-    if (e.origin !== location.origin || !e.data) return; const t = e.data.type;
-    if (t === 'pt-close') { close(); return; }
-    if (t === 'pt-ready') { try { const s = await V3.ptScene(); ov.firstChild.contentWindow.postMessage(Object.assign({ type: 'scene' }, s), location.origin, [s.glb]); } catch (err) { console.error(err); GP.toast('실사 렌더로 장면을 보내지 못했어요 · ' + (err && err.message || err), { bad: true, ms: 5000 }); close(); } }
-  };
-  window.addEventListener('message', on);
-};
 V3.whenLoaded = (ms) => new Promise(res => { const t0 = performance.now(); const chk = () => { if ((loading <= 0 && texLoading <= 0 && !archLoading && !GP.R3.pending) || performance.now() - t0 > (ms || 25000)) res(); else setTimeout(chk, 200); }; chk(); });
 function markSel() {
   const sel = GP.ui.selSet(); if (V3.selBox) { sc.remove(V3.selBox); V3.selBox.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); V3.selBox = null; }
